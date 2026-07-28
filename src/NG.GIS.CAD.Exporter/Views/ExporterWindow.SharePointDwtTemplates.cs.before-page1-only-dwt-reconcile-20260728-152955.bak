@@ -20,47 +20,36 @@ public partial class ExporterWindow
     {
         if (_localDwtSectionInstalled) return;
         _localDwtSectionInstalled = true;
-        Loaded += (_, __) => ReconcileLocalDwtSection();
-        AddHandler(ButtonBase.ClickEvent, new RoutedEventHandler((_, __) => Dispatcher.BeginInvoke(new Action(ReconcileLocalDwtSection))), true);
+        Loaded += (_, __) => AddLocalDwtSectionToPage1Only();
+        AddHandler(ButtonBase.ClickEvent, new RoutedEventHandler((_, __) => Dispatcher.BeginInvoke(new Action(AddLocalDwtSectionToPage1Only))), true);
     }
 
-    private void ReconcileLocalDwtSection()
+    private void AddLocalDwtSectionToPage1Only()
     {
         try
         {
-            var existing = FindNamedVisual<FrameworkElement>(this, "LocalDwtSectionRoot") ?? FindNamedVisual<FrameworkElement>(this, "SharePointDwtSectionRoot");
-            if (!IsPage1VisibleForDwt())
-            {
-                if (existing != null && existing.Parent is Panel parentPanel) parentPanel.Children.Remove(existing);
-                return;
-            }
-            if (existing != null) return;
+            if (FindName("LocalDwtSectionRoot") is FrameworkElement) return;
+            if (!IsPage1VisibleForDwt()) return;
             var panel = FindPage1PanelForDwt();
             if (panel == null) return;
-            var root = BuildLocalDwtSection();
+            var root = new StackPanel { Name = "LocalDwtSectionRoot", Margin = new Thickness(0, 6, 0, 8) };
+            root.Children.Add(new TextBlock { Text = "CAD template (.dwt)", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 2) });
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            var pick = new Button { Content = "Pick .dwt", Width = 80, Height = 24, Margin = new Thickness(0, 0, 5, 0) };
+            pick.Click += (_, __) => PickLocalOrSyncedDwt();
+            _localDwtPathTextBox = new TextBox { Width = 440, Height = 24, IsReadOnly = true, Margin = new Thickness(0, 0, 5, 0) };
+            var open = new Button { Content = "Open", Width = 70, Height = 24 };
+            open.Click += (_, __) => OpenSelectedDwt();
+            row.Children.Add(pick);
+            row.Children.Add(_localDwtPathTextBox);
+            row.Children.Add(open);
+            root.Children.Add(row);
+            _localDwtStatus = new TextBlock { Text = "Select a local or synced SharePoint .dwt. No Graph sign-in is used.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
+            root.Children.Add(_localDwtStatus);
             var insertAt = Math.Min(panel.Children.Count, 7);
             panel.Children.Insert(insertAt, root);
         }
         catch { }
-    }
-
-    private FrameworkElement BuildLocalDwtSection()
-    {
-        var root = new StackPanel { Name = "LocalDwtSectionRoot", Margin = new Thickness(0, 6, 0, 8) };
-        root.Children.Add(new TextBlock { Text = "CAD template (.dwt)", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 2) });
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        var pick = new Button { Content = "Pick .dwt", Width = 80, Height = 24, Margin = new Thickness(0, 0, 5, 0) };
-        pick.Click += (_, __) => PickLocalOrSyncedDwt();
-        _localDwtPathTextBox = new TextBox { Width = 440, Height = 24, IsReadOnly = true, Margin = new Thickness(0, 0, 5, 0) };
-        var open = new Button { Content = "Open", Width = 70, Height = 24 };
-        open.Click += (_, __) => OpenSelectedDwt();
-        row.Children.Add(pick);
-        row.Children.Add(_localDwtPathTextBox);
-        row.Children.Add(open);
-        root.Children.Add(row);
-        _localDwtStatus = new TextBlock { Text = "Select a local or synced SharePoint .dwt. No Graph sign-in is used.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
-        root.Children.Add(_localDwtStatus);
-        return root;
     }
 
     private bool IsPage1VisibleForDwt()
@@ -84,7 +73,11 @@ public partial class ExporterWindow
 
     private void PickLocalOrSyncedDwt()
     {
-        var dialog = new OpenFileDialog { Filter = "AutoCAD template (*.dwt)|*.dwt", Title = "Select CAD template (.dwt)" };
+        var dialog = new OpenFileDialog
+        {
+            Filter = "AutoCAD template (*.dwt)|*.dwt",
+            Title = "Select CAD template (.dwt)"
+        };
         if (dialog.ShowDialog() == true)
         {
             _selectedDwtPath = dialog.FileName;
@@ -114,15 +107,6 @@ public partial class ExporterWindow
     private void SetLocalDwtStatus(string message)
     {
         if (_localDwtStatus != null) _localDwtStatus.Text = message;
-    }
-
-    private static T? FindNamedVisual<T>(DependencyObject parent, string name) where T : FrameworkElement
-    {
-        foreach (var item in FindVisualChildren<T>(parent))
-        {
-            if (string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase)) return item;
-        }
-        return null;
     }
 
     private static System.Collections.Generic.IEnumerable<T> FindVisualChildren<T>(DependencyObject parent) where T : DependencyObject

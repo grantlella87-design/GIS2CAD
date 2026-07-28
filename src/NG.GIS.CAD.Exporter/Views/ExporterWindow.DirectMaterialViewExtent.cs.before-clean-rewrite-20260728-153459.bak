@@ -1,8 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Net.Http;
+using System.Linq;`r`nusing System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -20,7 +19,6 @@ public partial class ExporterWindow
 {
     private DispatcherTimer? _directMaterialViewRetryTimer;
     private int _directMaterialViewRetryCount;
-    private bool _directPortalDiagnosticDone;
     private const string DirectMaterialViewMapServerUrl = "https://gis.nationalgrid.com/arcgis/rest/services/MA/Material_View_MA/MapServer";
     private const string DirectMaterialViewPortalItemId = "c214d72caefb40699b129bc47b1b22a7";
 
@@ -54,12 +52,7 @@ public partial class ExporterWindow
                 return;
             }
             var token = await DirectGetArcGisPortalTokenAsync();
-            if (!_directPortalDiagnosticDone)
-            {
-                _directPortalDiagnosticDone = true;
-                await DirectProbePortalItemAsync(token);
-            }
-            var securedUrl = DirectAppendToken(DirectMaterialViewMapServerUrl, token);
+            var securedUrl = DirectAppendToken(DirectMaterialViewMapServerUrl, token);`r`n            await DirectProbePortalItemAsync(token);
             foreach (var mapView in mapViews)
             {
                 if (mapView.Map == null) mapView.Map = new Map(BasemapStyle.ArcGISTopographic);
@@ -86,38 +79,6 @@ public partial class ExporterWindow
         catch (Exception ex)
         {
             DirectAppendStatus("Material_View_MA token/load failed: " + ex.GetType().Name + ": " + ex.Message);
-        }
-    }
-
-    private async Task DirectProbePortalItemAsync(string? token)
-    {
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            DirectAppendStatus("Portal item diagnostic skipped: no ArcGIS token was available.");
-            return;
-        }
-        try
-        {
-            using var http = new HttpClient();
-            var url = "https://gis.nationalgrid.com/portal/sharing/rest/content/items/" + DirectMaterialViewPortalItemId + "?f=json&token=" + Uri.EscapeDataString(token);
-            var json = await http.GetStringAsync(url);
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("error", out var error))
-            {
-                var code = error.TryGetProperty("code", out var c) ? c.ToString() : "unknown";
-                var message = error.TryGetProperty("message", out var m) ? m.GetString() : "unknown";
-                DirectAppendStatus("Portal item diagnostic failed: code " + code + "; " + message + ".");
-                return;
-            }
-            var type = root.TryGetProperty("type", out var typeEl) ? typeEl.GetString() ?? "unknown" : "unknown";
-            var title = root.TryGetProperty("title", out var titleEl) ? titleEl.GetString() ?? "unknown" : "unknown";
-            var itemUrl = root.TryGetProperty("url", out var urlEl) ? urlEl.GetString() ?? string.Empty : string.Empty;
-            DirectAppendStatus("Portal item diagnostic: item reachable. Type=" + type + "; title=" + title + "; url=" + itemUrl + ". Runtime is loading Material_View_MA from REST MapServer fallback.");
-        }
-        catch (Exception ex)
-        {
-            DirectAppendStatus("Portal item diagnostic exception: " + ex.GetType().Name + ": " + ex.Message);
         }
     }
 
@@ -153,8 +114,7 @@ public partial class ExporterWindow
             object? value = null;
             try { value = prop.GetValue(obj); } catch { }
             if (value is string text && prop.Name.Contains("Token", StringComparison.OrdinalIgnoreCase) && DirectLooksLikeArcGisToken(text)) yield return text;
-            var typeName = prop.PropertyType.FullName ?? string.Empty;
-            if (depth < 2 && value != null && !typeName.StartsWith("System.Windows", StringComparison.OrdinalIgnoreCase))
+            if (depth < 2 && value != null && !(prop.PropertyType.FullName ?? string.Empty).StartsWith("System.Windows", StringComparison.OrdinalIgnoreCase))
             {
                 foreach (var token in DirectCollectTokensFromObject(value, visited, depth + 1)) yield return token;
             }
@@ -164,11 +124,16 @@ public partial class ExporterWindow
             object? value = null;
             try { value = field.GetValue(obj); } catch { }
             if (value is string text && field.Name.Contains("Token", StringComparison.OrdinalIgnoreCase) && DirectLooksLikeArcGisToken(text)) yield return text;
-            var typeName = field.FieldType.FullName ?? string.Empty;
-            if (depth < 2 && value != null && !typeName.StartsWith("System.Windows", StringComparison.OrdinalIgnoreCase))
+            if (depth < 2 && value != null && !(field.FieldType.FullName ?? string.Empty).StartsWith("System.Windows", StringComparison.OrdinalIgnoreCase))
             {
                 foreach (var token in DirectCollectTokensFromObject(value, visited, depth + 1)) yield return token;
             }
+        }
+        foreach (var method in type.GetMethods(flags).Where(m => m.GetParameters().Length == 0 && m.Name.Contains("Token", StringComparison.OrdinalIgnoreCase)))
+        {
+            object? result = null;
+            try { result = method.Invoke(obj, null); } catch { }
+            if (result is string text && DirectLooksLikeArcGisToken(text)) yield return text;
         }
     }
 
@@ -240,10 +205,7 @@ public partial class ExporterWindow
         if (string.IsNullOrWhiteSpace(token)) return false;
         if (token.Length < 20) return false;
         if (token.Contains(" ")) return false;
-        if (token.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return false;
-        if (token.Contains("System.", StringComparison.OrdinalIgnoreCase)) return false;
-        if (token.Contains("Windows", StringComparison.OrdinalIgnoreCase)) return false;
-        return System.Text.RegularExpressions.Regex.IsMatch(token, "^[A-Za-z0-9_\\-\\.]+$");
+        if (token.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return false; if (token.Contains("System.", StringComparison.OrdinalIgnoreCase)) return false; if (token.Contains("Windows", StringComparison.OrdinalIgnoreCase)) return false; return System.Text.RegularExpressions.Regex.IsMatch(token, "^[A-Za-z0-9_\\-\\.]+$");
     }
 
     private static string DirectAppendToken(string url, string? token)
@@ -300,5 +262,36 @@ public partial class ExporterWindow
             }
         }
         catch { }
+    }
+    private async Task DirectProbePortalItemAsync(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            DirectAppendStatus("Portal item diagnostic skipped: no ArcGIS token was available.");
+            return;
+        }
+        try
+        {
+            using var http = new HttpClient();
+            var url = "https://gis.nationalgrid.com/portal/sharing/rest/content/items/" + DirectMaterialViewPortalItemId + "?f=json&token=" + Uri.EscapeDataString(token);
+            var json = await http.GetStringAsync(url);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("error", out var error))
+            {
+                var code = error.TryGetProperty("code", out var c) ? c.ToString() : "unknown";
+                var message = error.TryGetProperty("message", out var m) ? m.GetString() : "unknown";
+                DirectAppendStatus("Portal item diagnostic failed: code " + code + "; " + message + ".");
+                return;
+            }
+            var type = root.TryGetProperty("type", out var typeEl) ? typeEl.GetString() ?? "unknown" : "unknown";
+            var title = root.TryGetProperty("title", out var titleEl) ? titleEl.GetString() ?? "unknown" : "unknown";
+            var urlValue = root.TryGetProperty("url", out var urlEl) ? urlEl.GetString() ?? "" : "";
+            DirectAppendStatus("Portal item diagnostic: item reachable. Type=" + type + "; title=" + title + "; url=" + urlValue + ". Runtime is loading Material_View_MA from REST MapServer fallback.");
+        }
+        catch (Exception ex)
+        {
+            DirectAppendStatus("Portal item diagnostic exception: " + ex.GetType().Name + ": " + ex.Message);
+        }
     }
 }
