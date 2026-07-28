@@ -45,8 +45,8 @@ public partial class ExporterWindow : Window
         // NGGIS_ARCGIS_RUNTIME_BOOTSTRAP
             NG.GIS.CAD.Exporter.Services.ArcGisRuntimeBootstrap.Initialize();
             InitializeComponent();
-            // NGGIS_FINAL_NGODS_AND_MATERIAL_VIEW
-            InstallFinalNgOdsAndMaterialViewFlow();
+            // NGGIS_NGODS_FIRST_AND_MATERIAL_VIEW_LAYERS_FORCE
+            InstallNggisMaterialViewLayerFlow();
 _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _extentRefreshTimer.Tick += (_, _) =>
         {
