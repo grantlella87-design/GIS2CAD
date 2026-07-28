@@ -45,7 +45,7 @@ public partial class ExporterWindow : Window
         // NGGIS_ARCGIS_RUNTIME_BOOTSTRAP
             NG.GIS.CAD.Exporter.Services.ArcGisRuntimeBootstrap.Initialize();
             InitializeComponent();
-            // NGGIS_SHAREPOINT_DWT_FIRST_PAGE_SECTION
+            // NGGIS_SHAREPOINT_DWT_BROWSER_SECTION
             InstallSharePointDwtTemplateSection();
 _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _extentRefreshTimer.Tick += (_, _) =>

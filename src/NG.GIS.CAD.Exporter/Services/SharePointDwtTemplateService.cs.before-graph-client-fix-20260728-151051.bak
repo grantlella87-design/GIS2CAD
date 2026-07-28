@@ -13,7 +13,7 @@ namespace NG.GIS.CAD.Exporter.Services;
 
 internal sealed class SharePointDwtTemplateService
 {
-    private const string ClientId = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
+    private const string ClientId = "48XCGWtLoUxA3klq";
     private static readonly string[] Scopes = new[] { "User.Read", "Sites.ReadWrite.All", "Files.ReadWrite.All" };
     private const string TenantId = "f98a6a53-25f3-4212-901c-c7787fcd3495";
     private const string GraphRoot = "https://graph.microsoft.com/v1.0";
@@ -25,7 +25,7 @@ internal sealed class SharePointDwtTemplateService
         _app = PublicClientApplicationBuilder
             .Create(ClientId)
             .WithTenantId(TenantId)
-            .WithRedirectUri("http://localhost")
+            .WithDefaultRedirectUri()
             .Build();
     }
 
