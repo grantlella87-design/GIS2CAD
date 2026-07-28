@@ -20,7 +20,5 @@
                          "serviceUrl":  "https://gis.nationalgrid.com/arcgis/rest/services/MA/Material_View_MA/MapServer",
                          "enabled":  true
                      }
-                 ],
-    "page2WebMapItemId":  "c214d72caefb40699b129bc47b1b22a7",
-    "page2WebMapUrl":  "https://gis.nationalgrid.com/portal/home/webmap/viewer.html?webmap=c214d72caefb40699b129bc47b1b22a7"
+                 ]
 }
