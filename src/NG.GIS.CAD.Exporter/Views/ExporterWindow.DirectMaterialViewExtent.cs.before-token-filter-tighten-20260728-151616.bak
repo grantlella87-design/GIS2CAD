@@ -205,7 +205,8 @@ public partial class ExporterWindow
         if (string.IsNullOrWhiteSpace(token)) return false;
         if (token.Length < 20) return false;
         if (token.Contains(" ")) return false;
-        if (token.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return false; if (token.Contains("System.", StringComparison.OrdinalIgnoreCase)) return false; if (token.Contains("Windows", StringComparison.OrdinalIgnoreCase)) return false; return System.Text.RegularExpressions.Regex.IsMatch(token, "^[A-Za-z0-9_\\-\\.]+$");
+        if (token.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return false;
+        return true;
     }
 
     private static string DirectAppendToken(string url, string? token)

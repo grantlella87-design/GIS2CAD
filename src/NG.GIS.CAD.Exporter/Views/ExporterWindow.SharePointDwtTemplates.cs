@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -12,92 +13,101 @@ namespace NG.GIS.CAD.Exporter.Views;
 public partial class ExporterWindow
 {
     private bool _sharePointDwtSectionInstalled;
-    private ListBox? _sharePointDwtList;
+    private ComboBox? _sharePointDwtCombo;
     private TextBlock? _sharePointDwtStatus;
     private SharePointDwtTemplateService? _sharePointDwtService;
+    private string? _selectedDwtPath;
 
     private void InstallSharePointDwtTemplateSection()
     {
         if (_sharePointDwtSectionInstalled) return;
         _sharePointDwtSectionInstalled = true;
-        Loaded += (_, __) => AddSharePointDwtSectionToFirstPagePane();
-        AddHandler(ButtonBase.ClickEvent, new RoutedEventHandler((_, __) => Dispatcher.BeginInvoke(new Action(AddSharePointDwtSectionToFirstPagePane))), true);
+        Loaded += (_, __) => AddCompactDwtSectionToPage1Only();
+        AddHandler(ButtonBase.ClickEvent, new RoutedEventHandler((_, __) => Dispatcher.BeginInvoke(new Action(AddCompactDwtSectionToPage1Only))), true);
     }
 
-    private void AddSharePointDwtSectionToFirstPagePane()
+    private void AddCompactDwtSectionToPage1Only()
     {
         try
         {
             if (FindName("SharePointDwtSectionRoot") is FrameworkElement) return;
-            var targetPanel = FindBestFirstPagePanel();
-            if (targetPanel == null) return;
-            var root = BuildSharePointDwtSection();
-            var insertAt = Math.Min(2, targetPanel.Children.Count);
-            targetPanel.Children.Insert(insertAt, root);
+            if (!IsPage1Visible()) return;
+            var panel = FindPage1NgOdsPanel();
+            if (panel == null) return;
+            var root = new StackPanel { Name = "SharePointDwtSectionRoot", Margin = new Thickness(0, 8, 0, 8) };
+            root.Children.Add(new TextBlock { Text = "CAD template (.dwt)", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 3) });
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            var browseGraph = new Button { Content = "SharePoint", Width = 86, Margin = new Thickness(0, 0, 5, 0) };
+            browseGraph.Click += async (_, __) => await BrowseSharePointDwtTemplatesAsync();
+            var browseLocal = new Button { Content = "Pick local/synced .dwt", Width = 145, Margin = new Thickness(0, 0, 5, 0) };
+            browseLocal.Click += (_, __) => PickLocalDwt();
+            _sharePointDwtCombo = new ComboBox { Width = 260, Height = 24, Margin = new Thickness(0, 0, 5, 0) };
+            var open = new Button { Content = "Download/Open", Width = 110 };
+            open.Click += async (_, __) => await DownloadAndOpenSelectedDwtAsync();
+            row.Children.Add(browseGraph);
+            row.Children.Add(browseLocal);
+            row.Children.Add(_sharePointDwtCombo);
+            row.Children.Add(open);
+            root.Children.Add(row);
+            _sharePointDwtStatus = new TextBlock { Text = "Optional universal template for all export methods.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 0) };
+            root.Children.Add(_sharePointDwtStatus);
+            var insertAt = Math.Min(panel.Children.Count, 7);
+            panel.Children.Insert(insertAt, root);
         }
         catch { }
     }
 
-    private FrameworkElement BuildSharePointDwtSection()
+    private bool IsPage1Visible()
     {
-        var root = new Border
-        {
-            Name = "SharePointDwtSectionRoot",
-            BorderBrush = Brushes.LightGray,
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(8),
-            Margin = new Thickness(0, 8, 0, 10)
-        };
-        var panel = new StackPanel();
-        root.Child = panel;
-        panel.Children.Add(new TextBlock { Text = "SharePoint CAD templates (.dwt)", FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 5) });
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 5) };
-        var browse = new Button { Content = "Browse .dwt", Width = 105, Margin = new Thickness(0, 0, 6, 0) };
-        browse.Click += async (_, __) => await BrowseSharePointDwtTemplatesAsync();
-        var open = new Button { Content = "Download + Open", Width = 130 };
-        open.Click += async (_, __) => await DownloadAndOpenSelectedDwtAsync();
-        row.Children.Add(browse);
-        row.Children.Add(open);
-        panel.Children.Add(row);
-        _sharePointDwtList = new ListBox { Height = 85, Margin = new Thickness(0, 0, 0, 5) };
-        panel.Children.Add(_sharePointDwtList);
-        _sharePointDwtStatus = new TextBlock { Text = "Browse SharePoint templates once, then use the selected .dwt across any import method.", TextWrapping = TextWrapping.Wrap };
-        panel.Children.Add(_sharePointDwtStatus);
-        return root;
+        var text = string.Join(" ", FindVisualChildren<TextBlock>(this).Select(t => t.Text).Concat(FindVisualChildren<RadioButton>(this).Select(r => r.Content?.ToString() ?? string.Empty)));
+        return text.Contains("1. Export Method") || text.Contains("Export method") || text.Contains("Work order lookup from NG_ODS");
     }
 
-    private Panel? FindBestFirstPagePanel()
+    private Panel? FindPage1NgOdsPanel()
     {
         var panels = FindVisualChildren<Panel>(this).Where(p => p.Children.Count > 0).ToList();
-        var pageOnePanel = panels.FirstOrDefault(p => FindVisualText(p).Contains("1.") || FindVisualText(p).Contains("Work Order") || FindVisualText(p).Contains("Manual proposed"));
-        if (pageOnePanel != null) return pageOnePanel;
-        var proofBox = FindName("WorkOrderGeometryTextBox") as TextBox;
-        if (proofBox?.Parent is Panel proofPanel) return proofPanel;
-        return panels.FirstOrDefault();
+        return panels.FirstOrDefault(p => FindPanelText(p).Contains("Work order lookup from NG_ODS"))
+            ?? panels.FirstOrDefault(p => FindPanelText(p).Contains("Export method"))
+            ?? panels.OrderByDescending(p => p.Children.Count).FirstOrDefault();
     }
 
-    private static string FindVisualText(DependencyObject parent)
+    private static string FindPanelText(DependencyObject parent)
     {
-        return string.Join(" ", FindVisualChildren<TextBlock>(parent).Select(t => t.Text).Concat(FindVisualChildren<Button>(parent).Select(b => b.Content?.ToString() ?? string.Empty)).Where(s => !string.IsNullOrWhiteSpace(s)));
+        return string.Join(" ", FindVisualChildren<TextBlock>(parent).Select(t => t.Text).Concat(FindVisualChildren<RadioButton>(parent).Select(r => r.Content?.ToString() ?? string.Empty)).Where(s => !string.IsNullOrWhiteSpace(s)));
     }
 
     private async Task BrowseSharePointDwtTemplatesAsync()
     {
         try
         {
-            SetSharePointDwtStatus("Connecting to Microsoft Graph and loading .dwt templates...");
+            SetSharePointDwtStatus("Loading SharePoint .dwt templates...");
             _sharePointDwtService ??= new SharePointDwtTemplateService();
             var items = await _sharePointDwtService.ListDefaultTemplatesAsync();
-            if (_sharePointDwtList != null)
+            if (_sharePointDwtCombo != null)
             {
-                _sharePointDwtList.ItemsSource = items;
-                if (items.Count > 0) _sharePointDwtList.SelectedIndex = 0;
+                _sharePointDwtCombo.ItemsSource = items;
+                if (items.Count > 0) _sharePointDwtCombo.SelectedIndex = 0;
             }
-            SetSharePointDwtStatus(items.Count == 0 ? "No .dwt files found in the default SharePoint template folder." : "Loaded " + items.Count + " .dwt template(s) from SharePoint.");
+            SetSharePointDwtStatus(items.Count == 0 ? "No .dwt files found in default SharePoint folder." : "Loaded " + items.Count + " SharePoint .dwt template(s).");
         }
         catch (Exception ex)
         {
-            SetSharePointDwtStatus("SharePoint .dwt browse failed: " + ex.GetType().Name + ": " + ex.Message);
+            SetSharePointDwtStatus("SharePoint browse failed. Use local/synced picker. " + ex.GetType().Name + ": " + ex.Message);
+        }
+    }
+
+    private void PickLocalDwt()
+    {
+        var dialog = new OpenFileDialog { Filter = "AutoCAD template (*.dwt)|*.dwt", Title = "Select CAD template (.dwt)" };
+        if (dialog.ShowDialog() == true)
+        {
+            _selectedDwtPath = dialog.FileName;
+            if (_sharePointDwtCombo != null)
+            {
+                _sharePointDwtCombo.ItemsSource = new[] { dialog.FileName };
+                _sharePointDwtCombo.SelectedIndex = 0;
+            }
+            SetSharePointDwtStatus("Selected local/synced template: " + dialog.FileName);
         }
     }
 
@@ -105,7 +115,13 @@ public partial class ExporterWindow
     {
         try
         {
-            if (_sharePointDwtList?.SelectedItem is not SharePointDwtTemplateItem item)
+            if (!string.IsNullOrWhiteSpace(_selectedDwtPath))
+            {
+                SharePointDwtTemplateService.OpenTemplatePath(_selectedDwtPath);
+                SetSharePointDwtStatus("Opened template: " + _selectedDwtPath);
+                return;
+            }
+            if (_sharePointDwtCombo?.SelectedItem is not SharePointDwtTemplateItem item)
             {
                 SetSharePointDwtStatus("Select a .dwt template first.");
                 return;
@@ -114,11 +130,11 @@ public partial class ExporterWindow
             SetSharePointDwtStatus("Downloading " + item.Name + "...");
             var path = await _sharePointDwtService.DownloadTemplateAsync(item);
             SharePointDwtTemplateService.OpenTemplatePath(path);
-            SetSharePointDwtStatus("Downloaded and opened template: " + path);
+            SetSharePointDwtStatus("Downloaded/opened template: " + path);
         }
         catch (Exception ex)
         {
-            SetSharePointDwtStatus("SharePoint .dwt download/open failed: " + ex.GetType().Name + ": " + ex.Message);
+            SetSharePointDwtStatus("Template open failed: " + ex.GetType().Name + ": " + ex.Message);
         }
     }
 

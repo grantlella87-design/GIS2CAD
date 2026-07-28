@@ -14,25 +14,35 @@ namespace NG.GIS.CAD.Exporter.Services;
 internal sealed class SharePointDwtTemplateService
 {
     private const string ClientId = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
+    private static readonly string[] Scopes = new[] { "User.Read", "Sites.ReadWrite.All", "Files.ReadWrite.All" };
     private const string TenantId = "f98a6a53-25f3-4212-901c-c7787fcd3495";
     private const string GraphRoot = "https://graph.microsoft.com/v1.0";
-    private const string DefaultDriveId = "b!oQf4lQnCX0qt-hTuSFmXrP4QVHfYL_1Mo26SJGoClkz_SltDsJ3rT4gTLzMV1xCP";
-    private const string DefaultFolderPath = "Boston Cape Gas Dist Eng Design/CAD Template/Template - BOSTON TEAM";
-    private static readonly string[] Scopes = new[] { "User.Read", "Files.Read.All" };
     private readonly IPublicClientApplication _app;
     private readonly HttpClient _http = new HttpClient();
 
     internal SharePointDwtTemplateService()
     {
-        _app = PublicClientApplicationBuilder.Create(ClientId).WithTenantId(TenantId).WithRedirectUri("http://localhost").Build();
+        _app = PublicClientApplicationBuilder
+            .Create(ClientId)
+            .WithTenantId(TenantId)
+            .WithRedirectUri("http://localhost")
+            .Build();
     }
 
     internal async Task<IReadOnlyList<SharePointDwtTemplateItem>> ListDefaultTemplatesAsync()
     {
         var token = await GetAccessTokenAsync();
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var site = await GetJsonAsync("/sites/nationalgridplc.sharepoint.com:/sites/GRP-INT-US-GasSystemEngineering");
+        var siteId = site.RootElement.GetProperty("id").GetString() ?? throw new InvalidOperationException("Graph site id was empty.");
+        var drives = await GetJsonAsync("/sites/" + Uri.EscapeDataString(siteId) + "/drives");
+        var drive = drives.RootElement.GetProperty("value").EnumerateArray()
+            .FirstOrDefault(d => string.Equals(d.GetProperty("name").GetString(), "Shared Documents", StringComparison.OrdinalIgnoreCase));
+        if (drive.ValueKind == JsonValueKind.Undefined) throw new InvalidOperationException("Shared Documents drive was not found.");
+        var driveId = drive.GetProperty("id").GetString() ?? throw new InvalidOperationException("Shared Documents drive id was empty.");
+        var folderPath = "Boston Cape Gas Dist Eng Design/CAD Template/Template - BOSTON TEAM";
         var list = new List<SharePointDwtTemplateItem>();
-        await AddTemplatesFromFolderAsync(DefaultDriveId, DefaultFolderPath, list);
+        await AddTemplatesFromFolderAsync(driveId, folderPath, list);
         return list.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
@@ -72,11 +82,18 @@ internal sealed class SharePointDwtTemplateService
                 continue;
             }
             if (!name.EndsWith(".dwt", StringComparison.OrdinalIgnoreCase)) continue;
-            list.Add(new SharePointDwtTemplateItem(driveId, child.GetProperty("id").GetString() ?? string.Empty, name, child.TryGetProperty("webUrl", out var webUrl) ? webUrl.GetString() ?? string.Empty : string.Empty));
+            list.Add(new SharePointDwtTemplateItem(
+                driveId,
+                child.GetProperty("id").GetString() ?? string.Empty,
+                name,
+                child.TryGetProperty("webUrl", out var webUrl) ? webUrl.GetString() ?? string.Empty : string.Empty));
         }
     }
 
-    private static string EscapePath(string path) => string.Join("/", path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries).Select(Uri.EscapeDataString));
+    private static string EscapePath(string path)
+    {
+        return string.Join("/", path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries).Select(Uri.EscapeDataString));
+    }
 
     private async Task<JsonDocument> GetJsonAsync(string graphPath)
     {
@@ -90,8 +107,16 @@ internal sealed class SharePointDwtTemplateService
     private async Task<string> GetAccessTokenAsync()
     {
         var accounts = await _app.GetAccountsAsync();
-        try { return (await _app.AcquireTokenSilent(Scopes, accounts.FirstOrDefault()).ExecuteAsync()).AccessToken; }
-        catch { return (await _app.AcquireTokenInteractive(Scopes).WithUseEmbeddedWebView(false).ExecuteAsync()).AccessToken; }
+        try
+        {
+            var silent = await _app.AcquireTokenSilent(Scopes, accounts.FirstOrDefault()).ExecuteAsync();
+            return silent.AccessToken;
+        }
+        catch
+        {
+            var interactive = await _app.AcquireTokenInteractive(Scopes).WithUseEmbeddedWebView(false).ExecuteAsync();
+            return interactive.AccessToken;
+        }
     }
 }
 
