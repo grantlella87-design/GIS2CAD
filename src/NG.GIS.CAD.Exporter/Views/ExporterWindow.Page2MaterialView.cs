@@ -7,98 +7,81 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Esri.ArcGISRuntime.Mapping;
+using Esri.ArcGISRuntime.Portal;
 using Esri.ArcGISRuntime.UI.Controls;
 
 namespace NG.GIS.CAD.Exporter.Views;
 
 public partial class ExporterWindow
 {
-    private bool _page2MaterialViewAutoloadInstalled;
-    private DispatcherTimer? _page2MaterialViewRetryTimer;
-    private int _page2MaterialViewRetryCount;
-    private const string Page2MaterialViewServiceUrl = "https://gis.nationalgrid.com/arcgis/rest/services/MA/Material_View_MA/MapServer";
-    private const string Page2MaterialViewWebMapItemId = "c214d72caefb40699b129bc47b1b22a7";
+    private bool _page2WebMapAutoloadInstalled;
+    private DispatcherTimer? _page2WebMapRetryTimer;
+    private int _page2WebMapRetryCount;
+    private const string Page2PortalRootUrl = "https://gis.nationalgrid.com/portal";
+    private const string Page2GasMaterialViewWebMapItemId = "c214d72caefb40699b129bc47b1b22a7";
 
     private void InstallPage2MaterialViewAutoload()
     {
-        if (_page2MaterialViewAutoloadInstalled) return;
-        _page2MaterialViewAutoloadInstalled = true;
-        Loaded += async (_, __) => await EnsurePage2MaterialViewLoadedAsync("window loaded");
-        AddHandler(ButtonBase.ClickEvent, new RoutedEventHandler((_, __) => SchedulePage2MaterialViewRetries("button action")), true);
-        SchedulePage2MaterialViewRetries("install");
+        if (_page2WebMapAutoloadInstalled) return;
+        _page2WebMapAutoloadInstalled = true;
+        Loaded += async (_, __) => await EnsureGasMaterialViewWebMapLoadedAsync("window loaded");
+        AddHandler(ButtonBase.ClickEvent, new RoutedEventHandler((_, __) => ScheduleGasMaterialViewWebMapRetries("button action")), true);
+        ScheduleGasMaterialViewWebMapRetries("install");
     }
 
-    private void SchedulePage2MaterialViewRetries(string reason)
+    private void ScheduleGasMaterialViewWebMapRetries(string reason)
     {
-        _page2MaterialViewRetryCount = 0;
-        if (_page2MaterialViewRetryTimer == null)
+        _page2WebMapRetryCount = 0;
+        if (_page2WebMapRetryTimer == null)
         {
-            _page2MaterialViewRetryTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
+            _page2WebMapRetryTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
             {
-                Interval = TimeSpan.FromMilliseconds(700)
+                Interval = TimeSpan.FromMilliseconds(800)
             };
-            _page2MaterialViewRetryTimer.Tick += async (_, __) =>
+            _page2WebMapRetryTimer.Tick += async (_, __) =>
             {
-                _page2MaterialViewRetryCount++;
-                await EnsurePage2MaterialViewLoadedAsync("retry " + _page2MaterialViewRetryCount);
-                if (_page2MaterialViewRetryCount >= 12)
+                _page2WebMapRetryCount++;
+                await EnsureGasMaterialViewWebMapLoadedAsync("retry " + _page2WebMapRetryCount);
+                if (_page2WebMapRetryCount >= 15)
                 {
-                    _page2MaterialViewRetryTimer.Stop();
+                    _page2WebMapRetryTimer.Stop();
                 }
             };
         }
-        _page2MaterialViewRetryTimer.Stop();
-        _page2MaterialViewRetryTimer.Start();
-        _ = Dispatcher.BeginInvoke(async () => await EnsurePage2MaterialViewLoadedAsync(reason), DispatcherPriority.Loaded);
+        _page2WebMapRetryTimer.Stop();
+        _page2WebMapRetryTimer.Start();
+        _ = Dispatcher.BeginInvoke(async () => await EnsureGasMaterialViewWebMapLoadedAsync(reason), DispatcherPriority.Loaded);
     }
 
-    private async Task EnsurePage2MaterialViewLoadedAsync(string reason = "manual")
+    private async Task EnsureGasMaterialViewWebMapLoadedAsync(string reason = "manual")
     {
         try
         {
-            var mapView = FindPage2MaterialViewChild<MapView>(this);
+            var mapView = FindPage2GasMaterialViewChild<MapView>(this);
             if (mapView == null)
             {
-                AppendPage2MaterialViewStatus("Material_View_MA not loaded yet: no ArcGIS MapView found (" + reason + ").");
+                AppendPage2MaterialViewStatus("GasMaterialView_MA webmap not loaded yet: no ArcGIS MapView found (" + reason + ").");
                 return;
             }
-            if (mapView.Map == null)
+            var currentItemId = mapView.Map?.Item?.ItemId;
+            if (string.Equals(currentItemId, Page2GasMaterialViewWebMapItemId, StringComparison.OrdinalIgnoreCase))
             {
-                mapView.Map = new Map();
-            }
-            var existing = mapView.Map.OperationalLayers.FirstOrDefault(l => string.Equals(l.Name, "Material_View_MA", StringComparison.OrdinalIgnoreCase));
-            if (existing != null)
-            {
-                existing.IsVisible = true;
                 return;
             }
-            var materialLayer = new ArcGISMapImageLayer(new Uri(Page2MaterialViewServiceUrl))
-            {
-                Name = "Material_View_MA",
-                IsVisible = true
-            };
-            mapView.Map.OperationalLayers.Insert(0, materialLayer);
-            await materialLayer.LoadAsync();
-            if (materialLayer.LoadStatus == Esri.ArcGISRuntime.LoadStatus.Loaded)
-            {
-                if (materialLayer.FullExtent != null)
-                {
-                    await mapView.SetViewpointGeometryAsync(materialLayer.FullExtent, 250);
-                }
-                AppendPage2MaterialViewStatus("Material_View_MA loaded on Page 2 (" + reason + ") from webmap item " + Page2MaterialViewWebMapItemId + ". Operational layer count: " + mapView.Map.OperationalLayers.Count + ".");
-            }
-            else if (materialLayer.LoadError != null)
-            {
-                AppendPage2MaterialViewStatus("Material_View_MA load error: " + materialLayer.LoadError.GetType().Name + ": " + materialLayer.LoadError.Message);
-            }
+            var portal = await ArcGISPortal.CreateAsync(new Uri(Page2PortalRootUrl));
+            var item = await PortalItem.CreateAsync(portal, Page2GasMaterialViewWebMapItemId);
+            var webMap = new Map(item);
+            mapView.Map = webMap;
+            await webMap.LoadAsync();
+            AppendPage2MaterialViewStatus("GasMaterialView_MA webmap loaded on Page 2 (" + reason + "). Operational layer count: " + webMap.OperationalLayers.Count + ".");
         }
         catch (Exception ex)
         {
-            AppendPage2MaterialViewStatus("Material_View_MA Page 2 load failed: " + ex.GetType().Name + ": " + ex.Message);
+            AppendPage2MaterialViewStatus("GasMaterialView_MA webmap load failed: " + ex.GetType().Name + ": " + ex.Message);
         }
     }
 
-    private static T? FindPage2MaterialViewChild<T>(DependencyObject parent) where T : DependencyObject
+    private static T? FindPage2GasMaterialViewChild<T>(DependencyObject parent) where T : DependencyObject
     {
         if (parent == null) return null;
         var count = VisualTreeHelper.GetChildrenCount(parent);
@@ -106,7 +89,7 @@ public partial class ExporterWindow
         {
             var child = VisualTreeHelper.GetChild(parent, i);
             if (child is T typed) return typed;
-            var nested = FindPage2MaterialViewChild<T>(child);
+            var nested = FindPage2GasMaterialViewChild<T>(child);
             if (nested != null) return nested;
         }
         return null;

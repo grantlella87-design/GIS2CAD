@@ -47,8 +47,11 @@ public partial class ExporterWindow : Window
             InitializeComponent();
             // NGGIS_PAGE2_GAS_MATERIAL_VIEW_WEBMAP_AUTOLOAD
             InstallPage2MaterialViewAutoload();
+            // NGGIS_PAGE2_MATERIAL_VIEW_MA_READD_AFTER_MAP_RESET
             InstallPage2MaterialViewAutoload();
-_extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            // NGGIS_PAGE2_MATERIAL_VIEW_MA_VISUALTREE_AUTOLOAD
+            Loaded += async (_, __) => await EnsurePage2MaterialViewLoadedAsync();
+        _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _extentRefreshTimer.Tick += (_, _) =>
         {
             _extentRefreshTimer.Stop();
