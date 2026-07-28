@@ -31,8 +31,7 @@
                     <TextBox x:Name="WorkOrderPaddingTextBox" Text="{Binding PaddingFeet, UpdateSourceTrigger=PropertyChanged}" TextChanged="PaddingInput_TextChanged" Margin="0,0,0,12"/>
                     <TextBlock Text="The full NG_ODS work order query loads once when this page opens, then both dropdowns filter locally. Selecting either Work Order Number or Work Order Name updates the other dropdown from the same NG_ODS row." TextWrapping="Wrap" Foreground="#555555"/>
                 </StackPanel>
-            </Grid>
-                        <Grid x:Name="ExtentPage" Visibility="Collapsed" IsVisibleChanged="ExtentPage_IsVisibleChanged">
+            </Grid><Grid x:Name="ExtentPage" Visibility="Collapsed" IsVisibleChanged="ExtentPage_IsVisibleChanged">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="420"/>
                     <ColumnDefinition Width="10"/>
@@ -48,12 +47,11 @@
                             <Button Content="Cancel Edit" Click="CancelImportedProposedMainEdit_Click" Padding="8" Margin="4,0,0,0"/>
                         </UniformGrid>                        <TextBlock Text="Manual proposed pipeline segments" FontWeight="Bold" Margin="0,8,0,6"/>
                         <UniformGrid Columns="4" Margin="0,0,0,10">
-                        <Button Content="Start Segment" Click="StartManualProposedMainSegment_Click" Padding="8" Margin="0,0,4,0"/>
+                        <Button Content="Start Segment" Click="StartManualProposedMainSegment_Click" Padding="8" Margin="0,0,4,0"/>0"/>
                             <Button Content="Apply Segment" Click="ApplyManualProposedMainSegment_Click" Padding="8" Margin="4,0,4,0"/>
-                        <Button Content="Finish Segments" Click="FinishManualProposedMainSegments_Click" Padding="8" Margin="4,0,4,0"/>
+                        <Button Content="Finish Segments" Click="FinishManualProposedMainSegments_Click" Padding="8" Margin="4,0,4,0"/>0"/>
                             <Button Content="Clear Segments" Click="ClearManualProposedMainSegments_Click" Padding="8" Margin="4,0,0,0"/>
-                        </UniformGrid>
-                        <TextBlock Text="Work order geometry/buffer proof" FontWeight="Bold" Margin="0,10,0,6"/>
+                        </UniformGrid><TextBlock Text="Work order geometry/buffer proof" FontWeight="Bold" Margin="0,10,0,6"/>
                         <TextBox x:Name="WorkOrderGeometryTextBox" IsReadOnly="True" TextWrapping="Wrap" MinHeight="170" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12" Margin="0,0,0,16"/>
                         <TextBlock Text="This view is controlled by the first page. Change WO number, padding, or method on page 1." TextWrapping="Wrap" Foreground="#555555"/>
                     </StackPanel>
@@ -93,8 +91,7 @@
                         <ContentControl x:Name="ArcGisMapHost"/>
                     </Border>
                 </Grid>
-            </Grid>
-                        <Grid x:Name="LayerPage" Visibility="Collapsed">
+            </Grid><Grid x:Name="LayerPage" Visibility="Collapsed">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="430"/>
                     <ColumnDefinition Width="10"/>

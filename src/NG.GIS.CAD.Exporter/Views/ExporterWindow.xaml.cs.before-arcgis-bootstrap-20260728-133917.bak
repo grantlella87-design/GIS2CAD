@@ -42,9 +42,7 @@ public partial class ExporterWindow : Window
     private Geometry? _proposedPipelineGeometry;
     public ExporterWindow()
     {
-        // NGGIS_ARCGIS_RUNTIME_BOOTSTRAP
-            NG.GIS.CAD.Exporter.Services.ArcGisRuntimeBootstrap.Initialize();
-            InitializeComponent();
+        InitializeComponent();
         _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _extentRefreshTimer.Tick += (_, _) =>
         {
