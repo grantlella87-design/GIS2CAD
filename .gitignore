@@ -1,0 +1,23 @@
+﻿## Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+## Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Packages / caches
+packages/
+*.nupkg
+.nuget/
+
+## Local secrets / tokens (do not commit)
+*.pat
+appsettings.*.json

@@ -1,0 +1,24 @@
+{
+  "profileName": "National Grid GIS CAD Export Starter",
+  "portalRootUrl": "https://gis.nationalgrid.com",
+  "defaultOutputSpatialReferenceWkid": 2249,
+  "request": {
+    "objectIdBatchSize": 500,
+    "maxConcurrentLayers": 4,
+    "returnZ": false,
+    "returnM": false,
+    "geometryPrecision": null
+  },
+  "services": [
+    {
+      "serviceName": "GasNetwork_NY",
+      "serviceUrl": "https://gis.nationalgrid.com/un/rest/services/GasNetwork_NY/FeatureServer",
+      "enabled": true
+    },
+    {
+      "serviceName": "Material_View_MA",
+      "serviceUrl": "https://gis.nationalgrid.com/arcgis/rest/services/MA/Material_View_MA/MapServer",
+      "enabled": false
+    }
+  ]
+}

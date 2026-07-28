@@ -1,0 +1,5 @@
+﻿<Project>
+  <PropertyGroup>
+    <AcadReferencePath>C:\Program Files\Autodesk\AutoCAD 2026</AcadReferencePath>
+  </PropertyGroup>
+</Project>

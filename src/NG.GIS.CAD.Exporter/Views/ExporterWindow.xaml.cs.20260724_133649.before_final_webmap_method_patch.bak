@@ -1,0 +1,165 @@
+﻿using System.ComponentModel;
+using System.Text.Json;
+using System.Windows;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
+using NG.GIS.CAD.Exporter.ViewModels;
+namespace NG.GIS.CAD.Exporter.Views;
+public partial class ExporterWindow : Window
+{
+    private WebView2? _mapWebView;
+    private bool _mapLoaded;
+    private bool _mapLoading;
+    public ExporterWindow()
+    {
+        InitializeComponent();
+        DataContextChanged += (_, _) =>
+        {
+            UpdatePageVisibility();
+            AttachViewModelEvents();
+        };
+    }
+    private void AttachViewModelEvents()
+    {
+        if (DataContext is ExporterViewModel vm)
+        {
+            vm.PropertyChanged -= ViewModel_PropertyChanged;
+            vm.PropertyChanged += ViewModel_PropertyChanged;
+        }
+    }
+    private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (DataContext is not ExporterViewModel vm) { return; }
+        if (args.PropertyName == nameof(vm.PageIndex))
+        {
+            UpdatePageVisibility();
+            if (vm.IsExtentPage) { _ = InitializeMapAsync(false); }
+        }
+        if (args.PropertyName == nameof(vm.ResolvedExtentText) || args.PropertyName == nameof(vm.CurrentExtent)) { _ = ZoomMapToResolvedExtentAsync(); }
+    }
+    private void UpdatePageVisibility()
+    {
+        if (DataContext is not ExporterViewModel vm) { return; }
+        MethodPage.Visibility = vm.IsMethodPage ? Visibility.Visible : Visibility.Collapsed;
+        ExtentPage.Visibility = vm.IsExtentPage ? Visibility.Visible : Visibility.Collapsed;
+        LayerPage.Visibility = vm.IsLayerPage ? Visibility.Visible : Visibility.Collapsed;
+        TransformPage.Visibility = vm.IsTransformPage ? Visibility.Visible : Visibility.Collapsed;
+        ReviewPage.Visibility = vm.IsReviewPage ? Visibility.Visible : Visibility.Collapsed;
+    }
+    private async void ReloadEmbeddedMap_Click(object sender, RoutedEventArgs e)
+    {
+        _mapLoaded = false;
+        await InitializeMapAsync(true);
+    }
+    private async Task InitializeMapAsync(bool forceReload)
+    {
+        if (_mapLoading) { return; }
+        if (_mapLoaded && !forceReload) { return; }
+        _mapLoading = true;
+        try
+        {
+            if (_mapWebView == null || forceReload)
+            {
+                _mapWebView = new WebView2();
+                MapHost.Content = _mapWebView;
+            }
+            await _mapWebView.EnsureCoreWebView2Async();
+            _mapWebView.CoreWebView2.WebMessageReceived -= MapWebView_WebMessageReceived;
+            _mapWebView.CoreWebView2.WebMessageReceived += MapWebView_WebMessageReceived;
+            _mapWebView.NavigateToString(BuildMapHtml());
+            _mapLoaded = true;
+            if (DataContext is ExporterViewModel vm) { vm.Status = "Embedded basemap loading over eastern Massachusetts."; }
+        }
+        catch (Exception ex)
+        {
+            _mapLoaded = false;
+            if (DataContext is ExporterViewModel vm) { vm.Status = "Embedded basemap failed: " + ex.Message; }
+        }
+        finally
+        {
+            _mapLoading = false;
+        }
+    }
+    private async void SetExtentFromVisibleMap_Click(object sender, RoutedEventArgs e)
+    {
+        await InitializeMapAsync(false);
+        if (_mapWebView?.CoreWebView2 == null) { return; }
+        await _mapWebView.ExecuteScriptAsync("window.nggisGetVisibleExtent && window.nggisGetVisibleExtent();");
+    }
+    private async Task ZoomMapToResolvedExtentAsync()
+    {
+        if (DataContext is not ExporterViewModel vm || vm.CurrentExtent == null || _mapWebView?.CoreWebView2 == null) { return; }
+        var json = JsonSerializer.Serialize(vm.CurrentExtent);
+        await _mapWebView.ExecuteScriptAsync("window.nggisZoomToExtent && window.nggisZoomToExtent(" + json + ");");
+    }
+    private void MapWebView_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            if (DataContext is not ExporterViewModel vm) { return; }
+            var raw = e.TryGetWebMessageAsString();
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("type", out var type)) { return; }
+            if (type.GetString() == "extent")
+            {
+                vm.SetExtentFromMap(root.GetProperty("xmin").GetDouble(), root.GetProperty("ymin").GetDouble(), root.GetProperty("xmax").GetDouble(), root.GetProperty("ymax").GetDouble(), root.GetProperty("wkid").GetInt32());
+            }
+            else if (type.GetString() == "status" && root.TryGetProperty("message", out var message))
+            {
+                vm.Status = message.GetString() ?? vm.Status;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (DataContext is ExporterViewModel vm) { vm.Status = "Map message failed: " + ex.Message; }
+        }
+    }
+    private static string BuildMapHtml()
+    {
+        var jsBase = "https" + "://" + "js.arcgis.com/4.30";
+        return """
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'/>
+<meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no'/>
+<link rel='stylesheet' href='__JSBASE__/esri/themes/light/main.css'/>
+<style>
+html,body,#viewDiv{padding:0;margin:0;height:100%;width:100%;overflow:hidden;}
+#badge{position:absolute;left:12px;top:12px;z-index:5;background:white;padding:6px 8px;border-radius:4px;font-family:Segoe UI,Arial;font-size:12px;box-shadow:0 1px 4px rgba(0,0,0,.3);}
+</style>
+<script src='__JSBASE__/'></script>
+</head>
+<body>
+<div id='viewDiv'></div>
+<div id='badge'>Default ArcGIS Topographic basemap - Eastern Massachusetts</div>
+<script>
+require(['esri/Map','esri/views/MapView','esri/geometry/Extent','esri/geometry/SpatialReference'], function(Map, MapView, Extent, SpatialReference){
+  const map = new Map({ basemap: 'topo-vector' });
+  const view = new MapView({
+    container: 'viewDiv',
+    map: map,
+    center: [-71.05, 42.25],
+    zoom: 9
+  });
+  view.when(function(){ window.chrome.webview.postMessage(JSON.stringify({type:'status', message:'Embedded basemap ready over eastern Massachusetts.'})); });
+  window.nggisGetVisibleExtent = function(){
+    const e = view.extent;
+    const wkid = e.spatialReference.latestWkid || e.spatialReference.wkid || 3857;
+    window.chrome.webview.postMessage(JSON.stringify({ type:'extent', xmin:e.xmin, ymin:e.ymin, xmax:e.xmax, ymax:e.ymax, wkid:wkid }));
+  };
+  window.nggisZoomToExtent = function(ext){
+    try {
+      const wkid = ext.Wkid || ext.wkid || 3857;
+      const e = new Extent({ xmin: ext.XMin ?? ext.xmin, ymin: ext.YMin ?? ext.ymin, xmax: ext.XMax ?? ext.xmax, ymax: ext.YMax ?? ext.ymax, spatialReference: new SpatialReference({ wkid: wkid }) });
+      view.goTo(e.expand(1.15));
+    } catch(err) {}
+  };
+});
+</script>
+</body>
+</html>
+""".Replace("__JSBASE__", jsBase);
+    }
+}

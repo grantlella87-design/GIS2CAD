@@ -1,0 +1,91 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using Esri.ArcGISRuntime.Geometry;
+
+namespace NG.GIS.CAD.Exporter.Services;
+
+public sealed class ProposedMainQueryResult
+{
+    public string WorkOrderId { get; init; } = string.Empty;
+    public IReadOnlyList<Geometry> Geometries { get; init; } = Array.Empty<Geometry>();
+    public Envelope? Extent { get; init; }
+    public int FeatureCount => Geometries.Count;
+}
+
+public static class ProposedMainFeatureService
+{
+    private const string QueryUrl = "https://gis.nationalgrid.com/arcgis/rest/services/MA/Material_View_MA/MapServer/54/query";
+    private static readonly HttpClient Http = new HttpClient();
+
+    public static async Task<ProposedMainQueryResult> QueryByWorkOrderAsync(string workOrderId, string accessToken, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(workOrderId)) { throw new ArgumentException("Work order number is required.", nameof(workOrderId)); }
+        if (string.IsNullOrWhiteSpace(accessToken)) { throw new InvalidOperationException("ArcGIS access token is required to query proposed mains."); }
+
+        var where = "workorderid = '" + workOrderId.Replace("'", "''") + "'";
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["where"] = where,
+            ["outFields"] = "objectid,workorderid",
+            ["returnGeometry"] = "true",
+            ["returnTrueCurves"] = "true",
+            ["outSR"] = "3857",
+            ["token"] = accessToken
+        });
+
+        using var response = await Http.PostAsync(QueryUrl, content, cancellationToken).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+
+        using var doc = JsonDocument.Parse(body);
+        if (doc.RootElement.TryGetProperty("error", out var error))
+        {
+            var message = error.TryGetProperty("message", out var msg) ? msg.GetString() : error.ToString();
+            throw new InvalidOperationException("ArcGIS proposed main query failed: " + message);
+        }
+
+        var geometries = new List<Geometry>();
+        if (doc.RootElement.TryGetProperty("features", out var features) && features.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var feature in features.EnumerateArray())
+            {
+                if (!feature.TryGetProperty("geometry", out var geometryElement)) { continue; }
+                var geometryJson = geometryElement.GetRawText();
+                var geometry = Geometry.FromJson(geometryJson);
+                if (geometry != null && !geometry.IsEmpty)
+                {
+                    var projected = geometry.SpatialReference?.Wkid == 3857 ? geometry : GeometryEngine.Project(geometry, SpatialReferences.WebMercator);
+                    if (projected != null && !projected.IsEmpty) { geometries.Add(projected); }
+                }
+            }
+        }
+
+        Envelope? extent = null;
+        foreach (var geometry in geometries)
+        {
+            if (extent == null) { extent = geometry.Extent; }
+            else
+            {
+                extent = new Envelope(
+                    Math.Min(extent.XMin, geometry.Extent.XMin),
+                    Math.Min(extent.YMin, geometry.Extent.YMin),
+                    Math.Max(extent.XMax, geometry.Extent.XMax),
+                    Math.Max(extent.YMax, geometry.Extent.YMax),
+                    SpatialReferences.WebMercator);
+            }
+        }
+
+        return new ProposedMainQueryResult
+        {
+            WorkOrderId = workOrderId,
+            Geometries = geometries,
+            Extent = extent
+        };
+    }
+}
