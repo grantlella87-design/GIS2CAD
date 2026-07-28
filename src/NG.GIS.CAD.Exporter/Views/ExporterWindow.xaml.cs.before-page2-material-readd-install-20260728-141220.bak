@@ -45,8 +45,6 @@ public partial class ExporterWindow : Window
         // NGGIS_ARCGIS_RUNTIME_BOOTSTRAP
             NG.GIS.CAD.Exporter.Services.ArcGisRuntimeBootstrap.Initialize();
             InitializeComponent();
-            // NGGIS_PAGE2_MATERIAL_VIEW_MA_READD_AFTER_MAP_RESET
-            InstallPage2MaterialViewAutoload();
             // NGGIS_PAGE2_MATERIAL_VIEW_MA_VISUALTREE_AUTOLOAD
             Loaded += async (_, __) => await EnsurePage2MaterialViewLoadedAsync();
         _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
