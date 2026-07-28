@@ -120,8 +120,6 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
             _locatorTask = await LocatorTask.CreateAsync(new Uri("https" + "://" + "geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer"));
             if (ProposedPipelineTextBox != null) { ProposedPipelineTextBox.Text = "No proposed pipeline has been drawn."; }
             if (WorkOrderGeometryTextBox != null) { WorkOrderGeometryTextBox.Text = "Work Order driven export selected. Work order geometry/buffer will refresh when this page is shown or Refresh is clicked."; }
-            // NGGIS_DIRECT_MATERIAL_VIEW_AFTER_EXTENT_RENDER
-            _ = Dispatcher.BeginInvoke(new System.Action(async () => await DirectEnsureMaterialViewOnExtentMapAsync("extent render status")), System.Windows.Threading.DispatcherPriority.Background);
             if (DataContext is ExporterViewModel vm)
             {
                 vm.Status = "Native ArcGIS MapView loaded. Page 1 controls the Extent page display mode.";
