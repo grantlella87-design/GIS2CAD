@@ -15,7 +15,7 @@ public sealed class ExportExtent
     public double XMax { get; set; }
     public double YMax { get; set; }
     public int Wkid { get; set; } = 2249;
-    public double PaddingFeet { get; set; } = 300;
+    public double PaddingFeet { get; set; } = 2500;
 }
 public sealed class CadTransformRule
 {

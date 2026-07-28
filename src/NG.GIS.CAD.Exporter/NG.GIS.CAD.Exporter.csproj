@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <PackageReference Include="Esri.ArcGISRuntime.WPF" Version="300.0.0" />
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.87.0" />
   </ItemGroup>
 </Project>
 
