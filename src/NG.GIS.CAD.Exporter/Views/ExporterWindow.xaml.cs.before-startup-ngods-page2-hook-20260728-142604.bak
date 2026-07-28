@@ -45,8 +45,9 @@ public partial class ExporterWindow : Window
         // NGGIS_ARCGIS_RUNTIME_BOOTSTRAP
             NG.GIS.CAD.Exporter.Services.ArcGisRuntimeBootstrap.Initialize();
             InitializeComponent();
-            // NGGIS_STARTUP_NGODS_AND_PAGE2_LAYERS
-            InstallNggisStartupDataFlow();
+            // NGGIS_PAGE2_GAS_MATERIAL_VIEW_WEBMAP_AUTOLOAD
+            InstallPage2MaterialViewAutoload();
+            InstallPage2MaterialViewAutoload();
 _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _extentRefreshTimer.Tick += (_, _) =>
         {
