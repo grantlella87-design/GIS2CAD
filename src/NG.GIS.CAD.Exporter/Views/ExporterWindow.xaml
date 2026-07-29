@@ -88,15 +88,25 @@
                     </StackPanel>
                     </Grid>
                     <GroupBox Grid.Row="1" Header="Map layers" Margin="0,10,0,0">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                            <ItemsControl ItemsSource="{Binding MapLayers}" Margin="4">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <CheckBox Content="{Binding Name}" IsChecked="{Binding IsVisible, Mode=TwoWay}" Margin="{Binding Indent}" VerticalContentAlignment="Center"/>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,4,4,6">
+                                <Button Content="Expand all" Click="ExpandAllMapLayers_Click" Padding="8,2" Margin="0,0,6,0"/>
+                                <Button Content="Collapse all" Click="CollapseAllMapLayers_Click" Padding="8,2"/>
+                            </StackPanel>
+                            <TreeView ItemsSource="{Binding MapLayers}" BorderThickness="0" Background="Transparent"
+                                      ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                <TreeView.ItemContainerStyle>
+                                    <Style TargetType="TreeViewItem">
+                                        <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                    </Style>
+                                </TreeView.ItemContainerStyle>
+                                <TreeView.ItemTemplate>
+                                    <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                        <CheckBox Content="{Binding Name}" IsChecked="{Binding IsVisible, Mode=TwoWay}" VerticalContentAlignment="Center" Margin="0,2,0,2"/>
+                                    </HierarchicalDataTemplate>
+                                </TreeView.ItemTemplate>
+                            </TreeView>
+                        </DockPanel>
                     </GroupBox>
                 </Grid>
                 <Grid Grid.Column="2">

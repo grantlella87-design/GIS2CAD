@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows;
 using Esri.ArcGISRuntime.Mapping;
 using Esri.ArcGISRuntime.Portal;
 using Esri.ArcGISRuntime.Security;
@@ -123,18 +124,26 @@ public partial class ExporterWindow
             try { await layer.LoadAsync(); } catch { }
         }
 
-        foreach (var stale in vm.MapLayers) { stale.VisibilityChanged -= OnMapLayerToggled; }
+        foreach (var stale in ExporterViewModel.FlattenMapLayers(vm.MapLayers))
+        {
+            stale.VisibilityChanged -= OnMapLayerToggled;
+        }
         vm.MapLayers.Clear();
         _mapLayerContentByPath.Clear();
 
         var usedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var layer in map.OperationalLayers)
         {
-            AddMapLayerToggle(vm, layer, null, 0, usedPaths);
+            AddMapLayerToggle(vm, layer, null, null, 0, usedPaths);
         }
     }
 
-    private void AddMapLayerToggle(ExporterViewModel vm, ILayerContent content, string? parentPath, int depth, HashSet<string> usedPaths)
+    /// <summary>
+    /// Adds one node for <paramref name="content"/> beneath <paramref name="parent"/>, then recurses
+    /// into its sublayers. Content whose visibility cannot be changed gets no node of its own, so its
+    /// children are attached to the nearest ancestor that does have one.
+    /// </summary>
+    private void AddMapLayerToggle(ExporterViewModel vm, ILayerContent content, MapLayerToggleViewModel? parent, string? parentPath, int depth, HashSet<string> usedPaths)
     {
         if (content == null || depth > MaxMapLayerDepth) { return; }
 
@@ -150,22 +159,40 @@ public partial class ExporterWindow
             suffix++;
         }
 
+        var node = parent;
         if (content.CanChangeVisibility)
         {
             var saved = vm.GetSavedMapLayerVisibility(path);
             if (saved.HasValue) { content.IsVisible = saved.Value; }
 
-            var toggle = new MapLayerToggleViewModel(path, name, depth, content.IsVisible);
+            var toggle = new MapLayerToggleViewModel(path, name, content.IsVisible);
             toggle.VisibilityChanged += OnMapLayerToggled;
             _mapLayerContentByPath[path] = content;
-            vm.MapLayers.Add(toggle);
+
+            if (parent == null) { vm.MapLayers.Add(toggle); }
+            else { parent.Children.Add(toggle); }
+
+            node = toggle;
         }
 
         var children = content.SublayerContents;
         if (children == null) { return; }
         foreach (var child in children)
         {
-            AddMapLayerToggle(vm, child, path, depth + 1, usedPaths);
+            AddMapLayerToggle(vm, child, node, path, depth + 1, usedPaths);
+        }
+    }
+
+    private void ExpandAllMapLayers_Click(object sender, RoutedEventArgs e) => SetAllMapLayersExpanded(true);
+
+    private void CollapseAllMapLayers_Click(object sender, RoutedEventArgs e) => SetAllMapLayersExpanded(false);
+
+    private void SetAllMapLayersExpanded(bool expanded)
+    {
+        if (DataContext is not ExporterViewModel vm) { return; }
+        foreach (var node in ExporterViewModel.FlattenMapLayers(vm.MapLayers))
+        {
+            node.IsExpanded = expanded;
         }
     }
 

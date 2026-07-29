@@ -157,13 +157,26 @@ public sealed partial class ExporterViewModel : ObservableObject
         try
         {
             _profile.MapLayerVisibility ??= new(StringComparer.OrdinalIgnoreCase);
-            foreach (var layer in MapLayers)
+            foreach (var layer in FlattenMapLayers(MapLayers))
             {
                 _profile.MapLayerVisibility[layer.Path] = layer.IsVisible;
             }
             await _services.ProfileStore.SaveAsync(_profile, ProfilePath, CancellationToken.None);
         }
         catch (Exception ex) { Status = "Saving layer visibility failed: " + ex.Message; }
+    }
+
+    /// <summary>Walks the map layer tree depth first so every node is persisted, not just the roots.</summary>
+    public static IEnumerable<MapLayerToggleViewModel> FlattenMapLayers(IEnumerable<MapLayerToggleViewModel> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            yield return node;
+            foreach (var child in FlattenMapLayers(node.Children))
+            {
+                yield return child;
+            }
+        }
     }
     private async Task ResolveWorkOrderExtentAsync()
     {

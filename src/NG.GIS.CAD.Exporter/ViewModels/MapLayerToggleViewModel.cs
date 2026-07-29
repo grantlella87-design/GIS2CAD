@@ -1,32 +1,38 @@
-using System.Windows;
-
 namespace NG.GIS.CAD.Exporter.ViewModels;
 
 /// <summary>
-/// One toggleable entry in the extent page map layer list. Entries are created by the view once
-/// the web map has loaded, one per operational layer and one per sublayer beneath it.
+/// One node in the extent page map layer tree. Nodes are created by the view once the web map has
+/// loaded, one per operational layer and one per sublayer beneath it. Nodes with children are
+/// rendered as expandable groups.
 /// </summary>
 public sealed class MapLayerToggleViewModel : ObservableObject
 {
     private bool _isVisible;
+    private bool _isExpanded = true;
 
-    public MapLayerToggleViewModel(string path, string name, int depth, bool isVisible)
+    public MapLayerToggleViewModel(string path, string name, bool isVisible)
     {
         Path = path;
         Name = name;
-        Depth = depth;
         _isVisible = isVisible;
     }
 
-    /// <summary>Stable key used to persist this entry: "Layer" or "Layer/Sublayer".</summary>
+    /// <summary>Stable key used to persist this node: "Layer" or "Layer/Sublayer".</summary>
     public string Path { get; }
 
     public string Name { get; }
 
-    public int Depth { get; }
+    public ObservableCollection<MapLayerToggleViewModel> Children { get; } = new();
 
-    /// <summary>Indents sublayers under their parent in the list.</summary>
-    public Thickness Indent => new(Depth * 16, 2, 0, 2);
+    /// <summary>
+    /// Whether the group is expanded in the tree. Groups start expanded so the list reads the same
+    /// way it did before it became collapsible.
+    /// </summary>
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set => SetProperty(ref _isExpanded, value);
+    }
 
     public bool IsVisible
     {
