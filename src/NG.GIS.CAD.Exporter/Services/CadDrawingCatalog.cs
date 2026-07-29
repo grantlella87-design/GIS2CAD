@@ -2,6 +2,10 @@ using System.Runtime.InteropServices;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 
+// System variables live on the Core application type, which is a different class from the
+// ApplicationServices.Application used for the document manager above.
+using CoreApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
+
 namespace NG.GIS.CAD.Exporter.Services;
 
 /// <summary>The block, line type and layer names read from one drawing in one pass.</summary>
@@ -63,10 +67,12 @@ public sealed class CadDrawingCatalog
             var document = Application.DocumentManager.MdiActiveDocument;
             using var documentLock = document?.LockDocument();
 
+            using var suppressedPrompts = new SuppressedDrawingLoadPrompts();
             using var templateDatabase = new Database(false, true);
             try
             {
-                templateDatabase.ReadDwgFile(localCopy, FileOpenMode.OpenForReadAndAllShare, allowCPConversion: true, password: null);
+                // An empty password, not null. This is marshalled straight to a native string.
+                templateDatabase.ReadDwgFile(localCopy, FileOpenMode.OpenForReadAndAllShare, allowCPConversion: true, password: "");
 
                 // Releases the input file, so deleting the local copy below is not racing the reader.
                 try { templateDatabase.CloseInput(true); } catch { }
@@ -74,12 +80,14 @@ public sealed class CadDrawingCatalog
             catch (SEHException ex)
             {
                 // The native reader faults rather than reporting, so on its own this says only
-                // "External component has thrown an exception". Name the file and the likely causes.
+                // "External component has thrown an exception". Name the file and what actually
+                // tends to be behind it.
                 throw new InvalidOperationException(
-                    "AutoCAD could not open the template '" + Path.GetFileName(templatePath)
-                    + "'. It is a readable file of the right shape, so the drawing itself is most likely "
-                    + "damaged, or saved in a format this AutoCAD build cannot read. Try opening it in "
-                    + "AutoCAD directly to confirm.", ex);
+                    "AutoCAD could not read the template '" + Path.GetFileName(templatePath)
+                    + "'. A drawing that carries custom objects from another application, missing SHX "
+                    + "fonts, or xrefs it cannot resolve can stop the reader even though the file opens "
+                    + "normally in AutoCAD itself. If it is open in AutoCAD now, switch this page to the "
+                    + "open drawing to read its blocks and line types from there.", ex);
             }
 
             return ReadTables(templateDatabase);
@@ -88,6 +96,62 @@ public sealed class CadDrawingCatalog
         {
             try { File.Delete(localCopy); } catch { }
         }
+    }
+
+    /// <summary>
+    /// Silences the prompts AutoCAD raises while loading an awkward drawing, and puts them back
+    /// afterwards.
+    ///
+    /// Opening the Boston template in AutoCAD by hand raises three dialogs: unavailable Civil 3D
+    /// custom objects, missing SHX fonts, and xrefs it cannot find. A dialog is fine when a person
+    /// opened the drawing, but the reader here runs under a modeless window, and a modal prompt
+    /// raised from that context is what takes the native side down. Nothing here changes what is
+    /// read: proxies still come through as proxies, and the symbol tables this class wants are not
+    /// affected by a substituted font or an unloaded xref.
+    /// </summary>
+    private sealed class SuppressedDrawingLoadPrompts : IDisposable
+    {
+        // All three only suppress a notification or supply a substitute. None of them changes which
+        // objects are read, which is why they are safe to force here.
+        private readonly object? _proxyNotice = TrySetSystemVariable("PROXYNOTICE", (short)0, 0);
+        private readonly object? _xrefNotify = TrySetSystemVariable("XREFNOTIFY", (short)0, 0);
+        private readonly object? _alternateFont = TrySetSystemVariable("FONTALT", "simplex.shx");
+
+        public void Dispose()
+        {
+            TryRestoreSystemVariable("FONTALT", _alternateFont);
+            TryRestoreSystemVariable("XREFNOTIFY", _xrefNotify);
+            TryRestoreSystemVariable("PROXYNOTICE", _proxyNotice);
+        }
+    }
+
+    /// <summary>
+    /// Sets a system variable, returning its previous value so it can be put back, or null when this
+    /// build has no such variable or would not take any of the values offered. Integer variables are
+    /// 16 bit in some cases and 32 bit in others, hence more than one candidate.
+    /// </summary>
+    private static object? TrySetSystemVariable(string name, params object[] candidateValues)
+    {
+        object? previous;
+        try { previous = CoreApplication.GetSystemVariable(name); }
+        catch { return null; }
+
+        foreach (var value in candidateValues)
+        {
+            try
+            {
+                CoreApplication.SetSystemVariable(name, value);
+                return previous;
+            }
+            catch { }
+        }
+        return null;
+    }
+
+    private static void TryRestoreSystemVariable(string name, object? previous)
+    {
+        if (previous == null) { return; }
+        try { CoreApplication.SetSystemVariable(name, previous); } catch { }
     }
 
     /// <summary>
