@@ -14,6 +14,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- UseWindowsForms adds global usings for System.Windows.Forms and System.Drawing. In a WPF
+         codebase those collide with the WPF types of the same name: KeyEventArgs, TextBox, Color,
+         Point and more. The assemblies are wanted, the global imports are not, so they are dropped
+         and the one WinForms type used is named in full at its single call site. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="AcMgd">
       <HintPath>$(AcadReferencePath)\AcMgd.dll</HintPath>
       <Private>false</Private>
