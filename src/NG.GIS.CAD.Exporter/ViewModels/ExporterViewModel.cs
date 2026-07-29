@@ -176,13 +176,35 @@ public sealed partial class ExporterViewModel : ObservableObject
             var userSettings = await _services.UserSettingsStore.LoadAsync(CancellationToken.None);
             Layers.Clear();
             TransformRules.Clear();
-            foreach (var service in _profile.Services.Where(s => s.Enabled))
+
+            // Only leaves are used. A parent's URL is the whole service, which would pull in every
+            // sublayer already listed beneath it. The same service can also back more than one node,
+            // so URLs are de-duplicated.
+            var mapLayers = FlattenMapLayers(MapLayers)
+                .Where(l => l.IsLeaf && !string.IsNullOrWhiteSpace(l.ServiceUrl))
+                .GroupBy(l => l.ServiceUrl!, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+
+            if (mapLayers.Count == 0)
             {
-                var metadata = await _services.ArcGisRestClient.LoadServiceLayersAsync(service.ServiceUrl, CancellationToken.None);
+                Status = "No exportable layers on the page 2 map yet. Layers appear here once the map has loaded.";
+                _layerMetadataLoaded = false;
+                return;
+            }
+
+            foreach (var mapLayer in mapLayers)
+            {
+                var metadata = await _services.ArcGisRestClient.LoadServiceLayersAsync(mapLayer.ServiceUrl!, CancellationToken.None);
                 foreach (var layer in metadata)
                 {
                     var state = new LayerSelectionViewState(layer);
                     ApplySavedSettings(state, userSettings);
+
+                    // What is shown on the map decides what starts selected for export, which is the
+                    // point of driving these pages from the map in the first place.
+                    state.Enabled = mapLayer.IsVisible;
+
                     var layerVm = new LayerSelectionViewModel(state);
                     Layers.Add(layerVm);
                     TransformRules.Add(new CadTransformRuleViewModel(new CadTransformRule { LayerUrl = layer.Url, LayerName = layer.Name, GeometryType = layer.GeometryType, CadLayerName = layer.Name.Replace(" ", "_"), LineType = "ByLayer", ColorMode = "ByLayer" }));
@@ -190,7 +212,7 @@ public sealed partial class ExporterViewModel : ObservableObject
             }
             SelectedLayer = Layers.FirstOrDefault();
             SelectedTransform = TransformRules.FirstOrDefault();
-            if (announce) { Status = $"Loaded {Layers.Count} layers."; }
+            if (announce) { Status = $"Loaded {Layers.Count} layers from the page 2 map."; }
         }
         catch (Exception ex)
         {
@@ -373,6 +395,24 @@ public sealed partial class ExporterViewModel : ObservableObject
             await _services.ProfileStore.SaveAsync(_profile, ProfilePath, CancellationToken.None);
         }
         catch (Exception ex) { Status = "Saving the profile failed: " + ex.Message; }
+    }
+
+    /// <summary>
+    /// Called once the page 2 map's layer tree has been rebuilt. Pages 3 and 4 are derived from that
+    /// tree, so their contents are discarded and rebuilt on next use rather than describing a map
+    /// that no longer exists.
+    /// </summary>
+    public void OnMapLayersChanged()
+    {
+        _layerMetadataLoaded = false;
+        Layers.Clear();
+        TransformRules.Clear();
+        SelectedLayer = null;
+        SelectedTransform = null;
+
+        // Rebuild straight away when one of those pages is on screen, otherwise leave it until the
+        // user gets there.
+        if (IsLayerPage || IsTransformPage || IsReviewPage) { _ = EnsureLayerMetadataLoadedAsync(); }
     }
 
     /// <summary>Walks the map layer tree depth first so every node is persisted, not just the roots.</summary>
