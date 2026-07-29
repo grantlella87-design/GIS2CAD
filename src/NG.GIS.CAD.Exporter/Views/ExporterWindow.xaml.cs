@@ -21,8 +21,6 @@ using NG.GIS.CAD.Exporter.Auth;
 namespace NG.GIS.CAD.Exporter.Views;
 public partial class ExporterWindow : Window
 {
-        public string ArcGisPortalAccessToken { get; set; } = string.Empty;
-
     private enum ExportDisplayMode
     {
         WorkOrder,
@@ -113,19 +111,16 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
             _geometryEditor = new GeometryEditor();
             _mapView.GeometryEditor = _geometryEditor;
             ArcGisMapHost.Content = _mapView;
+            // Basemap-only starting point. LoadExtentWebMapAsync swaps in the portal web map when
+            // it resolves, and this stays as the fallback if it does not.
             var topoLayer = new ArcGISTiledLayer(new Uri("https" + "://" + "services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer"));
             _mapView.Map = new Map(new Basemap(topoLayer));
+            await LoadExtentWebMapAsync();
             var easternMass = new Envelope(-8070663.082512335, 5012341.663847514, -7736704.610132514, 5342463.601958378, SpatialReferences.WebMercator);
             await _mapView.SetViewpointGeometryAsync(easternMass, 50);
             _locatorTask = await LocatorTask.CreateAsync(new Uri("https" + "://" + "geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer"));
             if (ProposedPipelineTextBox != null) { ProposedPipelineTextBox.Text = "No proposed pipeline has been drawn."; }
             if (WorkOrderGeometryTextBox != null) { WorkOrderGeometryTextBox.Text = "Work Order driven export selected. Work order geometry/buffer will refresh when this page is shown or Refresh is clicked."; }
-            // NGGIS_DIRECT_MATERIAL_VIEW_AFTER_EXTENT_RENDER
-            _ = Dispatcher.BeginInvoke(new System.Action(async () => await DirectEnsureMaterialViewOnExtentMapAsync("extent render status")), System.Windows.Threading.DispatcherPriority.Background);
-            if (DataContext is ExporterViewModel vm)
-            {
-                vm.Status = "Native ArcGIS MapView loaded. Page 1 controls the Extent page display mode.";
-            }
         }
         catch (Exception ex)
         {
