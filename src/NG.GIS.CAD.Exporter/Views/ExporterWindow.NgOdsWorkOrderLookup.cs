@@ -62,11 +62,19 @@ public partial class ExporterWindow
             if (WorkOrderNameComboBox != null) { WorkOrderNameComboBox.IsEnabled = false; }
             if (!EnsureNgOdsConnection(forcePrompt: false)) { return; }
 
-            SetNgOdsStatus("Loading full NG_ODS work order list once for local filtering...");
+            // A prefetch started at command entry is usually already running, and may already be
+            // finished, so collect that rather than starting a second identical query.
+            var prefetched = NgOdsWorkOrderLookup.TakePrefetched();
+            SetNgOdsStatus(prefetched != null
+                ? "Collecting the NG_ODS work order list started at startup..."
+                : "Loading full NG_ODS work order list once for local filtering...");
+
             IReadOnlyList<NgOdsWorkOrderItem> items;
             try
             {
-                items = await NgOdsWorkOrderLookup.LoadAllAsync(token);
+                items = prefetched != null
+                    ? await prefetched
+                    : await NgOdsWorkOrderLookup.LoadAllAsync(token);
             }
             catch (OperationCanceledException) { return; }
             catch (Exception firstAttempt)

@@ -21,6 +21,8 @@ public sealed partial class ExporterViewModel : ObservableObject
     private ExportProfile _profile = new();
     private string _newMapDataSourceName = string.Empty;
     private string _newMapDataSourceUrl = string.Empty;
+    private bool _layerMetadataLoaded;
+    private bool _cadCatalogLoaded;
     public ExporterViewModel(AppServices services)
     {
         _services = services;
@@ -30,9 +32,12 @@ public sealed partial class ExporterViewModel : ObservableObject
         MapDataSources = new ObservableCollection<MapDataSourceViewModel>();
         TransformRules = new ObservableCollection<CadTransformRuleViewModel>();
         WorkOrderOptions = new ObservableCollection<string>();
-        Blocks = new ObservableCollection<string>(_services.CadDrawingCatalog.GetBlockNames());
-        LineTypes = new ObservableCollection<string>(_services.CadDrawingCatalog.GetLineTypes());
-        CadLayers = new ObservableCollection<string>(_services.CadDrawingCatalog.GetLayerNames());
+        // Filled when the CAD transformation page is first shown. Reading them here meant three
+        // drawing database transactions on the UI thread before the window appeared, delaying the
+        // work order lookup for values that are only used on page 4.
+        Blocks = new ObservableCollection<string>();
+        LineTypes = new ObservableCollection<string>();
+        CadLayers = new ObservableCollection<string>();
         NextCommand = new RelayCommand(_ => NextAsync());
         BackCommand = new RelayCommand(_ => BackAsync());
         LoadProfileCommand = new RelayCommand(_ => LoadProfileAsync());
@@ -88,7 +93,20 @@ public sealed partial class ExporterViewModel : ObservableObject
     public bool IsTransformPage => PageIndex == 3;
     public bool IsReviewPage => PageIndex == 4;
     public string PageTitle => PageIndex switch { 0 => "1. Export Method", 1 => "2. Extent", 2 => "3. Layers + Fields", 3 => "4. CAD Transformation", _ => "5. Review + Export" };
-    public int PageIndex { get => _pageIndex; set { if (SetProperty(ref _pageIndex, value)) { RaisePageFlags(); } } }
+    public int PageIndex
+    {
+        get => _pageIndex;
+        set
+        {
+            if (!SetProperty(ref _pageIndex, value)) { return; }
+            RaisePageFlags();
+
+            // Work that only matters from a given page is done on arrival at it, so none of it
+            // competes with the work order query while page 1 is on screen.
+            if (IsLayerPage) { _ = EnsureLayerMetadataLoadedAsync(); }
+            if (IsTransformPage) { EnsureCadCatalogLoaded(); }
+        }
+    }
     public string ProfilePath { get => _profilePath; set => SetProperty(ref _profilePath, value); }
     public string Status { get => _status; set => SetProperty(ref _status, value); }
     public ExportMethod SelectedMethod { get => _selectedMethod; set { if (SetProperty(ref _selectedMethod, value)) { RaiseMethodFlags(); } } }
@@ -108,18 +126,44 @@ public sealed partial class ExporterViewModel : ObservableObject
     public CadTransformRuleViewModel? SelectedTransform { get => _selectedTransform; set => SetProperty(ref _selectedTransform, value); }
     private Task NextAsync() { if (PageIndex < 4) { PageIndex++; } return Task.CompletedTask; }
     private Task BackAsync() { if (PageIndex > 0) { PageIndex--; } return Task.CompletedTask; }
+    /// <summary>
+    /// Reads the profile file and the map data sources. This is the only part needed before the user
+    /// picks a work order, so it is all that runs at startup. The per-service layer metadata, which
+    /// is one network call per enabled service, is fetched when the layers page is first shown.
+    /// </summary>
     private async Task LoadProfileAsync()
     {
         try
         {
-            Status = "Loading profile and GIS layer metadata...";
             var profile = await _services.ProfileStore.LoadAsync(ProfilePath, CancellationToken.None);
             _profile = profile;
             LoadMapDataSources();
+
+            // Deliberately no success status here: the work order lookup owns the status line while
+            // page 1 is on screen, and overwriting it would hide the lookup's own progress.
+            _layerMetadataLoaded = false;
+            Layers.Clear();
+            TransformRules.Clear();
+
+            // Reloading the profile from a page that shows layers must refill them straight away,
+            // rather than leaving that page empty until it is navigated to again.
+            if (IsLayerPage || IsTransformPage || IsReviewPage) { await EnsureLayerMetadataLoadedAsync(); }
+        }
+        catch (Exception ex) { Status = "Profile load failed: " + ex.Message; }
+    }
+
+    /// <summary>Fetches layer and field metadata for every enabled service, once.</summary>
+    private async Task EnsureLayerMetadataLoadedAsync()
+    {
+        if (_layerMetadataLoaded) { return; }
+        _layerMetadataLoaded = true;
+        try
+        {
+            Status = "Loading GIS layer metadata...";
             var userSettings = await _services.UserSettingsStore.LoadAsync(CancellationToken.None);
             Layers.Clear();
             TransformRules.Clear();
-            foreach (var service in profile.Services.Where(s => s.Enabled))
+            foreach (var service in _profile.Services.Where(s => s.Enabled))
             {
                 var metadata = await _services.ArcGisRestClient.LoadServiceLayersAsync(service.ServiceUrl, CancellationToken.None);
                 foreach (var layer in metadata)
@@ -135,7 +179,29 @@ public sealed partial class ExporterViewModel : ObservableObject
             SelectedTransform = TransformRules.FirstOrDefault();
             Status = $"Loaded {Layers.Count} layers.";
         }
-        catch (Exception ex) { Status = "Load failed: " + ex.Message; }
+        catch (Exception ex)
+        {
+            _layerMetadataLoaded = false;
+            Status = "Layer metadata load failed: " + ex.Message;
+        }
+    }
+
+    /// <summary>Reads block, line type and layer names from the active drawing, once.</summary>
+    private void EnsureCadCatalogLoaded()
+    {
+        if (_cadCatalogLoaded) { return; }
+        _cadCatalogLoaded = true;
+        try
+        {
+            foreach (var name in _services.CadDrawingCatalog.GetBlockNames()) { Blocks.Add(name); }
+            foreach (var name in _services.CadDrawingCatalog.GetLineTypes()) { LineTypes.Add(name); }
+            foreach (var name in _services.CadDrawingCatalog.GetLayerNames()) { CadLayers.Add(name); }
+        }
+        catch (Exception ex)
+        {
+            _cadCatalogLoaded = false;
+            Status = "Reading the drawing's blocks, line types and layers failed: " + ex.Message;
+        }
     }
     private async Task LoadWorkOrdersAsync()
     {
@@ -152,7 +218,13 @@ public sealed partial class ExporterViewModel : ObservableObject
     }
     private async Task SaveSettingsAsync()
     {
-        await _services.ExportCoordinator.SaveSelectionsAsync(Layers.Select(l => l.State), ProfilePath, CancellationToken.None);
+        // Layer selections are only written once the metadata behind them has loaded. Saving from
+        // page 1, before the layers page has ever been shown, would otherwise persist an empty set
+        // over the field choices already stored for this user.
+        if (_layerMetadataLoaded)
+        {
+            await _services.ExportCoordinator.SaveSelectionsAsync(Layers.Select(l => l.State), ProfilePath, CancellationToken.None);
+        }
         await SaveMapLayerVisibilityAsync();
         Status = "Settings saved.";
     }
@@ -334,6 +406,11 @@ public sealed partial class ExporterViewModel : ObservableObject
         try
         {
             if (_resolvedExtent == null) { Status = "Set or resolve an extent before building the export plan."; return; }
+
+            // Reachable without ever showing the layers page, so make sure the metadata it needs is
+            // present rather than reporting that nothing is selected.
+            await EnsureLayerMetadataLoadedAsync();
+
             var selected = Layers.Where(l => l.Enabled).ToList();
             if (selected.Count == 0) { Status = "Select at least one layer before building the export plan."; return; }
             Status = "Building dry-run export plan...";

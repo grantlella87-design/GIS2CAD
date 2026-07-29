@@ -12,6 +12,11 @@ public sealed class NgGisCommands
     [CommandMethod("NGGIS")]
     public void ShowExporter()
     {
+        // The work order lookup is the first thing the user interacts with, so its query starts here,
+        // before anything else. It runs in its own process and needs no UI, so it proceeds while the
+        // portal sign-in below blocks and while the window is built. The window collects the result.
+        NgOdsWorkOrderLookup.StartPrefetch();
+
         var document = Application.DocumentManager.MdiActiveDocument;
         var editor = document.Editor;
 
