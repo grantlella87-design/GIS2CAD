@@ -79,6 +79,8 @@ public sealed partial class ExporterViewModel : ObservableObject
     public ICommand ExportCommand { get; }
     public ICommand AddMapDataSourceCommand { get; }
     public ICommand RemoveMapDataSourceCommand { get; }
+    /// <summary>Where the SharePoint template browser looks, taken from the loaded profile.</summary>
+    public SharePointTemplateSettings SharePointTemplateSettings => _profile.SharePointTemplates ??= new SharePointTemplateSettings();
     public string NewMapDataSourceName { get => _newMapDataSourceName; set => SetProperty(ref _newMapDataSourceName, value); }
     public string NewMapDataSourceUrl { get => _newMapDataSourceUrl; set => SetProperty(ref _newMapDataSourceUrl, value); }
 
