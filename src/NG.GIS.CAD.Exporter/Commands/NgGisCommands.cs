@@ -3,8 +3,8 @@ using Autodesk.AutoCAD.Runtime;
 using NG.GIS.CAD.Exporter.Services;
 using NG.GIS.CAD.Exporter.ViewModels;
 using NG.GIS.CAD.Exporter.Views;
-
 using NG.GIS.CAD.Exporter.Auth;
+
 namespace NG.GIS.CAD.Exporter.Commands;
 
 public sealed class NgGisCommands
@@ -12,10 +12,12 @@ public sealed class NgGisCommands
     [CommandMethod("NGGIS")]
     public void ShowExporter()
     {
-            var ngArcGisPortalToken = ArcGisPortalOAuth.LoginAndGetToken(Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument.Editor);
-            var ngArcGisPortalAccessToken = ngArcGisPortalToken.AccessToken;
         var document = Application.DocumentManager.MdiActiveDocument;
         var editor = document.Editor;
+
+        // Signs in to the ArcGIS portal and primes the shared token cache before the window opens.
+        ArcGisPortalOAuth.LoginAndGetToken(editor);
+
         try
         {
             var services = AppServices.CreateDefault();
@@ -29,10 +31,3 @@ public sealed class NgGisCommands
         }
     }
 }
-
-
-
-
-
-
-
