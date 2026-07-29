@@ -46,6 +46,11 @@ public sealed class CadDrawingCatalog
         var document = Application.DocumentManager.MdiActiveDocument;
         if (document == null) { return Array.Empty<string>(); }
 
+        // The drawing database can only be touched under a document lock. Inside a command AutoCAD
+        // holds one already, but these reads are driven from a modeless window: page navigation, a
+        // button, or the startup pass. Without the lock the native side throws, which surfaces as
+        // "External component has thrown an exception".
+        using var documentLock = document.LockDocument();
         using var transaction = document.Database.TransactionManager.StartTransaction();
         var names = read(document.Database, transaction);
         transaction.Commit();
