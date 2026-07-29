@@ -25,6 +25,13 @@ public string RawJson { get; set; }
         private const string PortalRoot = "https://gis.nationalgrid.com/portal";
         private static readonly string TokenCachePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NGGisCadExporter", "arcgis_portal_token.json");
         public static string CurrentAccessToken { get; private set; } = string.Empty;
+        public static DateTime CurrentTokenExpiresUtc { get; private set; } = DateTime.MinValue;
+
+        private static void SetCurrentToken(ArcGisPortalToken token)
+        {
+            CurrentAccessToken = token.AccessToken;
+            CurrentTokenExpiresUtc = token.ExpiresUtc;
+        }
 
         public static ArcGisPortalToken LoginAndGetToken(Editor editor = null)
         {
@@ -32,14 +39,14 @@ public string RawJson { get; set; }
             ArcGisPortalToken cached = TryReadCachedToken();
             if (cached != null && !string.IsNullOrWhiteSpace(cached.AccessToken) && cached.ExpiresUtc > DateTime.UtcNow.AddMinutes(5))
             {
-                CurrentAccessToken = cached.AccessToken;
+                SetCurrentToken(cached);
                 editor?.WriteMessage("\nArcGIS Portal token loaded from cache.");
                 return cached;
             }
             string code = CaptureAuthorizationCode(editor);
             ArcGisPortalToken token = ExchangeCodeForToken(code);
             WriteTokenCache(token);
-            CurrentAccessToken = token.AccessToken;
+            SetCurrentToken(token);
             editor?.WriteMessage("\nArcGIS Portal token captured and cached.");
             return token;
         }
@@ -231,7 +238,7 @@ public string RawJson { get; set; }
                     {
                         ArcGisPortalToken refreshed = RefreshAccessToken(cached);
                         WriteTokenCache(refreshed);
-                        CurrentAccessToken = refreshed.AccessToken;
+                        SetCurrentToken(refreshed);
                         editor?.WriteMessage("\nCached ArcGIS access token refreshed silently.");
                         return;
                     }

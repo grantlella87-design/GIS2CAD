@@ -7,6 +7,9 @@ using Esri.ArcGISRuntime.Security;
 using NG.GIS.CAD.Exporter.Auth;
 using NG.GIS.CAD.Exporter.ViewModels;
 
+// GlobalUsings.cs pulls in System.Net, which also has an AuthenticationManager.
+using AuthenticationManager = Esri.ArcGISRuntime.Security.AuthenticationManager;
+
 namespace NG.GIS.CAD.Exporter.Views;
 
 /// <summary>
@@ -41,7 +44,7 @@ public partial class ExporterWindow
 
         try
         {
-            RegisterPortalCredential(token);
+            RegisterPortalCredential(token, ArcGisPortalOAuth.CurrentTokenExpiresUtc);
 
             var portal = await ArcGISPortal.CreateAsync(new Uri(PortalSharingRestUrl));
             var item = await PortalItem.CreateAsync(portal, ExtentWebMapItemId);
@@ -111,15 +114,18 @@ public partial class ExporterWindow
     /// services published under it, which appending a token to a service URL does not: the
     /// Runtime rebuilds its own request URLs for tile and export calls, so a token baked into
     /// the service URI is not carried through to them.
+    ///
+    /// PregeneratedTokenCredential is the credential type for a token obtained outside the
+    /// Runtime, which is what the OAuth flow in ArcGisPortalOAuth produces.
     /// </summary>
-    private static void RegisterPortalCredential(string token)
+    private static void RegisterPortalCredential(string token, DateTime expiresUtc)
     {
         var manager = AuthenticationManager.Current;
-        foreach (var stale in manager.Credentials.ToList())
-        {
-            manager.RemoveCredential(stale);
-        }
-        manager.AddCredential(new ArcGISTokenCredential(new Uri(PortalRootUrl), token));
+        manager.RemoveAllCredentials();
+
+        var expiration = new DateTimeOffset(DateTime.SpecifyKind(expiresUtc, DateTimeKind.Utc));
+        var tokenInfo = new TokenInfo(token, expiration, true);
+        manager.AddCredential(new PregeneratedTokenCredential(new Uri(PortalRootUrl), tokenInfo, null));
     }
 
     private static string GetPortalAccessToken() => ArcGisPortalOAuth.CurrentAccessToken ?? string.Empty;
