@@ -70,13 +70,13 @@ public partial class NgOdsConnectionWindow : Window
 
             if (error != null)
             {
-                SetStatus("Connection failed: " + Summarize(error), isError: true);
+                SetStatus(error, isError: true);
                 return;
             }
 
             if (!saveOnSuccess)
             {
-                SetStatus("Connection succeeded.", isError: false);
+                SetStatus("Connected, and the account can read the work order tables.", isError: false);
                 return;
             }
 
@@ -89,7 +89,7 @@ public partial class NgOdsConnectionWindow : Window
         }
         catch (Exception ex)
         {
-            SetStatus("Connection failed: " + ex.Message, isError: true);
+            SetStatus("Connection failed: " + NgOdsConnection.SummarizeError(ex.Message), isError: true);
         }
         finally
         {
@@ -111,14 +111,4 @@ public partial class NgOdsConnectionWindow : Window
             : System.Windows.Media.Brushes.DimGray;
     }
 
-    /// <summary>PowerShell wraps SQL errors in several lines; the first one carries the reason.</summary>
-    private static string Summarize(string error)
-    {
-        foreach (var line in error.Split('\n'))
-        {
-            var trimmed = line.Trim();
-            if (trimmed.Length > 0) { return trimmed; }
-        }
-        return error.Trim();
-    }
 }

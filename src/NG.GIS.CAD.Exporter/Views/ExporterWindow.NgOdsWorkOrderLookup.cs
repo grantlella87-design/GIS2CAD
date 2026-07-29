@@ -72,16 +72,31 @@ public partial class ExporterWindow
             catch (Exception firstAttempt)
             {
                 if (token.IsCancellationRequested) { return; }
-                SetNgOdsStatus("NG_ODS work order load failed: " + FlattenNgOdsException(firstAttempt));
+                var reason = NgOdsConnection.SummarizeError(FlattenNgOdsException(firstAttempt));
+                _ngOdsLoadFailed = true;
+
+                // Re-entering the connection only helps when the credentials are what is wrong. A
+                // permission error means the account is correct but is not granted SELECT, so asking
+                // for the password again would just make the user retype something already right.
+                if (!NgOdsConnection.LooksLikeCredentialProblem(reason))
+                {
+                    SetNgOdsStatus("NG_ODS work order load failed: " + reason
+                        + " This is not a sign-in problem, so re-entering the password will not help. "
+                        + "The SQL account needs SELECT on the work order tables.");
+                    return;
+                }
+
+                SetNgOdsStatus("NG_ODS work order load failed: " + reason);
 
                 // Only offer to re-enter the connection when the user asked for this load. A failure
                 // during the startup load is reported and left alone, so an unreachable database does
                 // not throw a credentials dialog at every AutoCAD start.
-                if (!userInitiated) { _ngOdsLoadFailed = true; return; }
-                if (!EnsureNgOdsConnection(forcePrompt: true)) { _ngOdsLoadFailed = true; return; }
+                if (!userInitiated) { return; }
+                if (!EnsureNgOdsConnection(forcePrompt: true)) { return; }
 
                 SetNgOdsStatus("Retrying the NG_ODS work order load...");
                 items = await NgOdsWorkOrderLookup.LoadAllAsync(token);
+                _ngOdsLoadFailed = false;
             }
 
             if (token.IsCancellationRequested) { return; }
@@ -94,7 +109,7 @@ public partial class ExporterWindow
         catch (Exception ex)
         {
             _ngOdsLoadFailed = true;
-            SetNgOdsStatus("NG_ODS work order load failed: " + FlattenNgOdsException(ex)
+            SetNgOdsStatus("NG_ODS work order load failed: " + NgOdsConnection.SummarizeError(FlattenNgOdsException(ex))
                 + " Open a work order dropdown to try again.");
         }
         finally

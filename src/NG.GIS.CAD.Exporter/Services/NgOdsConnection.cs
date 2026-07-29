@@ -15,17 +15,41 @@ public static class NgOdsConnection
     public const string ConnectionStringVariable = "NGGISCAD_ODS_CONN";
     public const string DefaultDatabase = "NG_ODS";
 
+    /// <summary>
+    /// The tables the work order query reads. The connection test checks SELECT on each of them,
+    /// because signing in successfully says nothing about whether the account can read these.
+    /// </summary>
+    private static readonly string[] RequiredTables =
+    {
+        "NG_ODS.MX.WorkOrder",
+        "NG_ODS.MX.NG_FUNDPROJ",
+        "NG_ODS.MX.WORKTYPE",
+        "NG_ODS.MX.NG_PP_WO_TYPE"
+    };
+
     private const string TestScript = """
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Data
 $connStr = $env:NGGISCAD_ODS_CONN
 if ([string]::IsNullOrWhiteSpace($connStr)) { throw 'NGGISCAD_ODS_CONN was not provided.' }
+$tables = $env:NGGISCAD_ODS_TABLES -split ';' | Where-Object { $_ -ne '' }
 $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
 $conn.Open()
 try {
-    $cmd = $conn.CreateCommand()
-    $cmd.CommandText = 'SELECT 1'
-    [void]$cmd.ExecuteScalar()
+    $denied = @()
+    foreach ($table in $tables) {
+        $cmd = $conn.CreateCommand()
+        $cmd.CommandText = "SELECT HAS_PERMS_BY_NAME(@name, 'OBJECT', 'SELECT')"
+        [void]$cmd.Parameters.AddWithValue('@name', $table)
+        $granted = $cmd.ExecuteScalar()
+        # NULL means the object is missing or invisible to this login; both are failures here.
+        if ($null -eq $granted -or [System.DBNull]::Value.Equals($granted) -or [int]$granted -ne 1) {
+            $denied += $table
+        }
+    }
+    if ($denied.Count -gt 0) {
+        throw ("Signed in successfully, but this account cannot read: " + ($denied -join ', ') + ". Ask for SELECT permission on those tables.")
+    }
     'OK'
 }
 finally {
@@ -113,21 +137,72 @@ finally {
     {
         try
         {
-            await RunPowerShellAsync(TestScript, connectionString, "NGGisCadExporter_ConnectionTest_", cancellationToken).ConfigureAwait(false);
+            var extraEnvironment = new Dictionary<string, string>
+            {
+                ["NGGISCAD_ODS_TABLES"] = string.Join(";", RequiredTables)
+            };
+            await RunPowerShellAsync(TestScript, connectionString, "NGGisCadExporter_ConnectionTest_", cancellationToken, extraEnvironment).ConfigureAwait(false);
             return null;
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            return ex.Message;
+            return SummarizeError(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Whether re-entering the connection details could plausibly fix this error. A permission error
+    /// is about what the account is granted, not who it is, so prompting for the password again would
+    /// only ask the user to retype something that is already correct.
+    /// </summary>
+    public static bool LooksLikeCredentialProblem(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) { return false; }
+
+        if (message.Contains("permission was denied", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("permission denied", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("cannot read:", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return message.Contains("Login failed", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("Cannot open database", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("not associated with a trusted", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("password", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("not configured", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Pulls the real message out of the PowerShell wrapper. A SQL error arrives as
+    /// Exception calling "ExecuteReader" with "0" argument(s): "&lt;the part that matters&gt;",
+    /// followed by a stack of script positions nobody needs to read.
+    /// </summary>
+    public static string SummarizeError(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) { return "Unknown error."; }
+
+        var text = message.Trim();
+        var match = System.Text.RegularExpressions.Regex.Match(
+            text,
+            "argument\\(s\\):\\s*\"(?<inner>.*?)\"\\s*(\\r?\\n|$)",
+            System.Text.RegularExpressions.RegexOptions.Singleline);
+        if (match.Success) { return match.Groups["inner"].Value.Trim(); }
+
+        foreach (var line in text.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length > 0) { return trimmed; }
+        }
+        return text;
     }
 
     /// <summary>
     /// Runs a PowerShell script with the connection string supplied through the environment rather
     /// than the command line, so it never appears in the process arguments.
     /// </summary>
-    public static async Task<string> RunPowerShellAsync(string script, string connectionString, string tempFilePrefix, CancellationToken cancellationToken)
+    public static async Task<string> RunPowerShellAsync(string script, string connectionString, string tempFilePrefix, CancellationToken cancellationToken, IReadOnlyDictionary<string, string>? extraEnvironment = null)
     {
         var scriptPath = Path.Combine(Path.GetTempPath(), tempFilePrefix + Guid.NewGuid().ToString("N") + ".ps1");
         await File.WriteAllTextAsync(scriptPath, script, new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
@@ -149,6 +224,10 @@ finally {
             psi.ArgumentList.Add("-File");
             psi.ArgumentList.Add(scriptPath);
             psi.Environment[ConnectionStringVariable] = connectionString;
+            if (extraEnvironment != null)
+            {
+                foreach (var pair in extraEnvironment) { psi.Environment[pair.Key] = pair.Value; }
+            }
 
             using var process = Process.Start(psi) ?? throw new InvalidOperationException("Could not start the PowerShell process for NG_ODS.");
             var outputTask = process.StandardOutput.ReadToEndAsync();
