@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="National Grid GIS CAD Exporter" Height="760" Width="1180">
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
         <!-- Placeholder text shown inside an empty field. Sits over the TextBox rather than
              retemplating it, so the box keeps its normal focus and hover chrome. Hit testing is off
              so clicks land on the field underneath. -->
@@ -280,11 +281,13 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <GroupBox Header="Layer transformation rules" Grid.Column="0">
-                    <ListBox ItemsSource="{Binding TransformRules}" SelectedItem="{Binding SelectedTransform}" DisplayMemberPath="LayerName"/>
+                    <ListBox ItemsSource="{Binding TransformRules}" SelectedItem="{Binding SelectedTransform}" DisplayMemberPath="LayerNameWithGeometry"/>
                 </GroupBox>
                 <GroupBox Header="CAD import behavior" Grid.Column="2">
                     <Grid Margin="10">
                         <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
@@ -298,24 +301,58 @@
                             <ColumnDefinition Width="180"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="CAD Layer Name" Margin="0,0,8,8"/>
-                        <ComboBox Grid.Row="0" Grid.Column="1" Text="{Binding SelectedTransform.CadLayerName, UpdateSourceTrigger=PropertyChanged}" ItemsSource="{Binding CadLayers}" IsEditable="True" Margin="0,0,0,8"/>
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Point Block" Margin="0,0,8,8"/>
-                        <ComboBox Grid.Row="1" Grid.Column="1" Text="{Binding SelectedTransform.BlockName, UpdateSourceTrigger=PropertyChanged}" ItemsSource="{Binding Blocks}" IsEditable="True" Margin="0,0,0,8"/>
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Line Type" Margin="0,0,8,8"/>
-                        <ComboBox Grid.Row="2" Grid.Column="1" Text="{Binding SelectedTransform.LineType, UpdateSourceTrigger=PropertyChanged}" ItemsSource="{Binding LineTypes}" IsEditable="True" Margin="0,0,0,8"/>
-                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Color Mode" Margin="0,0,8,8"/>
-                        <ComboBox Grid.Row="3" Grid.Column="1" Text="{Binding SelectedTransform.ColorMode, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" Margin="0,0,0,8">
+
+                        <!-- Where blocks and line types are read from. A template usually holds the
+                             standard symbols the export is meant to match, which the drawing in
+                             progress may not have yet. -->
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Symbols from" Margin="0,0,8,8"/>
+                        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+                            <RadioButton Content="Open drawing" IsChecked="{Binding UseDrawingSymbols, Mode=TwoWay}" GroupName="SymbolSource" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                            <RadioButton Content="CAD template (.dwt)" IsChecked="{Binding UseTemplateSymbols, Mode=TwoWay}" GroupName="SymbolSource" IsEnabled="{Binding HasTemplate}" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                            <Button Content="Reload" Click="ReloadCadCatalog_Click" Padding="8,2"/>
+                        </StackPanel>
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Feature type" Margin="0,0,8,8"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedTransform.GeometryDisplay}" Foreground="#555555" VerticalAlignment="Center" Margin="0,0,0,8"/>
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="CAD Layer Name" Margin="0,0,8,8"/>
+                        <ComboBox Grid.Row="2" Grid.Column="1" Text="{Binding SelectedTransform.CadLayerName, UpdateSourceTrigger=PropertyChanged}" ItemsSource="{Binding CadLayers}" IsEditable="True" Margin="0,0,0,8"/>
+
+                        <!-- Point only: points are drawn as block references. -->
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Point Block" Margin="0,0,8,8"
+                                   Visibility="{Binding SelectedTransform.IsPoint, Converter={StaticResource BoolToVisibility}}"/>
+                        <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8"
+                                    Visibility="{Binding SelectedTransform.IsPoint, Converter={StaticResource BoolToVisibility}}">
+                            <ComboBox Width="260" Text="{Binding SelectedTransform.BlockName, UpdateSourceTrigger=PropertyChanged}" ItemsSource="{Binding Blocks}" IsEditable="True" Margin="0,0,6,0"/>
+                            <Button Content="Edit block" Click="EditBlock_Click" Padding="8,2" ToolTip="Opens the selected block in the AutoCAD block editor."/>
+                        </StackPanel>
+
+                        <!-- Line and polygon only: both are drawn as polylines. -->
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Line Type" Margin="0,0,8,8"
+                                   Visibility="{Binding SelectedTransform.IsLine, Converter={StaticResource BoolToVisibility}}"/>
+                        <ComboBox Grid.Row="4" Grid.Column="1" Text="{Binding SelectedTransform.LineType, UpdateSourceTrigger=PropertyChanged}" ItemsSource="{Binding LineTypes}" IsEditable="True" Margin="0,0,0,8"
+                                  Visibility="{Binding SelectedTransform.IsLine, Converter={StaticResource BoolToVisibility}}"/>
+
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Color Mode" Margin="0,0,8,8"/>
+                        <ComboBox Grid.Row="5" Grid.Column="1" Text="{Binding SelectedTransform.ColorMode, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" Margin="0,0,0,8">
                             <ComboBoxItem Content="ByLayer"/>
                             <ComboBoxItem Content="ACI"/>
                             <ComboBoxItem Content="RGB"/>
                         </ComboBox>
-                        <TextBlock Grid.Row="4" Grid.Column="0" Text="ACI Color" Margin="0,0,8,8"/>
-                        <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding SelectedTransform.AciColor, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
-                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Rotation +/- Degrees" Margin="0,0,8,8"/>
-                        <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding SelectedTransform.RotationOffsetDegrees, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
-                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Scale" Margin="0,0,8,8"/>
-                        <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding SelectedTransform.ScaleValue, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+
+                        <TextBlock Grid.Row="6" Grid.Column="0" Text="ACI Color" Margin="0,0,8,8"/>
+                        <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding SelectedTransform.AciColor, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+
+                        <!-- Point only: rotation and scale apply to a block reference. -->
+                        <TextBlock Grid.Row="7" Grid.Column="0" Text="Rotation +/- Degrees" Margin="0,0,8,8"
+                                   Visibility="{Binding SelectedTransform.IsPoint, Converter={StaticResource BoolToVisibility}}"/>
+                        <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding SelectedTransform.RotationOffsetDegrees, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
+                                 Visibility="{Binding SelectedTransform.IsPoint, Converter={StaticResource BoolToVisibility}}"/>
+
+                        <TextBlock Grid.Row="8" Grid.Column="0" Text="Block Scale" Margin="0,0,8,8"
+                                   Visibility="{Binding SelectedTransform.IsPoint, Converter={StaticResource BoolToVisibility}}"/>
+                        <TextBox Grid.Row="8" Grid.Column="1" Text="{Binding SelectedTransform.ScaleValue, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
+                                 Visibility="{Binding SelectedTransform.IsPoint, Converter={StaticResource BoolToVisibility}}"/>
                     </Grid>
                 </GroupBox>
             </Grid>
