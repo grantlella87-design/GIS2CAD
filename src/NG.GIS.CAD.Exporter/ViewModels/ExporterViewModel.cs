@@ -261,8 +261,14 @@ public sealed partial class ExporterViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            // Name the source and the exception type. "External component has thrown an exception"
+            // on its own says nothing about which drawing was being read or why.
             _cadCatalogLoaded = false;
-            Status = "Reading blocks, line types and layers failed: " + ex.Message;
+            var source = UseTemplateSymbols
+                ? "the CAD template " + System.IO.Path.GetFileName(TemplatePath)
+                : "the open drawing";
+            Status = "Reading blocks, line types and layers from " + source + " failed: "
+                + ex.GetType().Name + ": " + ex.Message;
         }
     }
 
