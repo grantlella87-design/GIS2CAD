@@ -1,0 +1,66 @@
+<Window x:Class="NG.GIS.CAD.Exporter.Views.SharePointBrowserWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Pick a CAD template from SharePoint" Height="560" Width="900"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Account -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,8">
+            <Button x:Name="SignInButton" Content="Sign in" Click="SignIn_Click" Width="90" Padding="8,3" DockPanel.Dock="Right" Margin="6,0,0,0"/>
+            <Button x:Name="SignOutButton" Content="Sign out" Click="SignOut_Click" Width="90" Padding="8,3" DockPanel.Dock="Right"/>
+            <TextBlock x:Name="AccountText" Text="Not signed in." VerticalAlignment="Center" Foreground="#555555"/>
+        </DockPanel>
+
+        <!-- Site search -->
+        <DockPanel Grid.Row="1" Margin="0,0,0,8">
+            <Button x:Name="SearchButton" Content="Search sites" Click="SearchSites_Click" Width="110" Padding="8,3" DockPanel.Dock="Right" Margin="6,0,0,0"/>
+            <Button x:Name="FollowedButton" Content="Sites I follow" Click="FollowedSites_Click" Width="110" Padding="8,3" DockPanel.Dock="Right"/>
+            <TextBox x:Name="SearchBox" KeyDown="SearchBox_KeyDown" VerticalContentAlignment="Center" Padding="2"/>
+        </DockPanel>
+
+        <!-- Sites | Libraries | Folder contents -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="240"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="200"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <GroupBox Grid.Column="0" Header="Sites">
+                <ListBox x:Name="SiteList" DisplayMemberPath="Name" SelectionChanged="SiteList_SelectionChanged" BorderThickness="0"/>
+            </GroupBox>
+
+            <GroupBox Grid.Column="2" Header="Libraries">
+                <ListBox x:Name="DriveList" DisplayMemberPath="Name" SelectionChanged="DriveList_SelectionChanged" BorderThickness="0"/>
+            </GroupBox>
+
+            <GroupBox Grid.Column="4" Header="Folder">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="4,4,4,6">
+                        <Button x:Name="UpButton" Content="Up" Click="Up_Click" Width="60" Padding="8,2" DockPanel.Dock="Left" Margin="0,0,8,0"/>
+                        <TextBlock x:Name="PathText" Text="" VerticalAlignment="Center" Foreground="#555555" TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
+                    <ListBox x:Name="ItemList" DisplayMemberPath="Display" MouseDoubleClick="ItemList_MouseDoubleClick"
+                             SelectionChanged="ItemList_SelectionChanged" BorderThickness="0"/>
+                </DockPanel>
+            </GroupBox>
+        </Grid>
+
+        <TextBlock Grid.Row="3" x:Name="StatusText" Text="Sign in to browse SharePoint." TextWrapping="Wrap" Foreground="#555555" Margin="0,8,0,8"/>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="UseButton" Content="Use selected template" Click="Use_Click" Width="180" Padding="8,4" Margin="0,0,8,0" IsDefault="True"/>
+            <Button Content="Cancel" Click="Cancel_Click" Width="90" Padding="8,4" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>
