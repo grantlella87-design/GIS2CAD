@@ -80,10 +80,10 @@ public partial class ExporterWindow
         if (service == null) { SetSharePointStatus("Waiting for the profile to load."); return; }
         if (service.IsSignedIn) { return; }
 
-        SetSharePointStatus("Checking for an existing SharePoint session...");
+        SetSharePointStatus("Checking for a saved SharePoint session...");
         var restored = await service.TryRestoreSessionAsync();
         SetSharePointStatus(restored
-            ? "Signed in as " + service.SignedInAs + ". Use Refresh list to load templates."
+            ? "Signed in as " + service.SignedInAs + " from a saved session."
             : "Not signed in. Use Sign in to SharePoint.");
 
         if (restored) { await LoadSharePointTemplatesAsync(service); }
@@ -100,7 +100,13 @@ public partial class ExporterWindow
             SetSharePointStatus("A browser window has opened for sign-in. Complete it there.");
             using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
             await service.SignInInteractiveAsync(timeout.Token);
-            SetSharePointStatus("Signed in as " + service.SignedInAs + ".");
+
+            // Normally the session is saved and this is empty. It is only set when the cache file
+            // could not be used, which the user should know about rather than discover next launch.
+            SetSharePointStatus(string.IsNullOrEmpty(service.TokenCacheWarning)
+                ? "Signed in as " + service.SignedInAs + ". This session will be remembered."
+                : "Signed in as " + service.SignedInAs + ". " + service.TokenCacheWarning);
+
             await LoadSharePointTemplatesAsync(service);
         }
         catch (OperationCanceledException)
@@ -130,7 +136,7 @@ public partial class ExporterWindow
         {
             await service.SignOutAsync();
             SharePointTemplateList.ItemsSource = null;
-            SetSharePointStatus("Signed out.");
+            SetSharePointStatus("Signed out. The saved session has been removed from this machine.");
         }
         catch (Exception ex) { SetSharePointStatus("Sign-out failed: " + ex.Message); }
     }

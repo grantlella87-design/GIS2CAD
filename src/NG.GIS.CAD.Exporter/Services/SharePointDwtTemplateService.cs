@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using Microsoft.Identity.Client;
+using Microsoft.Identity.Client.Extensions.Msal;
 using NG.GIS.CAD.Exporter.Models;
 
 namespace NG.GIS.CAD.Exporter.Services;
@@ -18,11 +19,18 @@ namespace NG.GIS.CAD.Exporter.Services;
 public sealed class SharePointDwtTemplateService
 {
     private const string GraphRoot = "https://graph.microsoft.com/v1.0";
+    private const string TokenCacheFileName = "graph-token-cache.bin";
+
+    private static readonly string TokenCacheDirectory = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "NationalGrid", "GisCadExporter");
 
     private readonly SharePointTemplateSettings _settings;
     private readonly string[] _scopes;
     private readonly IPublicClientApplication _app;
     private readonly HttpClient _http = new();
+    private readonly SemaphoreSlim _tokenCacheGate = new(1, 1);
+    private bool _tokenCacheAttempted;
 
     public SharePointDwtTemplateService(SharePointTemplateSettings settings)
     {
@@ -45,11 +53,55 @@ public sealed class SharePointDwtTemplateService
     public bool IsSignedIn => !string.IsNullOrWhiteSpace(SignedInAs);
 
     /// <summary>
+    /// Set only when the session could not be made persistent. Empty means the cache is working and
+    /// there is nothing to tell the user about.
+    /// </summary>
+    public string TokenCacheWarning { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Backs MSAL's token cache with a file so a sign-in survives closing AutoCAD, instead of living
+    /// only in this process. On Windows the file is encrypted with DPAPI for the current user, so the
+    /// tokens are not readable by other accounts on the machine.
+    ///
+    /// This has to happen before any account or token call, otherwise MSAL answers from an empty
+    /// in-memory cache and the user is asked to sign in again despite a saved session existing.
+    /// A failure here is not fatal: sign-in still works for the session, it just will not persist.
+    /// </summary>
+    private async Task EnsureTokenCacheAttachedAsync()
+    {
+        if (_tokenCacheAttempted) { return; }
+
+        await _tokenCacheGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_tokenCacheAttempted) { return; }
+
+            // Set before the attempt so a failure is not retried on every subsequent call.
+            _tokenCacheAttempted = true;
+
+            try
+            {
+                Directory.CreateDirectory(TokenCacheDirectory);
+                var properties = new StorageCreationPropertiesBuilder(TokenCacheFileName, TokenCacheDirectory).Build();
+                var helper = await MsalCacheHelper.CreateAsync(properties, null).ConfigureAwait(false);
+                helper.RegisterCache(_app.UserTokenCache);
+                TokenCacheWarning = string.Empty;
+            }
+            catch (Exception ex)
+            {
+                TokenCacheWarning = "This sign-in will not be remembered after AutoCAD closes: " + ex.Message;
+            }
+        }
+        finally { _tokenCacheGate.Release(); }
+    }
+
+    /// <summary>
     /// Restores a session from MSAL's cache without any UI. Returns false when interactive sign-in
     /// would be required, which is the caller's cue to leave the user signed out rather than prompt.
     /// </summary>
     public async Task<bool> TryRestoreSessionAsync()
     {
+        await EnsureTokenCacheAttachedAsync().ConfigureAwait(false);
         try
         {
             var account = (await _app.GetAccountsAsync().ConfigureAwait(false)).FirstOrDefault();
@@ -66,6 +118,8 @@ public sealed class SharePointDwtTemplateService
     /// <summary>The only method that may open a browser. Call it from an explicit user action.</summary>
     public async Task SignInInteractiveAsync(CancellationToken cancellationToken)
     {
+        await EnsureTokenCacheAttachedAsync().ConfigureAwait(false);
+
         var result = await _app
             .AcquireTokenInteractive(_scopes)
             .WithUseEmbeddedWebView(false)
@@ -77,6 +131,8 @@ public sealed class SharePointDwtTemplateService
 
     public async Task SignOutAsync()
     {
+        await EnsureTokenCacheAttachedAsync().ConfigureAwait(false);
+
         foreach (var account in await _app.GetAccountsAsync().ConfigureAwait(false))
         {
             await _app.RemoveAsync(account).ConfigureAwait(false);
@@ -133,6 +189,8 @@ public sealed class SharePointDwtTemplateService
     /// </summary>
     private async Task<string> AcquireTokenSilentlyAsync(CancellationToken cancellationToken)
     {
+        await EnsureTokenCacheAttachedAsync().ConfigureAwait(false);
+
         var account = (await _app.GetAccountsAsync().ConfigureAwait(false)).FirstOrDefault();
         if (account == null)
         {
