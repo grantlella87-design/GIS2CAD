@@ -64,14 +64,19 @@ public partial class ExporterWindow
                 return;
             }
 
+            var firstSheet = _stripMapSheets[0];
             var lastSheet = _stripMapSheets[^1];
+            var overhangFeet = StripMapIndexService.MetresToFeet(vm.StripMapGroundWidthMetres)
+                - (firstSheet.EndStationFeet - firstSheet.StartStationFeet);
+
             vm.StripMapSummary = string.Format(
                 CultureInfo.InvariantCulture,
-                "{0} sheet{1} along {2:0.#} ft of proposed main, at 1:{3:0.##}.",
+                "{0} sheet{1} along {2:0.#} ft of proposed main, at 1:{3:0.##}. First and last sheet hang {4:0.#} ft past each end.",
                 _stripMapSheets.Count,
                 _stripMapSheets.Count == 1 ? string.Empty : "s",
                 lastSheet.EndStationFeet,
-                vm.StripMapScaleDenominator);
+                vm.StripMapScaleDenominator,
+                Math.Max(0, overhangFeet));
 
             await vm.SaveStripMapSettingsAsync();
         }
@@ -160,11 +165,24 @@ public partial class ExporterWindow
             sheetGroundHeightFeet = Math.Round(StripMapIndexService.MetresToFeet(vm.StripMapGroundHeightMetres), 2),
             overlapPercent = Math.Round(vm.StripMapOverlapFraction * 100.0, 2),
             sheetCount = sheets.Count,
+
+            // The run is centred on the route, so this is how far the first and last sheet reach past
+            // its ends. Equal by construction, which is what makes those two sheets show the same
+            // length of pipe.
+            endOverhangFeet = sheets.Count == 0
+                ? 0
+                : Math.Round(StripMapIndexService.MetresToFeet(vm.StripMapGroundWidthMetres)
+                    - (sheets[0].EndStationFeet - sheets[0].StartStationFeet), 2),
+
             sheets = sheets.Select(s => new
             {
                 s.Number,
                 startFeet = Math.Round(s.StartStationFeet, 2),
                 endFeet = Math.Round(s.EndStationFeet, 2),
+
+                // Pipe on this sheet rather than sheet size, so the first and last reading back the
+                // same is the thing to look at.
+                pipeFeet = Math.Round(s.EndStationFeet - s.StartStationFeet, 2),
                 bearingDegrees = Math.Round(s.RotationDegrees, 3),
                 centerX = Math.Round(s.CenterX, 3),
                 centerY = Math.Round(s.CenterY, 3)

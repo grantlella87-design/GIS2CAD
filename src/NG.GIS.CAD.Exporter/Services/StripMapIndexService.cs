@@ -28,6 +28,9 @@ public sealed class StripMapSheet
 /// follow the route, sized so that the ground they cover is what a given viewport shows at a given
 /// scale.
 ///
+/// The run is centred on the route, so the slack left over by a whole number of sheets is split
+/// evenly between the two ends and the first and last sheet show the same length of pipe.
+///
 /// The route is expected in Web Mercator, which is what page 2 works in.
 /// </summary>
 public static class StripMapIndexService
@@ -96,18 +99,31 @@ public static class StripMapIndexService
                 ? 1
                 : (int)Math.Ceiling((length - alongMapUnits) / advance) + 1;
 
+            // A whole number of sheets almost never lands exactly on the length of the route, so
+            // there is always some slack. Splitting it evenly across both ends is what makes the
+            // first and last sheet show the same length of pipe and hang over by the same amount.
+            //
+            // Pinning the last sheet flush with the end of the route instead, which is what this did
+            // before, pushes all the slack into the final gap: on a 250 unit route with 100 unit
+            // sheets the last two sheets overlapped by 45 while the first two overlapped by 5.
+            var span = alongMapUnits + (count - 1) * advance;
+            var offset = (length - span) / 2.0;
+
             for (var i = 0; i < count; i++)
             {
-                // The last sheet is pulled back so it finishes flush with the end of the route
-                // rather than hanging off it.
-                var start = length <= alongMapUnits ? 0.0 : Math.Min(i * advance, length - alongMapUnits);
-                var end = Math.Min(start + alongMapUnits, length);
+                var start = offset + i * advance;
+                var end = start + alongMapUnits;
+
+                // Reported against the route, since what a sheet is worth in an index is the pipe it
+                // shows, not the paper that hangs off the end of it.
+                var pipeStart = Math.Clamp(start, 0.0, length);
+                var pipeEnd = Math.Clamp(end, 0.0, length);
 
                 var sheet = BuildSheet(
-                    path, stations, start, end, alongMapUnits, acrossMapUnits,
+                    path, stations, start, end, length, alongMapUnits, acrossMapUnits,
                     sheets.Count + 1, spatialReferenceJson,
-                    routeStartFeet + start * groundFeetPerMapUnit,
-                    routeStartFeet + end * groundFeetPerMapUnit);
+                    routeStartFeet + pipeStart * groundFeetPerMapUnit,
+                    routeStartFeet + pipeEnd * groundFeetPerMapUnit);
 
                 if (sheet != null) { sheets.Add(sheet); }
             }
@@ -119,34 +135,48 @@ public static class StripMapIndexService
     }
 
     private static StripMapSheet? BuildSheet(
-        List<RoutePoint> path, List<double> stations, double start, double end,
+        List<RoutePoint> path, List<double> stations, double start, double end, double routeLength,
         double alongMapUnits, double acrossMapUnits, int number, string spatialReferenceJson,
         double startStationFeet, double endStationFeet)
     {
-        var chunk = PointsBetween(path, stations, start, end);
+        // The first and last sheet reach past the ends of the route, which is the whole point of the
+        // even overhang, so the stretch of route actually on the sheet is the clamped range.
+        var pipeStart = Math.Clamp(start, 0.0, routeLength);
+        var pipeEnd = Math.Clamp(end, 0.0, routeLength);
+
+        var chunk = PointsBetween(path, stations, pipeStart, pipeEnd);
         if (chunk.Count < 2) { return null; }
 
         // The sheet is turned to the straight line between where the chunk starts and ends. A route
         // that bends inside one sheet still bulges away from that line, which is what the across
         // dimension has to absorb; that is inherent to a strip map rather than something to correct.
         var angle = Math.Atan2(chunk[^1].Y - chunk[0].Y, chunk[^1].X - chunk[0].X);
+        if (double.IsNaN(angle) || (chunk[^1].X == chunk[0].X && chunk[^1].Y == chunk[0].Y))
+        {
+            // A sheet whose stretch of route collapses to a point has no direction of its own, so it
+            // takes the direction of the route as a whole.
+            angle = Math.Atan2(path[^1].Y - path[0].Y, path[^1].X - path[0].X);
+        }
         var cos = Math.Cos(angle);
         var sin = Math.Sin(angle);
 
-        // Centred on the chunk's own extent in the turned frame, rather than on the midpoint of the
-        // line, so a bend leaves the route inside the sheet instead of pushed to one edge.
-        double minU = double.MaxValue, maxU = double.MinValue, minV = double.MaxValue, maxV = double.MinValue;
+        // Across the route, centred on the chunk's own extent, so a bend leaves the route inside the
+        // sheet instead of pushed to one edge.
+        double minV = double.MaxValue, maxV = double.MinValue;
         foreach (var point in chunk)
         {
-            var u = point.X * cos + point.Y * sin;
             var v = -point.X * sin + point.Y * cos;
-            minU = Math.Min(minU, u);
-            maxU = Math.Max(maxU, u);
             minV = Math.Min(minV, v);
             maxV = Math.Max(maxV, v);
         }
 
-        var centreU = (minU + maxU) / 2.0;
+        // Along the route, centred on the sheet's own station range rather than on the chunk. That
+        // is what carries the overhang: recentring on the chunk would pull the end sheets back onto
+        // the route and undo the even spacing worked out above.
+        var uAtStart = chunk[0].X * cos + chunk[0].Y * sin;
+        var uAtEnd = chunk[^1].X * cos + chunk[^1].Y * sin;
+        var centreU = ((uAtStart - (pipeStart - start)) + (uAtEnd + (end - pipeEnd))) / 2.0;
+
         var centreV = (minV + maxV) / 2.0;
         var centreX = centreU * cos - centreV * sin;
         var centreY = centreU * sin + centreV * cos;
