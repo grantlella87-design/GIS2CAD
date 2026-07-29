@@ -20,6 +20,7 @@ public partial class ExporterWindow
     private readonly List<RuntimeGeometry> _manualProposedPipelineSegmentGeometries = new();
     private GraphicsOverlay? _manualProposedPipelineSegmentOverlay;
     private SimpleLineSymbol? _manualProposedPipelineSegmentSymbol;
+    private int _manualProposedPipelineEndpointSnapCount;
     private void StartManualProposedMainSegment_Click(object sender, RoutedEventArgs e)
     {
         StartManualProposedPipelineSegmentDrawing();
@@ -32,7 +33,7 @@ public partial class ExporterWindow
         UpdateManualProposedPipelineSegmentSummary();
         StartManualProposedPipelineSegmentDrawing();
         SetManualProposedPipelineStatus(added
-            ? "Manual proposed pipeline segment added. Continue drawing the next segment or use Finish Segments."
+            ? $"Manual proposed pipeline segment added. Endpoint snaps applied: {_manualProposedPipelineEndpointSnapCount}. Continue drawing the next segment or use Finish Segments."
             : "No segment geometry was captured. Continue drawing or use Finish Segments.");
     }
     private void FinishManualProposedMainSegments_Click(object sender, RoutedEventArgs e)
@@ -41,14 +42,16 @@ public partial class ExporterWindow
         RefreshManualProposedPipelineSegmentOverlay();
         UpdateManualProposedPipelineSegmentSummary();
         SetLegacySingleManualPipelineGeometryToCombinedSegments();
-        SetManualProposedPipelineStatus(_manualProposedPipelineSegmentGeometries.Count == 1
+        var segmentSummary = _manualProposedPipelineSegmentGeometries.Count == 1
             ? "Manual proposed pipeline finished with 1 segment."
-            : $"Manual proposed pipeline finished with {_manualProposedPipelineSegmentGeometries.Count} segments.");
+            : $"Manual proposed pipeline finished with {_manualProposedPipelineSegmentGeometries.Count} segments.";
+        SetManualProposedPipelineStatus($"{segmentSummary} Endpoint snaps applied: {_manualProposedPipelineEndpointSnapCount}.");
     }
     private void ClearManualProposedMainSegments_Click(object sender, RoutedEventArgs e)
     {
         TryStopGeometryEditor();
         _manualProposedPipelineSegmentGeometries.Clear();
+        _manualProposedPipelineEndpointSnapCount = 0;
         if (_manualProposedPipelineSegmentOverlay != null)
         {
             _manualProposedPipelineSegmentOverlay.Graphics.Clear();
@@ -84,8 +87,35 @@ public partial class ExporterWindow
             return false;
         }
         _manualProposedPipelineSegmentGeometries.Add(geometry);
+        ApplyEndpointSnapsToManualProposedPipelineSegments();
         SetLegacySingleManualPipelineGeometryToCombinedSegments();
         return true;
+    }
+
+    /// <summary>
+    /// Pulls each segment endpoint onto a neighbouring segment when it lands within a foot of one.
+    ///
+    /// A hand drawn segment almost never ends exactly on the previous one, so the joins would carry a
+    /// sub foot gap into CAD. The same snap the imported main gets runs over the whole set after each
+    /// segment, which also closes gaps an earlier segment left once a later one arrives beside it.
+    /// </summary>
+    private void ApplyEndpointSnapsToManualProposedPipelineSegments()
+    {
+        if (_manualProposedPipelineSegmentGeometries.Count == 0)
+        {
+            _manualProposedPipelineEndpointSnapCount = 0;
+            return;
+        }
+
+        var snapped = SnapAmendedProposedMainGeometries(_manualProposedPipelineSegmentGeometries).ToList();
+        _manualProposedPipelineEndpointSnapCount = _lastProposedMainEndpointSnapCount;
+        if (_manualProposedPipelineEndpointSnapCount == 0)
+        {
+            return;
+        }
+
+        _manualProposedPipelineSegmentGeometries.Clear();
+        _manualProposedPipelineSegmentGeometries.AddRange(snapped);
     }
     private RuntimeGeometry? TryStopGeometryEditor()
     {
@@ -171,6 +201,7 @@ public partial class ExporterWindow
         sb.AppendLine("  \"source\": \"Manual proposed pipeline multi-segment GeometryEditor\",");
         sb.AppendLine("  \"geometryType\": \"Polyline\",");
         sb.AppendLine($"  \"segmentCount\": {_manualProposedPipelineSegmentGeometries.Count.ToString(CultureInfo.InvariantCulture)},");
+        sb.AppendLine($"  \"endpointSnapsApplied\": {_manualProposedPipelineEndpointSnapCount.ToString(CultureInfo.InvariantCulture)},");
         sb.AppendLine("  \"segments\": [");
         for (var i = 0; i < _manualProposedPipelineSegmentGeometries.Count; i++)
         {

@@ -74,20 +74,27 @@ public partial class ExporterWindow
                 WorkOrderGeometryTextBox.Text = "Edited proposed main geometry could not be projected to Web Mercator.";
                 return;
             }
-            _editableImportedProposedMainGeometry = projected;
-            DrawEditedImportedProposedMainGeometry(projected);
+            // Dragging a vertex reopens the joins the import closed, so the snap runs again on what
+            // the editor produced rather than only on what the service returned.
+            var snapped = SnapAmendedProposedMainGeometries(new[] { projected });
+            var snappedGeometry = snapped.Count > 0 && !snapped[0].IsEmpty ? snapped[0] : projected;
+
+            _editableImportedProposedMainGeometry = snappedGeometry;
+            DrawEditedImportedProposedMainGeometry(snappedGeometry);
             var paddingFeet = GetSharedPaddingFeetForWorkOrderImport();
-            var buffered = paddingFeet > 0 ? GeometryEngine.Buffer(projected, paddingFeet * 0.3048) : projected;
-            var extent = buffered?.Extent ?? projected.Extent;
+            var buffered = paddingFeet > 0 ? GeometryEngine.Buffer(snappedGeometry, paddingFeet * 0.3048) : snappedGeometry;
+            var extent = buffered?.Extent ?? snappedGeometry.Extent;
             if (_mapView != null)
             {
                 await _mapView.SetViewpointGeometryAsync(ExpandEnvelopeByFeet(extent, 200), 20);
             }
             CommitExtentToViewModelForWorkOrderImport(extent);
-            WriteEditedProposedMainProof(projected, extent, paddingFeet);
+            WriteEditedProposedMainProof(snappedGeometry, extent, paddingFeet);
             if (DataContext is ViewModels.ExporterViewModel vm)
             {
-                vm.Status = "Applied edited proposed main geometry for work order " + (_editableImportedProposedMainWorkOrderId ?? string.Empty) + ".";
+                vm.Status = "Applied edited proposed main geometry for work order "
+                    + (_editableImportedProposedMainWorkOrderId ?? string.Empty)
+                    + ". Endpoint snaps applied: " + _lastProposedMainEndpointSnapCount + ".";
             }
         }
         catch (Exception ex)
@@ -152,6 +159,7 @@ public partial class ExporterWindow
             selectedWorkOrder = _editableImportedProposedMainWorkOrderId,
             editMode = "applied in MapView GeometryEditor",
             geometryType = geometry.GeometryType.ToString(),
+            endpointSnapsApplied = _lastProposedMainEndpointSnapCount,
             restRendererColor = new[] { s.R, s.G, s.B, s.A },
             restRendererWidth = s.Width,
             restRendererStyle = s.Style,
