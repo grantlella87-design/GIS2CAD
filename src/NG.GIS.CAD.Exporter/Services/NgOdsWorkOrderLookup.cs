@@ -51,6 +51,46 @@ public sealed record NgOdsWorkOrderItem(
 
 public static class NgOdsWorkOrderLookup
 {
+    private static Task<IReadOnlyList<NgOdsWorkOrderItem>>? _prefetched;
+    private static readonly object PrefetchGate = new();
+
+    /// <summary>
+    /// Starts the work order query immediately, before the window exists. The query runs in its own
+    /// process, so it proceeds alongside portal sign-in, the AutoCAD drawing reads, window
+    /// construction and profile loading instead of queueing behind them. Does nothing when no
+    /// connection is configured, since that path needs a prompt and therefore a window.
+    /// </summary>
+    public static void StartPrefetch()
+    {
+        if (!NgOdsConnection.IsConfigured) { return; }
+
+        lock (PrefetchGate)
+        {
+            if (_prefetched != null) { return; }
+
+            var task = LoadAllAsync(CancellationToken.None);
+
+            // Observe a failure here so a prefetch nobody collects cannot resurface later as an
+            // unobserved task exception. The real error is still reported when the task is awaited.
+            _ = task.ContinueWith(static t => { _ = t.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
+            _prefetched = task;
+        }
+    }
+
+    /// <summary>
+    /// Hands over the prefetched query if one was started, and clears it, so a later reload runs a
+    /// fresh query rather than replaying a stale result or a stale failure.
+    /// </summary>
+    public static Task<IReadOnlyList<NgOdsWorkOrderItem>>? TakePrefetched()
+    {
+        lock (PrefetchGate)
+        {
+            var task = _prefetched;
+            _prefetched = null;
+            return task;
+        }
+    }
+
     private static string ResolveConnectionString()
     {
         return NgOdsConnection.TryGetConfiguredConnectionString()

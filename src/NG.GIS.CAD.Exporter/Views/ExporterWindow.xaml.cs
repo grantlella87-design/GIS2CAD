@@ -54,14 +54,23 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
             LoadWorkOrderSuggestions();
             UpdatePageVisibility();
             ApplyDisplayModeToExtentPage();
+
+            // Page 1 is the work order lookup, so the NG_ODS query runs before anything else. The
+            // map belongs to page 2 and is started only once the dropdowns are populated, rather
+            // than competing with them for the UI thread and the network.
+            await EnsureNgOdsWorkOrdersLoadedAsync(userInitiated: false);
             await InitializeArcGisMapAsync();
         };
-        DataContextChanged += async (_, _) =>
+        DataContextChanged += (_, _) =>
         {
             UpdatePageVisibility();
             AttachViewModelEvents();
             ApplyDisplayModeToExtentPage();
-            await InitializeArcGisMapAsync();
+
+            // The map is deliberately not started here. DataContext is assigned in the object
+            // initializer before the window is shown, so doing map setup here would run it ahead of
+            // the work order query. Loaded starts it, and reaching page 2 starts it if that has not
+            // happened yet.
         };
     }
     private void AttachViewModelEvents()

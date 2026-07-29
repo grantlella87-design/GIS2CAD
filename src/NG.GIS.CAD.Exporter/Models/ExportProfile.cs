@@ -21,6 +21,9 @@ public sealed class ExportProfile
     /// </summary>
     public List<MapDataSource> MapDataSources { get; set; } = new();
 
+    /// <summary>Where the SharePoint CAD template browser looks, and which app registration it signs in with.</summary>
+    public SharePointTemplateSettings SharePointTemplates { get; set; } = new();
+
     /// <summary>
     /// Properties present in the profile file that this model does not declare, captured so that
     /// saving the profile round-trips them instead of dropping them. The profile carries keys such
@@ -43,6 +46,20 @@ public sealed class ServiceProfile
     public string ServiceUrl { get; set; } = string.Empty;
     public bool Enabled { get; set; } = true;
 }
+/// <summary>
+/// Settings for the SharePoint CAD template browser. None of these are secrets: the client id is
+/// Microsoft's published public client for Graph command line tools, which lets the plug-in request
+/// delegated access as the signed-in user without registering its own application. Replace it with
+/// your own registration's id here if you would rather the consent show your app's name.
+/// </summary>
+public sealed class SharePointTemplateSettings
+{
+    public string ClientId { get; set; } = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
+    public string TenantId { get; set; } = "f98a6a53-25f3-4212-901c-c7787fcd3495";
+    public string DriveId { get; set; } = "b!oQf4lQnCX0qt-hTuSFmXrP4QVHfYL_1Mo26SJGoClkz_SltDsJ3rT4gTLzMV1xCP";
+    public string FolderPath { get; set; } = "Boston Cape Gas Dist Eng Design/CAD Template/Template - BOSTON TEAM";
+}
+
 /// <summary>A service the user added to the extent page map.</summary>
 public sealed class MapDataSource
 {

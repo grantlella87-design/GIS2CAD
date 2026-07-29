@@ -2,6 +2,18 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="National Grid GIS CAD Exporter" Height="760" Width="1180">
+    <Window.Resources>
+        <!-- Placeholder text shown inside an empty field. Sits over the TextBox rather than
+             retemplating it, so the box keeps its normal focus and hover chrome. Hit testing is off
+             so clicks land on the field underneath. -->
+        <Style x:Key="FieldPlaceholder" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#9A9A9A"/>
+            <Setter Property="Margin" Value="5,0,0,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="IsHitTestVisible" Value="False"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+        </Style>
+    </Window.Resources>
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -36,7 +48,21 @@
                         <TextBox x:Name="LocalDwtPathTextBox" Width="440" Height="24" IsReadOnly="True" Margin="0,0,5,0"/>
                         <Button Content="Open" Click="OpenLocalDwtTemplate_Click" Width="70" Height="24"/>
                     </StackPanel>
-                    <TextBlock x:Name="LocalDwtStatusText" Text="Select a local or synced SharePoint .dwt. No Graph sign-in is used." TextWrapping="Wrap" Foreground="#555555"/>
+                    <TextBlock x:Name="LocalDwtStatusText" Text="Select a local or synced .dwt, or sign in below to browse SharePoint." TextWrapping="Wrap" Foreground="#555555"/>
+                    <Expander x:Name="SharePointTemplatesExpander" Header="SharePoint templates" Margin="0,8,0,0" Expanded="SharePointTemplates_Expanded">
+                        <StackPanel Margin="4,6,4,4">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <Button x:Name="SharePointSignInButton" Content="Sign in to SharePoint" Click="SharePointSignIn_Click" Padding="8,2" Margin="0,0,6,0"/>
+                                <Button x:Name="SharePointRefreshButton" Content="Refresh list" Click="SharePointRefresh_Click" Padding="8,2" Margin="0,0,6,0"/>
+                                <Button x:Name="SharePointSignOutButton" Content="Sign out" Click="SharePointSignOut_Click" Padding="8,2"/>
+                            </StackPanel>
+                            <ListBox x:Name="SharePointTemplateList" Height="120" DisplayMemberPath="Name" Margin="0,0,0,6"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="SharePointUseButton" Content="Download and use" Click="SharePointUseSelected_Click" Padding="8,2" Margin="0,0,6,0"/>
+                                <TextBlock x:Name="SharePointStatusText" Text="Not signed in." VerticalAlignment="Center" Foreground="#555555" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Expander>
                 </StackPanel>
             </Grid>
                         <Grid x:Name="ExtentPage" Visibility="Collapsed" IsVisibleChanged="ExtentPage_IsVisibleChanged">
@@ -132,8 +158,36 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                             <TextBlock Text="Add a MapServer, FeatureServer layer, VectorTileServer or KML URL" Foreground="#777777" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
-                            <TextBox Text="{Binding NewMapDataSourceName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4" ToolTip="Display name (optional)"/>
-                            <TextBox Text="{Binding NewMapDataSourceUrl, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4" ToolTip="Service URL"/>
+                            <Grid Margin="0,0,0,4">
+                                <TextBox x:Name="NewMapDataSourceNameBox" Text="{Binding NewMapDataSourceName, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="Display name (optional). Leave it empty to name the source from its service URL."/>
+                                <TextBlock Text="Display name (optional)">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource FieldPlaceholder}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Text, ElementName=NewMapDataSourceNameBox}" Value="">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                            <Grid Margin="0,0,0,4">
+                                <TextBox x:Name="NewMapDataSourceUrlBox" Text="{Binding NewMapDataSourceUrl, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="Service URL, for example https://host/arcgis/rest/services/MA/Landbase_MA/MapServer"/>
+                                <TextBlock Text="Service URL">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource FieldPlaceholder}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Text, ElementName=NewMapDataSourceUrlBox}" Value="">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
                             <Button Content="Add data source" Command="{Binding AddMapDataSourceCommand}" Padding="8,2" HorizontalAlignment="Left"/>
                         </StackPanel>
                     </Expander>
