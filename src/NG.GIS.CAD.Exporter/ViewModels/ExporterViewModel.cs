@@ -109,6 +109,10 @@ public sealed partial class ExporterViewModel : ObservableObject
             // competes with the work order query while page 1 is on screen.
             if (IsLayerPage) { _ = EnsureLayerMetadataLoadedAsync(); }
             if (IsTransformPage) { EnsureCadCatalogLoaded(); }
+
+            // The map may have been re-toggled since these pages were built, so the selection is
+            // brought back in line on arrival.
+            if (IsLayerPage || IsTransformPage || IsReviewPage) { RefreshLayerSelectionFromMap(); }
         }
     }
     public string ProfilePath { get => _profilePath; set => SetProperty(ref _profilePath, value); }
@@ -204,8 +208,9 @@ public sealed partial class ExporterViewModel : ObservableObject
                     ApplySavedSettings(state, userSettings);
 
                     // What is shown on the map decides what starts selected for export, which is the
-                    // point of driving these pages from the map in the first place.
-                    state.Enabled = mapLayer.IsVisible;
+                    // point of driving these pages from the map in the first place. Effective
+                    // visibility, so a layer inside an unticked group counts as hidden.
+                    state.Enabled = mapLayer.IsEffectivelyVisible;
 
                     var layerVm = new LayerSelectionViewModel(state);
                     Layers.Add(layerVm);
@@ -483,6 +488,32 @@ public sealed partial class ExporterViewModel : ObservableObject
     /// tree, so their contents are discarded and rebuilt on next use rather than describing a map
     /// that no longer exists.
     /// </summary>
+    /// <summary>
+    /// Re-applies the map's visibility to the already loaded layer list. Called when a layer is
+    /// toggled on page 2 and when one of the later pages is opened, because those pages are built
+    /// once and would otherwise keep showing whatever the map looked like at that moment.
+    ///
+    /// Only the selection is touched: field choices and transform rules the user has edited stay as
+    /// they are, which re-reading the metadata would discard.
+    /// </summary>
+    public void RefreshLayerSelectionFromMap()
+    {
+        if (Layers.Count == 0) { return; }
+
+        var byUrl = FlattenMapLayers(MapLayers)
+            .Where(l => !string.IsNullOrWhiteSpace(l.ServiceUrl))
+            .GroupBy(l => l.ServiceUrl!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var layer in Layers)
+        {
+            if (byUrl.TryGetValue(layer.Url, out var mapLayer))
+            {
+                layer.Enabled = mapLayer.IsEffectivelyVisible;
+            }
+        }
+    }
+
     public void OnMapLayersChanged()
     {
         _layerMetadataLoaded = false;

@@ -203,8 +203,16 @@ public partial class ExporterWindow
             toggle.VisibilityChanged += OnMapLayerToggled;
             _mapLayerContentByPath[path] = content;
 
-            if (parent == null) { vm.MapLayers.Add(toggle); }
-            else { parent.Children.Add(toggle); }
+            if (parent == null)
+            {
+                vm.MapLayers.Add(toggle);
+            }
+            else
+            {
+                // The link upward is what lets a node tell whether every group above it is visible.
+                toggle.Parent = parent;
+                parent.Children.Add(toggle);
+            }
 
             node = toggle;
         }
@@ -238,6 +246,10 @@ public partial class ExporterWindow
         if (DataContext is ExporterViewModel vm)
         {
             _ = vm.SaveMapLayerVisibilityAsync();
+
+            // Toggling a group changes what is drawn for everything beneath it, so the export
+            // selection on pages 3 and 4 is brought back in line straight away.
+            vm.RefreshLayerSelectionFromMap();
         }
     }
 
