@@ -5,13 +5,37 @@ namespace NG.GIS.CAD.Exporter.Services;
 
 public sealed class ExportProfileStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
+    // CamelCase matches the casing the profile files already use. Reads stay case insensitive, and
+    // the naming policy does not apply to dictionary keys, so layer paths are written verbatim.
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true
+    };
 
     public async Task<ExportProfile> LoadAsync(string path, CancellationToken cancellationToken)
     {
         await using var stream = File.OpenRead(path);
         var profile = await JsonSerializer.DeserializeAsync<ExportProfile>(stream, JsonOptions, cancellationToken);
         return profile ?? new ExportProfile();
+    }
+
+    /// <summary>
+    /// Writes the profile back to disk through a temporary file, so an interrupted save cannot
+    /// leave a partially written profile in place of a good one.
+    /// </summary>
+    public async Task SaveAsync(ExportProfile profile, string path, CancellationToken cancellationToken)
+    {
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory)) { Directory.CreateDirectory(directory); }
+
+        var tempPath = path + ".tmp";
+        await using (var stream = File.Create(tempPath))
+        {
+            await JsonSerializer.SerializeAsync(stream, profile, JsonOptions, cancellationToken);
+        }
+        File.Move(tempPath, path, overwrite: true);
     }
 
     public string GetDefaultProfilePath()
