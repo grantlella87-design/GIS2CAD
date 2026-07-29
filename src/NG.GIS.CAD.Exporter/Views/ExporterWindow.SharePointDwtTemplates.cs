@@ -78,6 +78,12 @@ public partial class ExporterWindow
     {
         var service = GetSharePointService();
         if (service == null) { SetSharePointStatus("Waiting for the profile to load."); return; }
+
+        if (DataContext is ExporterViewModel vm && string.IsNullOrEmpty(SharePointFolderUrlBox.Text))
+        {
+            SharePointFolderUrlBox.Text = vm.SharePointTemplateSettings.FolderUrl ?? string.Empty;
+        }
+
         if (service.IsSignedIn) { return; }
 
         SetSharePointStatus("Checking for a saved SharePoint session...");
@@ -118,6 +124,24 @@ public partial class ExporterWindow
             SetSharePointStatus("Sign-in failed: " + ex.Message);
         }
         finally { SetSharePointBusy(false); }
+    }
+
+    /// <summary>
+    /// Stores the pasted folder URL in the profile so it survives a restart. The service reads the
+    /// same settings instance, so the next Refresh uses the new folder without rebuilding anything.
+    /// </summary>
+    private async void SharePointFolderUrl_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ExporterViewModel vm) { return; }
+
+        var url = SharePointFolderUrlBox.Text?.Trim() ?? string.Empty;
+        if (string.Equals(url, vm.SharePointTemplateSettings.FolderUrl, StringComparison.Ordinal)) { return; }
+
+        vm.SharePointTemplateSettings.FolderUrl = url;
+        await vm.SaveProfileAsync();
+        SetSharePointStatus(string.IsNullOrEmpty(url)
+            ? "Folder URL cleared. The drive id and path from the profile will be used."
+            : "Folder URL saved. Use Refresh list to read it.");
     }
 
     private async void SharePointRefresh_Click(object sender, RoutedEventArgs e)
