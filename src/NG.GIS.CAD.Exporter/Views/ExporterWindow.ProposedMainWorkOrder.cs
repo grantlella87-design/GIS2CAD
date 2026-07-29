@@ -71,8 +71,8 @@ public partial class ExporterWindow
             }
             SetNgOdsStatus((automatic ? "Auto-importing" : "Querying") + " proposed mains GIS for workorderid " + workOrderId + "...");
             var rawResult = await ProposedMainFeatureService.QueryByWorkOrderAsync(workOrderId, token);
-            var snappedGeometries = SnapGeometriesWithinOneFoot(rawResult.Geometries, out var snapCount).ToList();
-            _lastProposedMainEndpointSnapCount = snapCount;
+            var snappedGeometries = SnapAmendedProposedMainGeometries(rawResult.Geometries).ToList();
+            var snapCount = _lastProposedMainEndpointSnapCount;
             var result = new ProposedMainQueryResult
             {
                 WorkOrderId = rawResult.WorkOrderId,
@@ -217,6 +217,21 @@ public partial class ExporterWindow
         WorkOrderGeometryTextBox.Text = JsonSerializer.Serialize(proof, new JsonSerializerOptions { WriteIndented = true });
     }
 
+    /// <summary>
+    /// Applies the one foot endpoint snap and records how many endpoints moved, so the proof text and
+    /// the status line can report it.
+    ///
+    /// Every path that amends the proposed main goes through here, not only the initial import: an
+    /// edit in the geometry editor, or a manually drawn segment, leaves exactly the same near miss
+    /// gaps at the joins that the import is snapped to close.
+    /// </summary>
+    private IReadOnlyList<Geometry> SnapAmendedProposedMainGeometries(IReadOnlyList<Geometry> geometries)
+    {
+        var snapped = SnapGeometriesWithinOneFoot(geometries, out var snapCount);
+        _lastProposedMainEndpointSnapCount = snapCount;
+        return snapped;
+    }
+
     private static IReadOnlyList<Geometry> SnapGeometriesWithinOneFoot(IReadOnlyList<Geometry> geometries, out int snapCount)
     {
         snapCount = 0;
@@ -241,11 +256,19 @@ public partial class ExporterWindow
             }
         }
         if (snapCount == 0) { return geometries; }
+
+        // Rebuilt by source index, and falling back to the original for anything that did not parse
+        // as a polyline, so a geometry this cannot snap is carried through rather than dropped.
+        var rebuiltByIndex = parsed.ToDictionary(x => x.SourceIndex, x => x.ToGeometry());
         var snapped = new List<Geometry>();
-        foreach (var editable in parsed.OrderBy(x => x.SourceIndex))
+        for (var i = 0; i < geometries.Count; i++)
         {
-            var geometry = editable.ToGeometry();
-            if (geometry != null && !geometry.IsEmpty) { snapped.Add(geometry); }
+            if (rebuiltByIndex.TryGetValue(i, out var rebuilt) && rebuilt != null && !rebuilt.IsEmpty)
+            {
+                snapped.Add(rebuilt);
+                continue;
+            }
+            if (geometries[i] != null && !geometries[i].IsEmpty) { snapped.Add(geometries[i]); }
         }
         return snapped;
     }
@@ -326,11 +349,23 @@ public partial class ExporterWindow
     {
         public int SourceIndex { get; }
         public List<EditablePath> Paths { get; } = new List<EditablePath>();
+
+        /// <summary>
+        /// The spatial reference exactly as the source geometry wrote it. Imported mains arrive in Web
+        /// Mercator, but a manually drawn segment carries the map's spatial reference, and writing a
+        /// fixed wkid back would relabel those coordinates rather than convert them.
+        /// </summary>
+        private string SpatialReferenceJson { get; set; } = "{\"wkid\":3857}";
+
         private EditablePolylineGeometry(int sourceIndex) { SourceIndex = sourceIndex; }
         public static EditablePolylineGeometry FromGeometry(int sourceIndex, Geometry geometry)
         {
             var editable = new EditablePolylineGeometry(sourceIndex);
             using var doc = JsonDocument.Parse(geometry.ToJson());
+            if (doc.RootElement.TryGetProperty("spatialReference", out var spatialReference))
+            {
+                editable.SpatialReferenceJson = spatialReference.GetRawText();
+            }
             if (!doc.RootElement.TryGetProperty("paths", out var paths) || paths.ValueKind != JsonValueKind.Array) { return editable; }
             foreach (var pathElement in paths.EnumerateArray())
             {
@@ -366,7 +401,9 @@ public partial class ExporterWindow
                 }
                 sb.Append(']');
             }
-            sb.Append("],\"spatialReference\":{\"wkid\":3857}}");
+            sb.Append("],\"spatialReference\":");
+            sb.Append(SpatialReferenceJson);
+            sb.Append('}');
             return Geometry.FromJson(sb.ToString());
         }
     }

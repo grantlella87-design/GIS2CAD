@@ -75,8 +75,7 @@ public sealed class CadTransformRuleViewModel : ObservableObject
         {
             Rule.ColorMode = value;
             RaisePropertyChanged();
-            RaisePropertyChanged(nameof(ColorDescription));
-            RaisePropertyChanged(nameof(IsAciColor));
+            RaiseColorDisplayChanged();
         }
     }
     public int AciColor
@@ -86,22 +85,39 @@ public sealed class CadTransformRuleViewModel : ObservableObject
         {
             Rule.AciColor = value;
             RaisePropertyChanged();
-            RaisePropertyChanged(nameof(ColorDescription));
-            RaisePropertyChanged(nameof(IsAciColor));
+            RaiseColorDisplayChanged();
         }
     }
 
     /// <summary>
-    /// The swatch colour as "#RRGGBB", or null when nothing has been picked. Null lets the binding
-    /// fall back rather than showing black, which would read as a deliberate choice.
+    /// The true colour as "#RRGGBB". Editable, so a known value can be typed rather than picked off
+    /// the dialog, which is the same affordance the ACI box gives an index.
     /// </summary>
-    public string? ColorPreview => string.IsNullOrWhiteSpace(Rule.RgbColor) ? null : Rule.RgbColor;
+    public string RgbColor
+    {
+        get => Rule.RgbColor;
+        set
+        {
+            // Stored as typed rather than normalised, so a half finished value is not rewritten out
+            // from under the caret. Everything that reads it goes through NormalizeRgbHex instead.
+            Rule.RgbColor = value ?? string.Empty;
+            RaisePropertyChanged();
+            RaiseColorDisplayChanged();
+        }
+    }
+
+    /// <summary>
+    /// The swatch colour as "#RRGGBB", or null when nothing usable has been set. Null lets the binding
+    /// fall back rather than showing black, which would read as a deliberate choice, and keeps a
+    /// part typed value from flickering the swatch.
+    /// </summary>
+    public string? ColorPreview => NormalizeRgbHex(Rule.RgbColor);
 
     /// <summary>Says what the colour actually is, since a swatch alone does not distinguish ACI 1 from red.</summary>
     public string ColorDescription => Rule.ColorMode switch
     {
         "ACI" => "ACI " + Rule.AciColor,
-        "RGB" => string.IsNullOrWhiteSpace(Rule.RgbColor) ? "RGB" : Rule.RgbColor,
+        "RGB" => DescribeRgb(Rule.RgbColor),
         _ => "ByLayer"
     };
 
@@ -111,6 +127,9 @@ public sealed class CadTransformRuleViewModel : ObservableObject
     /// would be worse than showing nothing.
     /// </summary>
     public bool IsAciColor => string.Equals(Rule.ColorMode, "ACI", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Whether the colour is a true colour, which is when the RGB box is the useful one to show.</summary>
+    public bool IsRgbColor => string.Equals(Rule.ColorMode, "RGB", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Records a colour chosen in the CAD colour dialog. Takes plain values rather than an AutoCAD
@@ -124,9 +143,48 @@ public sealed class CadTransformRuleViewModel : ObservableObject
 
         RaisePropertyChanged(nameof(ColorMode));
         RaisePropertyChanged(nameof(AciColor));
+        RaisePropertyChanged(nameof(RgbColor));
+        RaiseColorDisplayChanged();
+    }
+
+    private void RaiseColorDisplayChanged()
+    {
         RaisePropertyChanged(nameof(ColorPreview));
         RaisePropertyChanged(nameof(ColorDescription));
         RaisePropertyChanged(nameof(IsAciColor));
+        RaisePropertyChanged(nameof(IsRgbColor));
+    }
+
+    /// <summary>
+    /// Reads the true colour back in AutoCAD's own notation, so what the panel says matches what the
+    /// True Color tab showed when it was picked.
+    /// </summary>
+    private static string DescribeRgb(string? value)
+    {
+        var normalized = NormalizeRgbHex(value);
+        if (normalized == null) { return "RGB (not set)"; }
+        var r = Convert.ToInt32(normalized.Substring(1, 2), 16);
+        var g = Convert.ToInt32(normalized.Substring(3, 2), 16);
+        var b = Convert.ToInt32(normalized.Substring(5, 2), 16);
+        return "RGB " + r + "," + g + "," + b;
+    }
+
+    /// <summary>
+    /// Returns "#RRGGBB" for anything that reads as a six digit hex colour, with or without the hash,
+    /// and null for anything that does not. Accepting a typed value without the hash means the box
+    /// does not demand a character the user has no reason to think matters.
+    /// </summary>
+    private static string? NormalizeRgbHex(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) { return null; }
+        var digits = value.Trim();
+        if (digits.StartsWith("#", StringComparison.Ordinal)) { digits = digits[1..]; }
+        if (digits.Length != 6) { return null; }
+        foreach (var character in digits)
+        {
+            if (!Uri.IsHexDigit(character)) { return null; }
+        }
+        return "#" + digits.ToUpperInvariant();
     }
     public double RotationOffsetDegrees
     {
