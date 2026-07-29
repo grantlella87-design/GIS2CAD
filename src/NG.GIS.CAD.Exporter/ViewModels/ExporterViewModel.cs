@@ -46,8 +46,12 @@ public sealed partial class ExporterViewModel : ObservableObject
         ExportCommand = new RelayCommand(_ => BuildReviewAsync());
         AddMapDataSourceCommand = new RelayCommand(_ => AddMapDataSourceAsync());
         RemoveMapDataSourceCommand = new RelayCommand(RemoveMapDataSourceAsync);
+        // LoadWorkOrdersAsync is deliberately not started here. It queries work order IDs from the
+        // ArcGIS proposed main layer into WorkOrderOptions, which nothing binds to: the dropdowns on
+        // page 1 are filled from NG_ODS instead. Running it at startup spent a network round trip on
+        // a result that is never shown and overwrote Status while the NG_ODS load was reporting
+        // progress. It stays available behind LoadWorkOrdersCommand.
         _ = LoadProfileAsync();
-        _ = LoadWorkOrdersAsync();
     }
     public ObservableCollection<LayerSelectionViewModel> Layers { get; }
     public ObservableCollection<MapLayerToggleViewModel> MapLayers { get; }
