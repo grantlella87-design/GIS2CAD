@@ -1,8 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -54,22 +51,12 @@ public sealed record NgOdsWorkOrderItem(
 
 public static class NgOdsWorkOrderLookup
 {
-    private const string ConnectionStringVariable = "NGGISCAD_ODS_CONN";
-
     private static string ResolveConnectionString()
     {
-        var connectionString = Environment.GetEnvironmentVariable(ConnectionStringVariable, EnvironmentVariableTarget.Process)
-            ?? Environment.GetEnvironmentVariable(ConnectionStringVariable, EnvironmentVariableTarget.User)
-            ?? Environment.GetEnvironmentVariable(ConnectionStringVariable, EnvironmentVariableTarget.Machine);
-
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new InvalidOperationException(
-                "The NG_ODS connection string is not configured. Set the " + ConnectionStringVariable +
-                " environment variable to the NG_ODS SQL connection string before running the work order lookup.");
-        }
-
-        return connectionString;
+        return NgOdsConnection.TryGetConfiguredConnectionString()
+            ?? throw new InvalidOperationException(
+                "The NG_ODS connection is not configured. Enter the database connection details when prompted, " +
+                "or set the " + NgOdsConnection.ConnectionStringVariable + " environment variable.");
     }
 
     private const string LookupScript = """
@@ -194,47 +181,19 @@ finally {
     public static async Task<IReadOnlyList<NgOdsWorkOrderItem>> LoadAllAsync(CancellationToken cancellationToken = default)
     {
         var connectionString = ResolveConnectionString();
-        var scriptPath = Path.Combine(Path.GetTempPath(), "NGGisCadExporter_WorkOrderFullLoad_" + Guid.NewGuid().ToString("N") + ".ps1");
-        await File.WriteAllTextAsync(scriptPath, LookupScript, new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = "powershell.exe",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardErrorEncoding = Encoding.UTF8
-            };
-            psi.ArgumentList.Add("-NoProfile");
-            psi.ArgumentList.Add("-ExecutionPolicy");
-            psi.ArgumentList.Add("Bypass");
-            psi.ArgumentList.Add("-File");
-            psi.ArgumentList.Add(scriptPath);
-            psi.Environment[ConnectionStringVariable] = connectionString;
+        var output = await NgOdsConnection
+            .RunPowerShellAsync(LookupScript, connectionString, "NGGisCadExporter_WorkOrderFullLoad_", cancellationToken)
+            .ConfigureAwait(false);
 
-            using var process = Process.Start(psi) ?? throw new InvalidOperationException("Could not start PowerShell work order lookup process.");
-            var outputTask = process.StandardOutput.ReadToEndAsync();
-            var errorTask = process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-            var output = await outputTask.ConfigureAwait(false);
-            var error = await errorTask.ConfigureAwait(false);
-            if (process.ExitCode != 0) { throw new InvalidOperationException("NG_ODS work order lookup failed: " + error); }
-            if (string.IsNullOrWhiteSpace(output)) { return Array.Empty<NgOdsWorkOrderItem>(); }
-            output = output.Trim();
-            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            if (output.StartsWith("[", StringComparison.Ordinal))
-            {
-                return JsonSerializer.Deserialize<List<NgOdsWorkOrderItem>>(output, options) ?? new List<NgOdsWorkOrderItem>();
-            }
-            var single = JsonSerializer.Deserialize<NgOdsWorkOrderItem>(output, options);
-            return single == null ? Array.Empty<NgOdsWorkOrderItem>() : new[] { single };
-        }
-        finally
+        if (string.IsNullOrWhiteSpace(output)) { return Array.Empty<NgOdsWorkOrderItem>(); }
+        output = output.Trim();
+
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        if (output.StartsWith("[", StringComparison.Ordinal))
         {
-            try { File.Delete(scriptPath); } catch { }
+            return JsonSerializer.Deserialize<List<NgOdsWorkOrderItem>>(output, options) ?? new List<NgOdsWorkOrderItem>();
         }
+        var single = JsonSerializer.Deserialize<NgOdsWorkOrderItem>(output, options);
+        return single == null ? Array.Empty<NgOdsWorkOrderItem>() : new[] { single };
     }
 }

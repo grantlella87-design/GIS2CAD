@@ -27,6 +27,28 @@ public partial class ExporterWindow
         await _ngOdsStartupLoadTask;
     }
 
+    /// <summary>
+    /// Makes sure a working NG_ODS connection is configured, prompting for one when it is missing or
+    /// when <paramref name="forcePrompt"/> says the configured one has just failed. Returns false when
+    /// the user cancels, in which case the caller should give up quietly rather than retry.
+    /// </summary>
+    private bool EnsureNgOdsConnection(bool forcePrompt)
+    {
+        if (!forcePrompt && NgOdsConnection.IsConfigured) { return true; }
+
+        var dialog = new NgOdsConnectionWindow();
+        if (IsLoaded) { dialog.Owner = this; }
+
+        if (dialog.ShowDialog() == true) { return true; }
+
+        // Clear the once-only guard so reopening a dropdown genuinely runs the flow again and
+        // prompts a second time, rather than silently awaiting the task that just gave up.
+        _ngOdsStartupLoadTask = null;
+        SetNgOdsStatus("NG_ODS connection was not configured, so work order lookup is unavailable. "
+            + "Reopen the work order dropdown to enter it.");
+        return false;
+    }
+
     private async Task LoadNgOdsWorkOrdersOnceAsync()
     {
         if (_ngOdsWorkOrders.Count > 0) { return; }
@@ -37,8 +59,26 @@ public partial class ExporterWindow
         {
             if (WorkOrderSelectionComboBox != null) { WorkOrderSelectionComboBox.IsEnabled = false; }
             if (WorkOrderNameComboBox != null) { WorkOrderNameComboBox.IsEnabled = false; }
+            if (!EnsureNgOdsConnection(forcePrompt: false)) { return; }
+
             SetNgOdsStatus("Loading full NG_ODS work order list once for local filtering...");
-            var items = await NgOdsWorkOrderLookup.LoadAllAsync(token);
+            IReadOnlyList<NgOdsWorkOrderItem> items;
+            try
+            {
+                items = await NgOdsWorkOrderLookup.LoadAllAsync(token);
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception firstAttempt)
+            {
+                // A stored connection that no longer works should not be a dead end. Show what went
+                // wrong, let the user correct it, and try once more.
+                if (token.IsCancellationRequested) { return; }
+                SetNgOdsStatus("NG_ODS work order load failed: " + FlattenNgOdsException(firstAttempt));
+                if (!EnsureNgOdsConnection(forcePrompt: true)) { return; }
+                SetNgOdsStatus("Retrying the NG_ODS work order load...");
+                items = await NgOdsWorkOrderLookup.LoadAllAsync(token);
+            }
+
             if (token.IsCancellationRequested) { return; }
             _ngOdsWorkOrders = items.ToList();
             BindNgOdsDropdowns(_ngOdsWorkOrders.Take(NgOdsDropdownDisplayLimit).ToList(), null, null);
@@ -47,6 +87,8 @@ public partial class ExporterWindow
         }
         catch (Exception ex)
         {
+            // Leave the flow retryable so reopening a dropdown attempts the load again.
+            _ngOdsStartupLoadTask = null;
             SetNgOdsStatus("NG_ODS work order full startup load failed: " + FlattenNgOdsException(ex));
         }
         finally
