@@ -18,15 +18,20 @@ namespace NG.GIS.CAD.Exporter.Services;
 public sealed class SharePointDwtTemplateService
 {
     private const string GraphRoot = "https://graph.microsoft.com/v1.0";
-    private static readonly string[] Scopes = { "Files.Read.All" };
 
     private readonly SharePointTemplateSettings _settings;
+    private readonly string[] _scopes;
     private readonly IPublicClientApplication _app;
     private readonly HttpClient _http = new();
 
     public SharePointDwtTemplateService(SharePointTemplateSettings settings)
     {
         _settings = settings;
+        _scopes = (settings.Scopes ?? new List<string>())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToArray();
+        if (_scopes.Length == 0) { _scopes = new[] { "User.Read", "Sites.ReadWrite.All" }; }
+
         _app = PublicClientApplicationBuilder
             .Create(settings.ClientId)
             .WithTenantId(settings.TenantId)
@@ -50,7 +55,7 @@ public sealed class SharePointDwtTemplateService
             var account = (await _app.GetAccountsAsync().ConfigureAwait(false)).FirstOrDefault();
             if (account == null) { return false; }
 
-            var result = await _app.AcquireTokenSilent(Scopes, account).ExecuteAsync().ConfigureAwait(false);
+            var result = await _app.AcquireTokenSilent(_scopes, account).ExecuteAsync().ConfigureAwait(false);
             SignedInAs = result.Account?.Username;
             return IsSignedIn;
         }
@@ -62,7 +67,7 @@ public sealed class SharePointDwtTemplateService
     public async Task SignInInteractiveAsync(CancellationToken cancellationToken)
     {
         var result = await _app
-            .AcquireTokenInteractive(Scopes)
+            .AcquireTokenInteractive(_scopes)
             .WithUseEmbeddedWebView(false)
             .ExecuteAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -137,7 +142,7 @@ public sealed class SharePointDwtTemplateService
 
         try
         {
-            var result = await _app.AcquireTokenSilent(Scopes, account).ExecuteAsync(cancellationToken).ConfigureAwait(false);
+            var result = await _app.AcquireTokenSilent(_scopes, account).ExecuteAsync(cancellationToken).ConfigureAwait(false);
             SignedInAs = result.Account?.Username;
             return result.AccessToken;
         }

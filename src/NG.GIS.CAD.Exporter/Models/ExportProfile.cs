@@ -58,6 +58,14 @@ public sealed class SharePointTemplateSettings
     public string TenantId { get; set; } = "f98a6a53-25f3-4212-901c-c7787fcd3495";
     public string DriveId { get; set; } = "b!oQf4lQnCX0qt-hTuSFmXrP4QVHfYL_1Mo26SJGoClkz_SltDsJ3rT4gTLzMV1xCP";
     public string FolderPath { get; set; } = "Boston Cape Gas Dist Eng Design/CAD Template/Template - BOSTON TEAM";
+
+    /// <summary>
+    /// Delegated Graph permissions to request. Sites.ReadWrite.All is what this tenant already
+    /// consents to for the client id above and is what grants access to the document library the
+    /// templates live in. Files.Read.All would also suffice for reading, but it is not among the
+    /// consented permissions here, so asking for it would stall on a consent prompt.
+    /// </summary>
+    public List<string> Scopes { get; set; } = new() { "User.Read", "Sites.ReadWrite.All" };
 }
 
 /// <summary>A service the user added to the extent page map.</summary>
