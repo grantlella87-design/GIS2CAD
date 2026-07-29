@@ -73,6 +73,7 @@
                         <RowDefinition Height="*" MinHeight="80"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto" MinHeight="30"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <!-- Row 0: mode headers. Fixed. -->
@@ -220,6 +221,81 @@
                             </Grid>
                             <Button Content="Add data source" Command="{Binding AddMapDataSourceCommand}" Padding="8,2" HorizontalAlignment="Left"/>
                         </StackPanel>
+                        </ScrollViewer>
+                    </Expander>
+
+                    <!-- Row 6: strip map index. Collapsed by default and Auto sized, so it takes no
+                         room until it is opened and none of the splitters above it are disturbed. -->
+                    <Expander Grid.Row="6" Header="Strip map index" Margin="0,2,0,0">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="320">
+                            <StackPanel Margin="4,6,4,4">
+                                <TextBlock Text="Lays a run of sheets along the proposed main, each covering what one viewport shows at the plot scale."
+                                           TextWrapping="Wrap" Foreground="#555555" Margin="0,0,0,8"/>
+
+                                <TextBlock Text="Viewport from the CAD template" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                <ComboBox ItemsSource="{Binding StripMapViewports}"
+                                          SelectedItem="{Binding SelectedStripMapViewport}"
+                                          DisplayMemberPath="Display"
+                                          Margin="0,0,0,4"
+                                          ToolTip="Paper space viewports found in the template picked on page 1, or in the open drawing when no template is set. Choosing one fills the sheet size below."/>
+                                <TextBlock Text="No viewports found. Pick a template on page 1, or type a sheet size below."
+                                           Foreground="#777777" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding StripMapViewports.Count}" Value="0">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <TextBlock Text="Sheet size" FontWeight="SemiBold" Margin="0,4,0,4"/>
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Along route" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBox Grid.Column="1" Text="{Binding StripMapSheetWidth, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,10,0"
+                                             ToolTip="Viewport width in paper units. This side of the sheet runs along the pipeline."/>
+                                    <TextBlock Grid.Column="2" Text="Across" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBox Grid.Column="3" Text="{Binding StripMapSheetHeight, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="Viewport height in paper units. This side of the sheet runs across the pipeline."/>
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <RadioButton Content="inches" GroupName="StripMapUnits" IsChecked="{Binding StripMapSheetIsInches}" Margin="0,0,10,0"/>
+                                    <RadioButton Content="millimetres" GroupName="StripMapUnits" IsChecked="{Binding StripMapSheetIsMillimetres}"/>
+                                </StackPanel>
+
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Scale  1:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBox Grid.Column="1" Text="{Binding StripMapScaleDenominator, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,10,0"
+                                             ToolTip="Plot scale denominator. 240 gives 1:240, one paper inch to twenty feet."/>
+                                    <TextBlock Grid.Column="2" Text="Overlap %" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBox Grid.Column="3" Text="{Binding StripMapOverlapPercent, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="How much of each sheet repeats on the next one, so a feature on a sheet edge is not cut in half on both."/>
+                                </Grid>
+
+                                <TextBlock Text="{Binding StripMapGroundSizeText}" Foreground="#555555" TextWrapping="Wrap" Margin="0,0,0,8"/>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <Button Content="Build index" Click="BuildStripMapIndex_Click" Padding="8,2" Margin="0,0,6,0"/>
+                                    <Button Content="Clear" Click="ClearStripMapIndex_Click" Padding="8,2"/>
+                                </StackPanel>
+
+                                <TextBlock Text="{Binding StripMapSummary}" Foreground="#555555" TextWrapping="Wrap"/>
+                            </StackPanel>
                         </ScrollViewer>
                     </Expander>
                 </Grid>
