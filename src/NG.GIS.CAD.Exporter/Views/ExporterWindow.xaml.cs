@@ -245,9 +245,20 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
     private void ApplyDisplayModeToExtentPage()
     {
         if (WorkOrderModePanel == null || VisibleMapModePanel == null || ManualProposedPipelineModePanel == null) { return; }
-        WorkOrderModePanel.Visibility = _displayMode == ExportDisplayMode.WorkOrder ? Visibility.Visible : Visibility.Collapsed;
-        VisibleMapModePanel.Visibility = _displayMode == ExportDisplayMode.VisibleMap ? Visibility.Visible : Visibility.Collapsed;
-        ManualProposedPipelineModePanel.Visibility = _displayMode == ExportDisplayMode.ManualProposedPipeline ? Visibility.Visible : Visibility.Collapsed;
+
+        // Each mode has a fixed header of buttons in one row and a resizable readout in another, so
+        // both halves are shown and hidden together.
+        var workOrder = _displayMode == ExportDisplayMode.WorkOrder ? Visibility.Visible : Visibility.Collapsed;
+        var visibleMap = _displayMode == ExportDisplayMode.VisibleMap ? Visibility.Visible : Visibility.Collapsed;
+        var manualPipeline = _displayMode == ExportDisplayMode.ManualProposedPipeline ? Visibility.Visible : Visibility.Collapsed;
+
+        WorkOrderModePanel.Visibility = workOrder;
+        VisibleMapModePanel.Visibility = visibleMap;
+        ManualProposedPipelineModePanel.Visibility = manualPipeline;
+
+        if (WorkOrderModeHeader != null) { WorkOrderModeHeader.Visibility = workOrder; }
+        if (VisibleMapModeHeader != null) { VisibleMapModeHeader.Visibility = visibleMap; }
+        if (ManualProposedPipelineModeHeader != null) { ManualProposedPipelineModeHeader.Visibility = manualPipeline; }
         if (ExtentModeTitle != null)
         {
             ExtentModeTitle.Text = _displayMode switch

@@ -87,89 +87,74 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Grid Grid.Column="0">
-                    <!-- Splitters let each section below the mode buttons be resized. The rows keep
-                         their original sizing, so the pane opens looking the same and only changes
-                         when dragged. Minimum heights stop a section being collapsed to nothing. -->
+                    <!-- The mode buttons live in row 0, which no splitter is attached to, so they
+                         cannot be resized or scrolled by anything the user does below them. The
+                         splitters act on rows 1, 3 and 5 only. -->
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" MinHeight="80"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto" MinHeight="60"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*" MinHeight="80"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto" MinHeight="30"/>
                     </Grid.RowDefinitions>
-                    <!-- Each mode splits into a fixed header of title and buttons, and a body that
-                         scrolls. The header row is Auto and never scrolls, so the buttons hold their
-                         position no matter how far the section below is dragged or how long its
-                         output grows. -->
+
+                    <!-- Row 0: mode headers. Fixed. -->
                     <Grid Grid.Row="0">
-                        <Grid x:Name="WorkOrderModePanel">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-                            <StackPanel Grid.Row="0">
-                                <TextBlock Text="Work Order driven export" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
-                                <Button Content="Refresh Work Order Geometry + Buffer" Click="RefreshWorkOrderGeometry_Click" Padding="8" Margin="0,0,0,10"/>
-                                <UniformGrid Columns="3" Margin="0,0,0,10">
-                                    <Button Content="Edit Imported Main" Click="EditImportedProposedMain_Click" Padding="8" Margin="0,0,4,0"/>
-                                    <Button Content="Apply Segment" Click="ApplyManualProposedMainSegment_Click" Padding="8" Margin="4,0,4,0"/>
-                                    <Button Content="Cancel Edit" Click="CancelImportedProposedMainEdit_Click" Padding="8" Margin="4,0,0,0"/>
-                                </UniformGrid>
-                                <TextBlock Text="Manual proposed pipeline segments" FontWeight="Bold" Margin="0,8,0,6"/>
-                                <UniformGrid Columns="4" Margin="0,0,0,10">
-                                    <Button Content="Start Segment" Click="StartManualProposedMainSegment_Click" Padding="8" Margin="0,0,4,0"/>
-                                    <Button Content="Apply Segment" Click="ApplyManualProposedMainSegment_Click" Padding="8" Margin="4,0,4,0"/>
-                                    <Button Content="Finish Segments" Click="FinishManualProposedMainSegments_Click" Padding="8" Margin="4,0,4,0"/>
-                                    <Button Content="Clear Segments" Click="ClearManualProposedMainSegments_Click" Padding="8" Margin="4,0,0,0"/>
-                                </UniformGrid>
-                                <TextBlock Text="Work order geometry/buffer proof" FontWeight="Bold" Margin="0,10,0,6"/>
-                            </StackPanel>
-                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <StackPanel>
-                                    <TextBox x:Name="WorkOrderGeometryTextBox" IsReadOnly="True" TextWrapping="Wrap" MinHeight="170" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12" Margin="0,0,0,16"/>
-                                    <TextBlock Text="This view is controlled by the first page. Change WO number, padding, or method on page 1." TextWrapping="Wrap" Foreground="#555555"/>
-                                </StackPanel>
-                            </ScrollViewer>
-                        </Grid>
-                        <Grid x:Name="ManualProposedPipelineModePanel" Visibility="Collapsed">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-                            <StackPanel Grid.Row="0">
-                                <TextBlock Text="Manual proposed pipeline segments" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
-                                <TextBlock Text="Padding from Page 1 is applied as a buffer around all manual proposed pipeline segments." TextWrapping="Wrap" Foreground="#555555" Margin="0,0,0,8"/>
-                                <UniformGrid Columns="4" Margin="0,0,0,10">
-                                    <Button Content="Start Segment" Click="StartManualProposedMainSegment_Click" Padding="8" Margin="0,0,4,0"/>
-                                    <Button Content="Apply Segment" Click="ApplyManualProposedMainSegment_Click" Padding="8" Margin="4,0,4,0"/>
-                                    <Button Content="Finish Segments" Click="FinishManualProposedMainSegments_Click" Padding="8" Margin="4,0,4,0"/>
-                                    <Button Content="Clear Manual" Click="ClearManualProposedMainSegments_Click" Padding="8" Margin="4,0,0,0"/>
-                                </UniformGrid>
-                            </StackPanel>
-                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <TextBox x:Name="ProposedPipelineTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap" FontFamily="Consolas" MinHeight="220" Margin="0,0,0,0"/>
-                            </ScrollViewer>
-                        </Grid>
-                        <Grid x:Name="VisibleMapModePanel" Visibility="Collapsed">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-                            <StackPanel Grid.Row="0">
-                                <TextBlock Text="Visible map viewport export" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
-                                <Button Content="Commit Visible Map Extent" Click="SetExtentFromVisibleMap_Click" Padding="8" Margin="0,0,0,16"/>
-                                <TextBlock Text="Live MapView extent (updates after pan/zoom)" FontWeight="Bold" Margin="0,10,0,6"/>
-                            </StackPanel>
-                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <TextBox x:Name="CapturedExtentTextBox" IsReadOnly="True" TextWrapping="Wrap" MinHeight="190" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12" Margin="0,0,0,16"/>
-                            </ScrollViewer>
-                        </Grid>
+                        <StackPanel x:Name="WorkOrderModeHeader">
+                            <TextBlock Text="Work Order driven export" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
+                            <Button Content="Refresh Work Order Geometry + Buffer" Click="RefreshWorkOrderGeometry_Click" Padding="8" Margin="0,0,0,10"/>
+                            <UniformGrid Columns="3" Margin="0,0,0,10">
+                                <Button Content="Edit Imported Main" Click="EditImportedProposedMain_Click" Padding="8" Margin="0,0,4,0"/>
+                                <Button Content="Apply Segment" Click="ApplyManualProposedMainSegment_Click" Padding="8" Margin="4,0,4,0"/>
+                                <Button Content="Cancel Edit" Click="CancelImportedProposedMainEdit_Click" Padding="8" Margin="4,0,0,0"/>
+                            </UniformGrid>
+                            <TextBlock Text="Manual proposed pipeline segments" FontWeight="Bold" Margin="0,8,0,6"/>
+                            <UniformGrid Columns="4" Margin="0,0,0,10">
+                                <Button Content="Start Segment" Click="StartManualProposedMainSegment_Click" Padding="8" Margin="0,0,4,0"/>
+                                <Button Content="Apply Segment" Click="ApplyManualProposedMainSegment_Click" Padding="8" Margin="4,0,4,0"/>
+                                <Button Content="Finish Segments" Click="FinishManualProposedMainSegments_Click" Padding="8" Margin="4,0,4,0"/>
+                                <Button Content="Clear Segments" Click="ClearManualProposedMainSegments_Click" Padding="8" Margin="4,0,0,0"/>
+                            </UniformGrid>
+                            <TextBlock Text="Work order geometry/buffer proof" FontWeight="Bold" Margin="0,10,0,6"/>
+                        </StackPanel>
+                        <StackPanel x:Name="ManualProposedPipelineModeHeader" Visibility="Collapsed">
+                            <TextBlock Text="Manual proposed pipeline segments" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
+                            <TextBlock Text="Padding from Page 1 is applied as a buffer around all manual proposed pipeline segments." TextWrapping="Wrap" Foreground="#555555" Margin="0,0,0,8"/>
+                            <UniformGrid Columns="4" Margin="0,0,0,10">
+                                <Button Content="Start Segment" Click="StartManualProposedMainSegment_Click" Padding="8" Margin="0,0,4,0"/>
+                                <Button Content="Apply Segment" Click="ApplyManualProposedMainSegment_Click" Padding="8" Margin="4,0,4,0"/>
+                                <Button Content="Finish Segments" Click="FinishManualProposedMainSegments_Click" Padding="8" Margin="4,0,4,0"/>
+                                <Button Content="Clear Manual" Click="ClearManualProposedMainSegments_Click" Padding="8" Margin="4,0,0,0"/>
+                            </UniformGrid>
+                        </StackPanel>
+                        <StackPanel x:Name="VisibleMapModeHeader" Visibility="Collapsed">
+                            <TextBlock Text="Visible map viewport export" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
+                            <Button Content="Commit Visible Map Extent" Click="SetExtentFromVisibleMap_Click" Padding="8" Margin="0,0,0,16"/>
+                            <TextBlock Text="Live MapView extent (updates after pan/zoom)" FontWeight="Bold" Margin="0,10,0,6"/>
+                        </StackPanel>
                     </Grid>
-                    <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+
+                    <!-- Row 1: mode readouts. Resizable and scrollable. -->
+                    <Grid Grid.Row="1">
+                        <ScrollViewer x:Name="WorkOrderModePanel" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel>
+                                <TextBox x:Name="WorkOrderGeometryTextBox" IsReadOnly="True" TextWrapping="Wrap" MinHeight="170" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12" Margin="0,0,0,16"/>
+                                <TextBlock Text="This view is controlled by the first page. Change WO number, padding, or method on page 1." TextWrapping="Wrap" Foreground="#555555"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                        <ScrollViewer x:Name="ManualProposedPipelineModePanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <TextBox x:Name="ProposedPipelineTextBox" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="NoWrap" FontFamily="Consolas" MinHeight="220"/>
+                        </ScrollViewer>
+                        <ScrollViewer x:Name="VisibleMapModePanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <TextBox x:Name="CapturedExtentTextBox" IsReadOnly="True" TextWrapping="Wrap" MinHeight="190" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12" Margin="0,0,0,16"/>
+                        </ScrollViewer>
+                    </Grid>
+                    <GridSplitter Grid.Row="2" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                                   ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
                                   Background="#E4E4E4" ShowsPreview="True" Cursor="SizeNS"
                                   ToolTip="Drag to resize the panel above and the map layers below"/>
-                    <GroupBox Grid.Row="2" Header="Map layers" Margin="0,4,0,0">
+                    <GroupBox Grid.Row="3" Header="Map layers" Margin="0,4,0,0">
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,4,4,6">
                                 <Button Content="Expand all" Click="ExpandAllMapLayers_Click" Padding="8,2" Margin="0,0,6,0"/>
@@ -190,11 +175,11 @@
                             </TreeView>
                         </DockPanel>
                     </GroupBox>
-                    <GridSplitter Grid.Row="3" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                    <GridSplitter Grid.Row="4" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                                   ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
                                   Background="#E4E4E4" ShowsPreview="True" Cursor="SizeNS"
                                   ToolTip="Drag to resize the map layers above and the data sources below"/>
-                    <Expander Grid.Row="4" Header="Data sources" Margin="0,2,0,0">
+                    <Expander Grid.Row="5" Header="Data sources" Margin="0,2,0,0">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Margin="4,6,4,4">
                             <ItemsControl ItemsSource="{Binding MapDataSources}" Margin="0,0,0,6">

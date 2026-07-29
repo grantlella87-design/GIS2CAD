@@ -137,8 +137,7 @@ public partial class ExporterWindow
         var url = SharePointFolderUrlBox.Text?.Trim() ?? string.Empty;
         if (string.Equals(url, vm.SharePointTemplateSettings.FolderUrl, StringComparison.Ordinal)) { return; }
 
-        vm.SharePointTemplateSettings.FolderUrl = url;
-        await vm.SaveProfileAsync();
+        await ApplyFolderUrlFromBoxAsync();
         SetSharePointStatus(string.IsNullOrEmpty(url)
             ? "Folder URL cleared. The drive id and path from the profile will be used."
             : "Folder URL saved. Use Refresh list to read it.");
@@ -148,7 +147,26 @@ public partial class ExporterWindow
     {
         var service = GetSharePointService();
         if (service == null) { SetSharePointStatus("Waiting for the profile to load."); return; }
+
+        // Take whatever is in the box right now rather than trusting LostFocus to have run. Pasting
+        // a URL and pressing Refresh should use the pasted URL, not the previously saved one.
+        await ApplyFolderUrlFromBoxAsync();
         await LoadSharePointTemplatesAsync(service);
+    }
+
+    /// <summary>
+    /// Copies the folder URL box into the profile settings the service reads, and saves it. Returns
+    /// without writing when nothing changed.
+    /// </summary>
+    private async Task ApplyFolderUrlFromBoxAsync()
+    {
+        if (DataContext is not ExporterViewModel vm) { return; }
+
+        var url = SharePointFolderUrlBox.Text?.Trim() ?? string.Empty;
+        if (string.Equals(url, vm.SharePointTemplateSettings.FolderUrl, StringComparison.Ordinal)) { return; }
+
+        vm.SharePointTemplateSettings.FolderUrl = url;
+        await vm.SaveProfileAsync();
     }
 
     private async void SharePointSignOut_Click(object sender, RoutedEventArgs e)
