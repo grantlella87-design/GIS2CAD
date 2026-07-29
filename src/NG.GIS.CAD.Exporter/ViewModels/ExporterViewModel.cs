@@ -251,7 +251,7 @@ public sealed partial class ExporterViewModel : ObservableObject
             foreach (var name in _services.CadDrawingCatalog.GetLayerNames(source)) { CadLayers.Add(name); }
 
             Status = UseTemplateSymbols
-                ? $"Read {Blocks.Count} blocks and {LineTypes.Count} line types from the CAD template."
+                ? $"Read {Blocks.Count} blocks and {LineTypes.Count} line types from {System.IO.Path.GetFileName(TemplatePath)}."
                 : $"Read {Blocks.Count} blocks and {LineTypes.Count} line types from the open drawing.";
         }
         catch (Exception ex)
@@ -272,7 +272,17 @@ public sealed partial class ExporterViewModel : ObservableObject
         {
             if (!SetProperty(ref _templatePath, value)) { return; }
             RaisePropertyChanged(nameof(HasTemplate));
-            if (UseTemplateSymbols) { ReloadCadCatalog(); }
+
+            // Picking a template is a statement of intent, so its symbols become the source straight
+            // away. Leaving the lists on the open drawing until a radio button is found on page 4
+            // makes the template look like it did nothing.
+            if (!HasTemplate)
+            {
+                if (UseTemplateSymbols) { UseTemplateSymbols = false; }
+                return;
+            }
+            if (!UseTemplateSymbols) { UseTemplateSymbols = true; }
+            else { ReloadCadCatalog(); }
         }
     }
 

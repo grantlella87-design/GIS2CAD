@@ -27,6 +27,12 @@ public sealed class CadTransformRule
     public string LineType { get; set; } = "ByLayer";
     public string ColorMode { get; set; } = "ByLayer";
     public int AciColor { get; set; } = 256;
+
+    /// <summary>
+    /// The picked colour as "#RRGGBB". Carries the value for RGB mode, and doubles as the swatch for
+    /// an ACI pick, since the colour dialog resolves an index to its RGB anyway.
+    /// </summary>
+    public string RgbColor { get; set; } = string.Empty;
     public double RotationOffsetDegrees { get; set; }
     public double ScaleValue { get; set; } = 1.0;
     public string RotationField { get; set; } = string.Empty;

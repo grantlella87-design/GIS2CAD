@@ -75,6 +75,7 @@ public sealed class CadTransformRuleViewModel : ObservableObject
         {
             Rule.ColorMode = value;
             RaisePropertyChanged();
+            RaisePropertyChanged(nameof(ColorDescription));
         }
     }
     public int AciColor
@@ -84,7 +85,38 @@ public sealed class CadTransformRuleViewModel : ObservableObject
         {
             Rule.AciColor = value;
             RaisePropertyChanged();
+            RaisePropertyChanged(nameof(ColorDescription));
         }
+    }
+
+    /// <summary>
+    /// The swatch colour as "#RRGGBB", or null when nothing has been picked. Null lets the binding
+    /// fall back rather than showing black, which would read as a deliberate choice.
+    /// </summary>
+    public string? ColorPreview => string.IsNullOrWhiteSpace(Rule.RgbColor) ? null : Rule.RgbColor;
+
+    /// <summary>Says what the colour actually is, since a swatch alone does not distinguish ACI 1 from red.</summary>
+    public string ColorDescription => Rule.ColorMode switch
+    {
+        "ACI" => "ACI " + Rule.AciColor,
+        "RGB" => string.IsNullOrWhiteSpace(Rule.RgbColor) ? "RGB" : Rule.RgbColor,
+        _ => "ByLayer"
+    };
+
+    /// <summary>
+    /// Records a colour chosen in the CAD colour dialog. Takes plain values rather than an AutoCAD
+    /// colour so the view models stay clear of the AutoCAD assemblies.
+    /// </summary>
+    public void ApplyPickedColor(bool isAci, int aciIndex, string rgbHex)
+    {
+        Rule.ColorMode = isAci ? "ACI" : "RGB";
+        if (isAci) { Rule.AciColor = aciIndex; }
+        Rule.RgbColor = rgbHex;
+
+        RaisePropertyChanged(nameof(ColorMode));
+        RaisePropertyChanged(nameof(AciColor));
+        RaisePropertyChanged(nameof(ColorPreview));
+        RaisePropertyChanged(nameof(ColorDescription));
     }
     public double RotationOffsetDegrees
     {
