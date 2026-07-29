@@ -18,11 +18,13 @@ public sealed partial class ExporterViewModel : ObservableObject
     private ExportExtent? _resolvedExtent;
     private LayerSelectionViewModel? _selectedLayer;
     private CadTransformRuleViewModel? _selectedTransform;
+    private ExportProfile _profile = new();
     public ExporterViewModel(AppServices services)
     {
         _services = services;
         ProfilePath = _services.ProfileStore.GetDefaultProfilePath();
         Layers = new ObservableCollection<LayerSelectionViewModel>();
+        MapLayers = new ObservableCollection<MapLayerToggleViewModel>();
         TransformRules = new ObservableCollection<CadTransformRuleViewModel>();
         WorkOrderOptions = new ObservableCollection<string>();
         Blocks = new ObservableCollection<string>(_services.CadDrawingCatalog.GetBlockNames());
@@ -43,6 +45,7 @@ public sealed partial class ExporterViewModel : ObservableObject
         _ = LoadWorkOrdersAsync();
     }
     public ObservableCollection<LayerSelectionViewModel> Layers { get; }
+    public ObservableCollection<MapLayerToggleViewModel> MapLayers { get; }
     public ObservableCollection<CadTransformRuleViewModel> TransformRules { get; }
     public ObservableCollection<string> WorkOrderOptions { get; }
     public ObservableCollection<string> Blocks { get; }
@@ -91,6 +94,7 @@ public sealed partial class ExporterViewModel : ObservableObject
         {
             Status = "Loading profile and GIS layer metadata...";
             var profile = await _services.ProfileStore.LoadAsync(ProfilePath, CancellationToken.None);
+            _profile = profile;
             var userSettings = await _services.UserSettingsStore.LoadAsync(CancellationToken.None);
             Layers.Clear();
             TransformRules.Clear();
@@ -125,7 +129,42 @@ public sealed partial class ExporterViewModel : ObservableObject
         }
         catch (Exception ex) { Status = "Load work orders failed: " + ex.Message; }
     }
-    private async Task SaveSettingsAsync() { await _services.ExportCoordinator.SaveSelectionsAsync(Layers.Select(l => l.State), ProfilePath, CancellationToken.None); Status = "Settings saved."; }
+    private async Task SaveSettingsAsync()
+    {
+        await _services.ExportCoordinator.SaveSelectionsAsync(Layers.Select(l => l.State), ProfilePath, CancellationToken.None);
+        await SaveMapLayerVisibilityAsync();
+        Status = "Settings saved.";
+    }
+
+    /// <summary>
+    /// Visibility saved in the profile for a map layer path, or null when the profile says nothing
+    /// about it and the web map's own authored visibility should win.
+    /// </summary>
+    public bool? GetSavedMapLayerVisibility(string path)
+    {
+        // An explicit "mapLayerVisibility": null in the profile deserializes to a null dictionary.
+        _profile.MapLayerVisibility ??= new(StringComparer.OrdinalIgnoreCase);
+        return _profile.MapLayerVisibility.TryGetValue(path, out var visible) ? visible : null;
+    }
+
+    /// <summary>
+    /// Writes the current state of every map layer toggle into the profile on disk. Called when a
+    /// checkbox changes so the choice survives a restart.
+    /// </summary>
+    public async Task SaveMapLayerVisibilityAsync()
+    {
+        if (MapLayers.Count == 0) { return; }
+        try
+        {
+            _profile.MapLayerVisibility ??= new(StringComparer.OrdinalIgnoreCase);
+            foreach (var layer in MapLayers)
+            {
+                _profile.MapLayerVisibility[layer.Path] = layer.IsVisible;
+            }
+            await _services.ProfileStore.SaveAsync(_profile, ProfilePath, CancellationToken.None);
+        }
+        catch (Exception ex) { Status = "Saving layer visibility failed: " + ex.Message; }
+    }
     private async Task ResolveWorkOrderExtentAsync()
     {
         try

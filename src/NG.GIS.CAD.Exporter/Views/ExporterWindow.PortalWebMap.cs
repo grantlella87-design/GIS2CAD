@@ -24,7 +24,10 @@ public partial class ExporterWindow
     private const string MaterialViewLayerName = "Material_View_MA";
     private const string MaterialViewMapServerUrl = "https://gis.nationalgrid.com/arcgis/rest/services/MA/Material_View_MA/MapServer";
 
+    private const int MaxMapLayerDepth = 4;
+
     private bool _extentWebMapLoaded;
+    private readonly Dictionary<string, ILayerContent> _mapLayerContentByPath = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Replaces the MapView's map with the portal web map. Graphics overlays are owned by the
@@ -57,15 +60,11 @@ public partial class ExporterWindow
                 return;
             }
 
-            foreach (var layer in map.OperationalLayers)
-            {
-                layer.IsVisible = true;
-            }
-
             _mapView.Map = map;
             _extentWebMapLoaded = true;
 
             await EnsureMaterialViewLayerAsync(map);
+            await BuildMapLayerTogglesAsync(map);
 
             SetExtentMapStatus("Portal web map loaded: " + item.Title + ". Operational layers: " + map.OperationalLayers.Count + ".");
         }
@@ -105,6 +104,80 @@ public partial class ExporterWindow
         catch (Exception ex)
         {
             SetExtentMapStatus("Material_View_MA could not be added alongside the web map: " + ex.GetType().Name + ": " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Builds the page 2 layer toggle list from the loaded map. Every operational layer and every
+    /// sublayer beneath it is walked through ILayerContent, which covers group layers and map image
+    /// sublayers alike. Visibility saved in the profile wins; layers the profile says nothing about
+    /// keep the visibility the web map was authored with.
+    /// </summary>
+    private async Task BuildMapLayerTogglesAsync(Map map)
+    {
+        if (DataContext is not ExporterViewModel vm) { return; }
+
+        foreach (var layer in map.OperationalLayers)
+        {
+            // Sublayers are only populated once the layer itself has loaded.
+            try { await layer.LoadAsync(); } catch { }
+        }
+
+        foreach (var stale in vm.MapLayers) { stale.VisibilityChanged -= OnMapLayerToggled; }
+        vm.MapLayers.Clear();
+        _mapLayerContentByPath.Clear();
+
+        var usedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var layer in map.OperationalLayers)
+        {
+            AddMapLayerToggle(vm, layer, null, 0, usedPaths);
+        }
+    }
+
+    private void AddMapLayerToggle(ExporterViewModel vm, ILayerContent content, string? parentPath, int depth, HashSet<string> usedPaths)
+    {
+        if (content == null || depth > MaxMapLayerDepth) { return; }
+
+        var name = string.IsNullOrWhiteSpace(content.Name) ? "(unnamed layer)" : content.Name;
+        var basePath = parentPath == null ? name : parentPath + "/" + name;
+
+        // Two sublayers can share a name, so make the persisted key unique per position.
+        var path = basePath;
+        var suffix = 2;
+        while (!usedPaths.Add(path))
+        {
+            path = basePath + " (" + suffix + ")";
+            suffix++;
+        }
+
+        if (content.CanChangeVisibility)
+        {
+            var saved = vm.GetSavedMapLayerVisibility(path);
+            if (saved.HasValue) { content.IsVisible = saved.Value; }
+
+            var toggle = new MapLayerToggleViewModel(path, name, depth, content.IsVisible);
+            toggle.VisibilityChanged += OnMapLayerToggled;
+            _mapLayerContentByPath[path] = content;
+            vm.MapLayers.Add(toggle);
+        }
+
+        var children = content.SublayerContents;
+        if (children == null) { return; }
+        foreach (var child in children)
+        {
+            AddMapLayerToggle(vm, child, path, depth + 1, usedPaths);
+        }
+    }
+
+    private void OnMapLayerToggled(MapLayerToggleViewModel toggle)
+    {
+        if (_mapLayerContentByPath.TryGetValue(toggle.Path, out var content))
+        {
+            content.IsVisible = toggle.IsVisible;
+        }
+        if (DataContext is ExporterViewModel vm)
+        {
+            _ = vm.SaveMapLayerVisibilityAsync();
         }
     }
 
