@@ -1,7 +1,10 @@
 using System;
 using System.Windows;
-using Autodesk.AutoCAD.ApplicationServices;
 using NG.GIS.CAD.Exporter.ViewModels;
+
+// System.Windows and Autodesk.AutoCAD.ApplicationServices both define Application, and this file
+// needs types from both namespaces, so the AutoCAD one is named explicitly.
+using AcadApplication = Autodesk.AutoCAD.ApplicationServices.Application;
 
 namespace NG.GIS.CAD.Exporter.Views;
 
@@ -35,7 +38,7 @@ public partial class ExporterWindow
 
         try
         {
-            var document = Application.DocumentManager.MdiActiveDocument;
+            var document = AcadApplication.DocumentManager.MdiActiveDocument;
             if (document == null)
             {
                 vm.Status = "No drawing is open, so the block editor cannot be started.";
