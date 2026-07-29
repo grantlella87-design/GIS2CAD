@@ -218,9 +218,15 @@ public partial class ExporterWindow
         }
 
         if (children == null) { return; }
+
+        // Sublayers are addressed off the service root and are flat: ".../MapServer/54", never
+        // ".../MapServer/3/54". So a sublayer passes the root it was given straight down rather than
+        // its own URL, which for a group sublayer would otherwise nest and give every layer inside
+        // that group an address the service does not answer on.
+        var childServiceUrl = content is ArcGISSublayer ? parentServiceUrl : serviceUrl ?? parentServiceUrl;
         foreach (var child in children)
         {
-            AddMapLayerToggle(vm, child, node, path, depth + 1, usedPaths, serviceUrl ?? parentServiceUrl);
+            AddMapLayerToggle(vm, child, node, path, depth + 1, usedPaths, childServiceUrl);
         }
     }
 

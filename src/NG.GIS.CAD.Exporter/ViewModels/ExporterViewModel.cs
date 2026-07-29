@@ -23,6 +23,16 @@ public sealed partial class ExporterViewModel : ObservableObject
     private string _newMapDataSourceUrl = string.Empty;
     private bool _layerMetadataLoaded;
     private bool _cadCatalogLoaded;
+
+    /// <summary>
+    /// Every layer the page 2 map can export, each kept beside the map node it came from, whether or
+    /// not that node is currently shown. Pages 3 and 4 are filtered views of this list.
+    ///
+    /// Metadata is fetched for hidden layers too, so ticking a group back on is instant rather than
+    /// another round of network calls, and so the field choices and transform rules made against a
+    /// layer survive it being hidden and shown again.
+    /// </summary>
+    private readonly List<MapBackedLayer> _mapBackedLayers = new();
     private string? _templatePath;
     private bool _useTemplateSymbols;
     public ExporterViewModel(AppServices services)
@@ -150,6 +160,7 @@ public sealed partial class ExporterViewModel : ObservableObject
             // Deliberately no success status here: the work order lookup owns the status line while
             // page 1 is on screen, and overwriting it would hide the lookup's own progress.
             _layerMetadataLoaded = false;
+            _mapBackedLayers.Clear();
             Layers.Clear();
             TransformRules.Clear();
 
@@ -180,6 +191,7 @@ public sealed partial class ExporterViewModel : ObservableObject
         {
             if (announce) { Status = "Loading GIS layer metadata..."; }
             var userSettings = await _services.UserSettingsStore.LoadAsync(CancellationToken.None);
+            _mapBackedLayers.Clear();
             Layers.Clear();
             TransformRules.Clear();
 
@@ -205,21 +217,27 @@ public sealed partial class ExporterViewModel : ObservableObject
                 foreach (var layer in metadata)
                 {
                     var state = new LayerSelectionViewState(layer);
+
+                    // A layer only reaches these pages when the map is showing it, so it starts
+                    // ticked for export. A choice this user saved earlier still wins over that.
+                    state.Enabled = true;
                     ApplySavedSettings(state, userSettings);
 
-                    // What is shown on the map decides what starts selected for export, which is the
-                    // point of driving these pages from the map in the first place. Effective
-                    // visibility, so a layer inside an unticked group counts as hidden.
-                    state.Enabled = mapLayer.IsEffectivelyVisible;
-
-                    var layerVm = new LayerSelectionViewModel(state);
-                    Layers.Add(layerVm);
-                    TransformRules.Add(new CadTransformRuleViewModel(new CadTransformRule { LayerUrl = layer.Url, LayerName = layer.Name, GeometryType = layer.GeometryType, CadLayerName = layer.Name.Replace(" ", "_"), LineType = "ByLayer", ColorMode = "ByLayer" }));
+                    _mapBackedLayers.Add(new MapBackedLayer(
+                        mapLayer,
+                        new LayerSelectionViewModel(state),
+                        new CadTransformRuleViewModel(new CadTransformRule { LayerUrl = layer.Url, LayerName = layer.Name, GeometryType = layer.GeometryType, CadLayerName = layer.Name.Replace(" ", "_"), LineType = "ByLayer", ColorMode = "ByLayer" })));
                 }
             }
-            SelectedLayer = Layers.FirstOrDefault();
-            SelectedTransform = TransformRules.FirstOrDefault();
-            if (announce) { Status = $"Loaded {Layers.Count} layers from the page 2 map."; }
+
+            RefreshLayerSelectionFromMap();
+            if (announce)
+            {
+                var hidden = _mapBackedLayers.Count - Layers.Count;
+                Status = hidden > 0
+                    ? $"Loaded {Layers.Count} layers from the page 2 map. {hidden} more are hidden there, so they are not listed here."
+                    : $"Loaded {Layers.Count} layers from the page 2 map.";
+            }
         }
         catch (Exception ex)
         {
@@ -355,7 +373,11 @@ public sealed partial class ExporterViewModel : ObservableObject
         // over the field choices already stored for this user.
         if (_layerMetadataLoaded)
         {
-            await _services.ExportCoordinator.SaveSelectionsAsync(Layers.Select(l => l.State), ProfilePath, CancellationToken.None);
+            // Saved from every layer the map can export, not just the ones it is showing. Saving from
+            // the visible list would drop the field choices made against a layer that happens to be
+            // hidden right now, the next time settings are written.
+            await _services.ExportCoordinator.SaveSelectionsAsync(
+                _mapBackedLayers.Select(b => b.Layer.State), ProfilePath, CancellationToken.None);
         }
         await SaveMapLayerVisibilityAsync();
         Status = "Settings saved.";
@@ -494,39 +516,55 @@ public sealed partial class ExporterViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Rebuilds pages 3 and 4 to hold exactly the layers the page 2 map is showing. Called when a
+    /// layer is toggled on page 2 and when one of the later pages is opened, because those pages are
+    /// built once and would otherwise keep describing whatever the map looked like at that moment.
+    ///
+    /// A hidden layer is removed from both pages rather than merely unticked on page 3. Page 4 has no
+    /// tick at all, so unticking was invisible there, and a rule for a layer that is not on the map
+    /// is a rule for a layer that will not be exported.
+    ///
+    /// The view models themselves are kept and re-added, never rebuilt, so field choices and
+    /// transform rules the user has edited survive a layer being hidden and shown again.
+    /// </summary>
+    public void RefreshLayerSelectionFromMap()
+    {
+        if (_mapBackedLayers.Count == 0) { return; }
+
+        var previousLayer = SelectedLayer;
+        var previousTransform = SelectedTransform;
+
+        Layers.Clear();
+        TransformRules.Clear();
+        foreach (var backed in _mapBackedLayers)
+        {
+            // Effective visibility, so a layer inside an unticked group counts as hidden even though
+            // its own box is still ticked.
+            if (!backed.MapNode.IsEffectivelyVisible) { continue; }
+            Layers.Add(backed.Layer);
+            TransformRules.Add(backed.Rule);
+        }
+
+        // Keep whatever was being edited selected, as long as it is still on the map.
+        SelectedLayer = previousLayer != null && Layers.Contains(previousLayer) ? previousLayer : Layers.FirstOrDefault();
+        SelectedTransform = previousTransform != null && TransformRules.Contains(previousTransform) ? previousTransform : TransformRules.FirstOrDefault();
+    }
+
+    /// <summary>One exportable layer, tied to the page 2 map node that decides whether it is shown.</summary>
+    private sealed record MapBackedLayer(
+        MapLayerToggleViewModel MapNode,
+        LayerSelectionViewModel Layer,
+        CadTransformRuleViewModel Rule);
+
+    /// <summary>
     /// Called once the page 2 map's layer tree has been rebuilt. Pages 3 and 4 are derived from that
     /// tree, so their contents are discarded and rebuilt on next use rather than describing a map
     /// that no longer exists.
     /// </summary>
-    /// <summary>
-    /// Re-applies the map's visibility to the already loaded layer list. Called when a layer is
-    /// toggled on page 2 and when one of the later pages is opened, because those pages are built
-    /// once and would otherwise keep showing whatever the map looked like at that moment.
-    ///
-    /// Only the selection is touched: field choices and transform rules the user has edited stay as
-    /// they are, which re-reading the metadata would discard.
-    /// </summary>
-    public void RefreshLayerSelectionFromMap()
-    {
-        if (Layers.Count == 0) { return; }
-
-        var byUrl = FlattenMapLayers(MapLayers)
-            .Where(l => !string.IsNullOrWhiteSpace(l.ServiceUrl))
-            .GroupBy(l => l.ServiceUrl!, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-
-        foreach (var layer in Layers)
-        {
-            if (byUrl.TryGetValue(layer.Url, out var mapLayer))
-            {
-                layer.Enabled = mapLayer.IsEffectivelyVisible;
-            }
-        }
-    }
-
     public void OnMapLayersChanged()
     {
         _layerMetadataLoaded = false;
+        _mapBackedLayers.Clear();
         Layers.Clear();
         TransformRules.Clear();
         SelectedLayer = null;
