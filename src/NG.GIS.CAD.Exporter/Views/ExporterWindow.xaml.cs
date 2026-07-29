@@ -55,11 +55,12 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
             UpdatePageVisibility();
             ApplyDisplayModeToExtentPage();
 
-            // Page 1 is the work order lookup, so the NG_ODS query runs before anything else. The
-            // map belongs to page 2 and is started only once the dropdowns are populated, rather
-            // than competing with them for the UI thread and the network.
+            // Startup work runs in page order so page 1 is never waiting behind a later page: the
+            // NG_ODS query first, then the page 2 map, then what pages 3 and 4 need. Everything
+            // still loads at startup, it is only sequenced.
             await EnsureNgOdsWorkOrdersLoadedAsync(userInitiated: false);
             await InitializeArcGisMapAsync();
+            if (DataContext is ExporterViewModel viewModel) { await viewModel.PreloadLaterPagesAsync(); }
         };
         DataContextChanged += (_, _) =>
         {

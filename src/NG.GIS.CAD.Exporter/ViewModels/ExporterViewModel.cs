@@ -154,14 +154,25 @@ public sealed partial class ExporterViewModel : ObservableObject
         catch (Exception ex) { Status = "Profile load failed: " + ex.Message; }
     }
 
+    /// <summary>
+    /// Loads everything pages 3 and 4 need. Called once the work order query has finished, so page 1
+    /// gets the network and the UI thread first without leaving the later pages empty on arrival.
+    /// Runs quietly, because the status line belongs to the work order lookup at that point.
+    /// </summary>
+    public async Task PreloadLaterPagesAsync()
+    {
+        await EnsureLayerMetadataLoadedAsync(announce: false);
+        EnsureCadCatalogLoaded();
+    }
+
     /// <summary>Fetches layer and field metadata for every enabled service, once.</summary>
-    private async Task EnsureLayerMetadataLoadedAsync()
+    private async Task EnsureLayerMetadataLoadedAsync(bool announce = true)
     {
         if (_layerMetadataLoaded) { return; }
         _layerMetadataLoaded = true;
         try
         {
-            Status = "Loading GIS layer metadata...";
+            if (announce) { Status = "Loading GIS layer metadata..."; }
             var userSettings = await _services.UserSettingsStore.LoadAsync(CancellationToken.None);
             Layers.Clear();
             TransformRules.Clear();
@@ -179,10 +190,11 @@ public sealed partial class ExporterViewModel : ObservableObject
             }
             SelectedLayer = Layers.FirstOrDefault();
             SelectedTransform = TransformRules.FirstOrDefault();
-            Status = $"Loaded {Layers.Count} layers.";
+            if (announce) { Status = $"Loaded {Layers.Count} layers."; }
         }
         catch (Exception ex)
         {
+            // Failures are always reported, even on the quiet startup pass.
             _layerMetadataLoaded = false;
             Status = "Layer metadata load failed: " + ex.Message;
         }
