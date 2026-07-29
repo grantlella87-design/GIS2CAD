@@ -25,8 +25,15 @@ public sealed class CadDrawingCatalog
     /// </summary>
     private static IReadOnlyList<string> Read(string? templatePath, Func<Database, Transaction, List<string>> read)
     {
-        if (!string.IsNullOrWhiteSpace(templatePath) && File.Exists(templatePath))
+        if (!string.IsNullOrWhiteSpace(templatePath))
         {
+            // Falling back to the open drawing here would look like the template simply had no
+            // blocks, which is the least useful thing this could do.
+            if (!File.Exists(templatePath))
+            {
+                throw new FileNotFoundException("The CAD template could not be found: " + templatePath, templatePath);
+            }
+
             using var templateDatabase = new Database(false, true);
             templateDatabase.ReadDwgFile(templatePath, FileOpenMode.OpenForReadAndAllShare, allowCPConversion: true, password: null);
 

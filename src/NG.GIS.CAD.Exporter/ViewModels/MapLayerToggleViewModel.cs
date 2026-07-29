@@ -38,6 +38,16 @@ public sealed class MapLayerToggleViewModel : ObservableObject
 
     public ObservableCollection<MapLayerToggleViewModel> Children { get; } = new();
 
+    /// <summary>The node this one sits under, or null for a top level layer.</summary>
+    public MapLayerToggleViewModel? Parent { get; internal set; }
+
+    /// <summary>
+    /// Whether this layer is actually drawn on the map. A sublayer keeps its own checkbox ticked when
+    /// its group is unticked, so its own flag alone does not say whether it is on screen: every
+    /// ancestor has to be visible too. Pages 3 and 4 select layers from this, not from IsVisible.
+    /// </summary>
+    public bool IsEffectivelyVisible => IsVisible && (Parent == null || Parent.IsEffectivelyVisible);
+
     /// <summary>
     /// Whether the group is expanded in the tree. Groups start expanded so the list reads the same
     /// way it did before it became collapsible.

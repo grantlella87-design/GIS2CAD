@@ -340,8 +340,17 @@
                             <ComboBoxItem Content="RGB"/>
                         </ComboBox>
 
-                        <TextBlock Grid.Row="6" Grid.Column="0" Text="ACI Color" Margin="0,0,8,8"/>
-                        <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding SelectedTransform.AciColor, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Color" Margin="0,0,8,8"/>
+                        <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+                            <Border Width="28" Height="20" BorderBrush="#808080" BorderThickness="1" Margin="0,0,6,0"
+                                    Background="{Binding SelectedTransform.ColorPreview, TargetNullValue=Transparent, FallbackValue=Transparent}"/>
+                            <TextBlock Text="{Binding SelectedTransform.ColorDescription}" VerticalAlignment="Center" Width="90" Foreground="#555555"/>
+                            <Button Content="Pick color..." Click="PickColor_Click" Padding="8,2" Margin="0,0,6,0"
+                                    ToolTip="Opens the AutoCAD color dialog, with the index, true color and color book tabs."/>
+                            <TextBlock Text="ACI" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="#555555"/>
+                            <TextBox Width="60" Text="{Binding SelectedTransform.AciColor, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="The ACI index, if you would rather type it than pick it."/>
+                        </StackPanel>
 
                         <!-- Point only: rotation and scale apply to a block reference. -->
                         <TextBlock Grid.Row="7" Grid.Column="0" Text="Rotation +/- Degrees" Margin="0,0,8,8"
