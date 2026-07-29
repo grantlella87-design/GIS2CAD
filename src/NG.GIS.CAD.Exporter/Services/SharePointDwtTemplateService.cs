@@ -178,9 +178,11 @@ public sealed class SharePointDwtTemplateService
     {
         if (!string.IsNullOrWhiteSpace(_settings.FolderUrl))
         {
-            var encoded = EncodeSharingUrl(_settings.FolderUrl.Trim());
+            var folderUrl = _settings.FolderUrl.Trim();
+            var encoded = EncodeSharingUrl(folderUrl);
             using var shared = await GetJsonAsync(token, "/shares/" + encoded + "/driveItem", cancellationToken,
-                "Could not open the SharePoint folder URL. Check the URL points at a folder you can open in the browser.")
+                "Tried to open this folder URL: " + folderUrl
+                + " — check it opens in a browser while signed in as " + (SignedInAs ?? "this account") + ".")
                 .ConfigureAwait(false);
 
             var root = shared.RootElement;
@@ -198,7 +200,9 @@ public sealed class SharePointDwtTemplateService
 
         if (string.IsNullOrWhiteSpace(_settings.DriveId))
         {
-            throw new InvalidOperationException("No SharePoint folder is configured. Paste the folder's URL from your browser.");
+            throw new InvalidOperationException(
+                "No SharePoint folder is set. Open the template folder in SharePoint, copy the address from the browser, "
+                + "and paste it into the folder URL box above.");
         }
 
         var path = "/drives/" + _settings.DriveId + "/root:/" + EscapePath(_settings.FolderPath);

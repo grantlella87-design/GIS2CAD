@@ -64,11 +64,15 @@ public sealed class SharePointTemplateSettings
     /// </summary>
     public string FolderUrl { get; set; } = string.Empty;
 
-    /// <summary>Fallback used when <see cref="FolderUrl"/> is empty. Carried over from the earlier build and unverified.</summary>
-    public string DriveId { get; set; } = "b!oQf4lQnCX0qt-hTuSFmXrP4QVHfYL_1Mo26SJGoClkz_SltDsJ3rT4gTLzMV1xCP";
+    /// <summary>
+    /// Optional fallback used when <see cref="FolderUrl"/> is empty. Deliberately blank by default:
+    /// the values carried over from the earlier build were never verified and answered 404, which
+    /// only produced a confusing failure. An empty value asks for a folder URL instead.
+    /// </summary>
+    public string DriveId { get; set; } = string.Empty;
 
     /// <summary>Folder path beneath the drive root, used with <see cref="DriveId"/>.</summary>
-    public string FolderPath { get; set; } = "Boston Cape Gas Dist Eng Design/CAD Template/Template - BOSTON TEAM";
+    public string FolderPath { get; set; } = string.Empty;
 
     /// <summary>
     /// Delegated Graph permissions to request. Sites.ReadWrite.All is what this tenant already
