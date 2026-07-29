@@ -120,9 +120,26 @@ public sealed class SharePointDwtTemplateService
     {
         await EnsureTokenCacheAttachedAsync().ConfigureAwait(false);
 
+        // The generic page MSAL serves after the redirect does not say which application it belongs
+        // to, which is unhelpful when a browser tab appears unannounced. Name it.
+        var browserOptions = new SystemWebViewOptions
+        {
+            HtmlMessageSuccess =
+                "<html><body style='font-family:Segoe UI,sans-serif;padding:2rem'>"
+                + "<h3>Signed in to SharePoint</h3>"
+                + "<p>The NG GIS CAD Exporter has your sign-in. You can close this tab and return to AutoCAD.</p>"
+                + "</body></html>",
+            HtmlMessageError =
+                "<html><body style='font-family:Segoe UI,sans-serif;padding:2rem'>"
+                + "<h3>Sign-in did not complete</h3>"
+                + "<p>Close this tab and try Sign in to SharePoint again in the NG GIS CAD Exporter.</p>"
+                + "</body></html>"
+        };
+
         var result = await _app
             .AcquireTokenInteractive(_scopes)
             .WithUseEmbeddedWebView(false)
+            .WithSystemWebViewOptions(browserOptions)
             .ExecuteAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -143,9 +160,70 @@ public sealed class SharePointDwtTemplateService
     public async Task<IReadOnlyList<SharePointDwtTemplateItem>> ListTemplatesAsync(CancellationToken cancellationToken)
     {
         var token = await AcquireTokenSilentlyAsync(cancellationToken).ConfigureAwait(false);
+        var (driveId, itemId) = await ResolveFolderAsync(token, cancellationToken).ConfigureAwait(false);
+
         var found = new List<SharePointDwtTemplateItem>();
-        await AddTemplatesFromFolderAsync(token, _settings.DriveId, _settings.FolderPath, found, 0, cancellationToken).ConfigureAwait(false);
+        await AddTemplatesFromFolderAsync(token, driveId, itemId, found, 0, cancellationToken).ConfigureAwait(false);
         return found.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>
+    /// Finds the folder to read, returning its drive and item ids.
+    ///
+    /// A folder URL is preferred because it is what the user can actually see and copy. Graph
+    /// resolves it through the shares endpoint, which returns the drive and item ids, so nobody has
+    /// to know the internal identifiers. The drive id and path route is kept as a fallback.
+    /// </summary>
+    private async Task<(string DriveId, string ItemId)> ResolveFolderAsync(string token, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(_settings.FolderUrl))
+        {
+            var encoded = EncodeSharingUrl(_settings.FolderUrl.Trim());
+            using var shared = await GetJsonAsync(token, "/shares/" + encoded + "/driveItem", cancellationToken,
+                "Could not open the SharePoint folder URL. Check the URL points at a folder you can open in the browser.")
+                .ConfigureAwait(false);
+
+            var root = shared.RootElement;
+            var itemId = root.TryGetProperty("id", out var id) ? id.GetString() ?? string.Empty : string.Empty;
+            var driveId = root.TryGetProperty("parentReference", out var parent) && parent.TryGetProperty("driveId", out var drive)
+                ? drive.GetString() ?? string.Empty
+                : string.Empty;
+
+            if (string.IsNullOrWhiteSpace(driveId) || string.IsNullOrWhiteSpace(itemId))
+            {
+                throw new InvalidOperationException("The SharePoint folder URL resolved, but without a drive and item id.");
+            }
+            return (driveId, itemId);
+        }
+
+        if (string.IsNullOrWhiteSpace(_settings.DriveId))
+        {
+            throw new InvalidOperationException("No SharePoint folder is configured. Paste the folder's URL from your browser.");
+        }
+
+        var path = "/drives/" + _settings.DriveId + "/root:/" + EscapePath(_settings.FolderPath);
+        using var folder = await GetJsonAsync(token, path, cancellationToken,
+            "The configured drive id and folder path did not resolve. Paste the folder's URL from your browser instead.")
+            .ConfigureAwait(false);
+
+        var folderId = folder.RootElement.TryGetProperty("id", out var fid) ? fid.GetString() ?? string.Empty : string.Empty;
+        if (string.IsNullOrWhiteSpace(folderId))
+        {
+            throw new InvalidOperationException("The configured SharePoint folder resolved without an item id.");
+        }
+        return (_settings.DriveId, folderId);
+    }
+
+    /// <summary>
+    /// Graph takes a sharing or absolute URL as unpadded base64url with a "u!" prefix.
+    /// </summary>
+    private static string EncodeSharingUrl(string url)
+    {
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(url))
+            .TrimEnd('=')
+            .Replace('/', '_')
+            .Replace('+', '-');
+        return "u!" + encoded;
     }
 
     /// <summary>Downloads a template next to the other cached templates and returns its local path.</summary>
@@ -155,7 +233,9 @@ public sealed class SharePointDwtTemplateService
 
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
-            GraphRoot + "/drives/" + Uri.EscapeDataString(item.DriveId) + "/items/" + Uri.EscapeDataString(item.ItemId) + "/content");
+            // Drive and item ids are already URL safe. Escaping them turns characters like '!' into
+            // %21, which is the sort of difference that makes an id stop resolving.
+            GraphRoot + "/drives/" + item.DriveId + "/items/" + item.ItemId + "/content");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -211,13 +291,17 @@ public sealed class SharePointDwtTemplateService
         }
     }
 
+    /// <summary>
+    /// Walks the folder by item id rather than by path. Ids need no escaping, so a folder whose name
+    /// contains spaces, punctuation or non-ASCII cannot break the request the way a rebuilt path can.
+    /// </summary>
     private async Task AddTemplatesFromFolderAsync(
-        string token, string driveId, string folderPath, List<SharePointDwtTemplateItem> found, int depth, CancellationToken cancellationToken)
+        string token, string driveId, string itemId, List<SharePointDwtTemplateItem> found, int depth, CancellationToken cancellationToken)
     {
         // Template libraries are shallow; the cap only stops a pathological tree from spinning.
         if (depth > 5) { return; }
 
-        var endpoint = "/drives/" + Uri.EscapeDataString(driveId) + "/root:/" + EscapePath(folderPath) + ":/children";
+        var endpoint = "/drives/" + driveId + "/items/" + itemId + "/children";
         using var document = await GetJsonAsync(token, endpoint, cancellationToken).ConfigureAwait(false);
 
         if (!document.RootElement.TryGetProperty("value", out var children)) { return; }
@@ -225,10 +309,14 @@ public sealed class SharePointDwtTemplateService
         foreach (var child in children.EnumerateArray())
         {
             var name = child.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? string.Empty : string.Empty;
+            var childId = child.TryGetProperty("id", out var idElement) ? idElement.GetString() ?? string.Empty : string.Empty;
 
             if (child.TryGetProperty("folder", out _))
             {
-                await AddTemplatesFromFolderAsync(token, driveId, folderPath.TrimEnd('/') + "/" + name, found, depth + 1, cancellationToken).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(childId))
+                {
+                    await AddTemplatesFromFolderAsync(token, driveId, childId, found, depth + 1, cancellationToken).ConfigureAwait(false);
+                }
                 continue;
             }
 
@@ -236,7 +324,7 @@ public sealed class SharePointDwtTemplateService
 
             found.Add(new SharePointDwtTemplateItem(
                 driveId,
-                child.TryGetProperty("id", out var id) ? id.GetString() ?? string.Empty : string.Empty,
+                childId,
                 name,
                 child.TryGetProperty("webUrl", out var webUrl) ? webUrl.GetString() ?? string.Empty : string.Empty));
         }
@@ -245,7 +333,7 @@ public sealed class SharePointDwtTemplateService
     private static string EscapePath(string path) =>
         string.Join("/", path.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(Uri.EscapeDataString));
 
-    private async Task<JsonDocument> GetJsonAsync(string token, string graphPath, CancellationToken cancellationToken)
+    private async Task<JsonDocument> GetJsonAsync(string token, string graphPath, CancellationToken cancellationToken, string? hint = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, GraphRoot + graphPath);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -255,7 +343,13 @@ public sealed class SharePointDwtTemplateService
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException("SharePoint request failed (" + (int)response.StatusCode + " " + response.StatusCode + "). " + SummarizeGraphError(text));
+            // A bare "resource could not be found" gives the user nothing to act on, so say what was
+            // asked for and, where the caller knows, what usually fixes it.
+            var message = "SharePoint request failed (" + (int)response.StatusCode + " " + response.StatusCode + "). "
+                + SummarizeGraphError(text)
+                + " Requested: " + graphPath + ".";
+            if (!string.IsNullOrWhiteSpace(hint)) { message += " " + hint; }
+            throw new InvalidOperationException(message);
         }
         return JsonDocument.Parse(text);
     }

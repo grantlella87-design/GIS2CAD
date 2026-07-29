@@ -56,6 +56,21 @@
                                 <Button x:Name="SharePointRefreshButton" Content="Refresh list" Click="SharePointRefresh_Click" Padding="8,2" Margin="0,0,6,0"/>
                                 <Button x:Name="SharePointSignOutButton" Content="Sign out" Click="SharePointSignOut_Click" Padding="8,2"/>
                             </StackPanel>
+                            <Grid Margin="0,0,0,6">
+                                <TextBox x:Name="SharePointFolderUrlBox" LostFocus="SharePointFolderUrl_LostFocus"
+                                         ToolTip="Open the template folder in SharePoint and paste the address bar URL here. Leave empty to use the drive id and path from the profile."/>
+                                <TextBlock Text="SharePoint folder URL (paste from your browser)">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource FieldPlaceholder}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Text, ElementName=SharePointFolderUrlBox}" Value="">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
                             <ListBox x:Name="SharePointTemplateList" Height="120" DisplayMemberPath="Name" Margin="0,0,0,6"/>
                             <StackPanel Orientation="Horizontal">
                                 <Button x:Name="SharePointUseButton" Content="Download and use" Click="SharePointUseSelected_Click" Padding="8,2" Margin="0,0,6,0"/>

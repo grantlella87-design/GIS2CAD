@@ -363,13 +363,16 @@ public sealed partial class ExporterViewModel : ObservableObject
         return url;
     }
 
-    public async Task SaveMapDataSourcesAsync()
+    public Task SaveMapDataSourcesAsync() => SaveProfileAsync();
+
+    /// <summary>Writes the whole profile back to disk.</summary>
+    public async Task SaveProfileAsync()
     {
         try
         {
             await _services.ProfileStore.SaveAsync(_profile, ProfilePath, CancellationToken.None);
         }
-        catch (Exception ex) { Status = "Saving data sources failed: " + ex.Message; }
+        catch (Exception ex) { Status = "Saving the profile failed: " + ex.Message; }
     }
 
     /// <summary>Walks the map layer tree depth first so every node is persisted, not just the roots.</summary>

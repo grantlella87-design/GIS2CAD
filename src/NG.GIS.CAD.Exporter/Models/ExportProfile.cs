@@ -56,7 +56,18 @@ public sealed class SharePointTemplateSettings
 {
     public string ClientId { get; set; } = "14d82eec-204b-4c2f-b7e8-296a70dab67e";
     public string TenantId { get; set; } = "f98a6a53-25f3-4212-901c-c7787fcd3495";
+    /// <summary>
+    /// The SharePoint folder to read templates from, as the URL shown in the browser when viewing
+    /// that folder. When set this is used in preference to <see cref="DriveId"/> and
+    /// <see cref="FolderPath"/>, because it can be copied straight out of SharePoint and needs no
+    /// knowledge of internal drive identifiers.
+    /// </summary>
+    public string FolderUrl { get; set; } = string.Empty;
+
+    /// <summary>Fallback used when <see cref="FolderUrl"/> is empty. Carried over from the earlier build and unverified.</summary>
     public string DriveId { get; set; } = "b!oQf4lQnCX0qt-hTuSFmXrP4QVHfYL_1Mo26SJGoClkz_SltDsJ3rT4gTLzMV1xCP";
+
+    /// <summary>Folder path beneath the drive root, used with <see cref="DriveId"/>.</summary>
     public string FolderPath { get; set; } = "Boston Cape Gas Dist Eng Design/CAD Template/Template - BOSTON TEAM";
 
     /// <summary>
