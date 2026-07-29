@@ -19,12 +19,15 @@ public sealed partial class ExporterViewModel : ObservableObject
     private LayerSelectionViewModel? _selectedLayer;
     private CadTransformRuleViewModel? _selectedTransform;
     private ExportProfile _profile = new();
+    private string _newMapDataSourceName = string.Empty;
+    private string _newMapDataSourceUrl = string.Empty;
     public ExporterViewModel(AppServices services)
     {
         _services = services;
         ProfilePath = _services.ProfileStore.GetDefaultProfilePath();
         Layers = new ObservableCollection<LayerSelectionViewModel>();
         MapLayers = new ObservableCollection<MapLayerToggleViewModel>();
+        MapDataSources = new ObservableCollection<MapDataSourceViewModel>();
         TransformRules = new ObservableCollection<CadTransformRuleViewModel>();
         WorkOrderOptions = new ObservableCollection<string>();
         Blocks = new ObservableCollection<string>(_services.CadDrawingCatalog.GetBlockNames());
@@ -41,11 +44,14 @@ public sealed partial class ExporterViewModel : ObservableObject
         SetManualExtentCommand = new RelayCommand(_ => SetManualExtentAsync());
         BuildReviewCommand = new RelayCommand(_ => BuildReviewAsync());
         ExportCommand = new RelayCommand(_ => BuildReviewAsync());
+        AddMapDataSourceCommand = new RelayCommand(_ => AddMapDataSourceAsync());
+        RemoveMapDataSourceCommand = new RelayCommand(RemoveMapDataSourceAsync);
         _ = LoadProfileAsync();
         _ = LoadWorkOrdersAsync();
     }
     public ObservableCollection<LayerSelectionViewModel> Layers { get; }
     public ObservableCollection<MapLayerToggleViewModel> MapLayers { get; }
+    public ObservableCollection<MapDataSourceViewModel> MapDataSources { get; }
     public ObservableCollection<CadTransformRuleViewModel> TransformRules { get; }
     public ObservableCollection<string> WorkOrderOptions { get; }
     public ObservableCollection<string> Blocks { get; }
@@ -62,6 +68,16 @@ public sealed partial class ExporterViewModel : ObservableObject
     public ICommand SetManualExtentCommand { get; }
     public ICommand BuildReviewCommand { get; }
     public ICommand ExportCommand { get; }
+    public ICommand AddMapDataSourceCommand { get; }
+    public ICommand RemoveMapDataSourceCommand { get; }
+    public string NewMapDataSourceName { get => _newMapDataSourceName; set => SetProperty(ref _newMapDataSourceName, value); }
+    public string NewMapDataSourceUrl { get => _newMapDataSourceUrl; set => SetProperty(ref _newMapDataSourceUrl, value); }
+
+    /// <summary>
+    /// Raised when a source is added, removed or toggled. The view reapplies the data source layers
+    /// to the extent page map and rebuilds the layer tree.
+    /// </summary>
+    public event Action? MapDataSourcesChanged;
     public bool IsMethodPage => PageIndex == 0;
     public bool IsExtentPage => PageIndex == 1;
     public bool IsLayerPage => PageIndex == 2;
@@ -95,6 +111,7 @@ public sealed partial class ExporterViewModel : ObservableObject
             Status = "Loading profile and GIS layer metadata...";
             var profile = await _services.ProfileStore.LoadAsync(ProfilePath, CancellationToken.None);
             _profile = profile;
+            LoadMapDataSources();
             var userSettings = await _services.UserSettingsStore.LoadAsync(CancellationToken.None);
             Layers.Clear();
             TransformRules.Clear();
@@ -164,6 +181,105 @@ public sealed partial class ExporterViewModel : ObservableObject
             await _services.ProfileStore.SaveAsync(_profile, ProfilePath, CancellationToken.None);
         }
         catch (Exception ex) { Status = "Saving layer visibility failed: " + ex.Message; }
+    }
+
+    /// <summary>Rebuilds the data source list from the loaded profile.</summary>
+    private void LoadMapDataSources()
+    {
+        foreach (var stale in MapDataSources) { stale.EnabledChanged -= OnMapDataSourceEnabledChanged; }
+        MapDataSources.Clear();
+
+        _profile.MapDataSources ??= new List<MapDataSource>();
+        foreach (var source in _profile.MapDataSources)
+        {
+            var sourceVm = new MapDataSourceViewModel(source);
+            sourceVm.EnabledChanged += OnMapDataSourceEnabledChanged;
+            MapDataSources.Add(sourceVm);
+        }
+
+        // The profile and the map load independently. If the map got there first it has already run
+        // with an empty list, so signal it to reconcile now that the sources are known.
+        MapDataSourcesChanged?.Invoke();
+    }
+
+    private void OnMapDataSourceEnabledChanged(MapDataSourceViewModel source)
+    {
+        _ = SaveMapDataSourcesAsync();
+        MapDataSourcesChanged?.Invoke();
+    }
+
+    private async Task AddMapDataSourceAsync()
+    {
+        var url = (NewMapDataSourceUrl ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            Status = "Enter a service URL to add as a data source.";
+            return;
+        }
+        if (!Uri.TryCreate(url, UriKind.Absolute, out _))
+        {
+            Status = "That data source URL is not a valid absolute URL.";
+            return;
+        }
+        if (MapDataSources.Any(s => string.Equals(s.Url, url, StringComparison.OrdinalIgnoreCase)))
+        {
+            Status = "That data source is already in the list.";
+            return;
+        }
+
+        var name = (NewMapDataSourceName ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(name)) { name = DeriveMapDataSourceName(url); }
+
+        var source = new MapDataSource { Name = name, Url = url, Enabled = true };
+        _profile.MapDataSources ??= new List<MapDataSource>();
+        _profile.MapDataSources.Add(source);
+
+        var sourceVm = new MapDataSourceViewModel(source);
+        sourceVm.EnabledChanged += OnMapDataSourceEnabledChanged;
+        MapDataSources.Add(sourceVm);
+
+        NewMapDataSourceName = string.Empty;
+        NewMapDataSourceUrl = string.Empty;
+
+        await SaveMapDataSourcesAsync();
+        MapDataSourcesChanged?.Invoke();
+        Status = "Added data source: " + name + ".";
+    }
+
+    private async Task RemoveMapDataSourceAsync(object? parameter)
+    {
+        if (parameter is not MapDataSourceViewModel sourceVm) { return; }
+
+        sourceVm.EnabledChanged -= OnMapDataSourceEnabledChanged;
+        MapDataSources.Remove(sourceVm);
+        _profile.MapDataSources?.Remove(sourceVm.Source);
+
+        await SaveMapDataSourcesAsync();
+        MapDataSourcesChanged?.Invoke();
+        Status = "Removed data source: " + sourceVm.Name + ".";
+    }
+
+    /// <summary>Uses the service name segment of the URL when the user did not supply a name.</summary>
+    private static string DeriveMapDataSourceName(string url)
+    {
+        var segments = url.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+        for (var i = segments.Length - 1; i >= 0; i--)
+        {
+            var segment = segments[i];
+            if (segment.EndsWith("Server", StringComparison.OrdinalIgnoreCase)) { continue; }
+            if (int.TryParse(segment, out _)) { continue; }
+            return segment;
+        }
+        return url;
+    }
+
+    public async Task SaveMapDataSourcesAsync()
+    {
+        try
+        {
+            await _services.ProfileStore.SaveAsync(_profile, ProfilePath, CancellationToken.None);
+        }
+        catch (Exception ex) { Status = "Saving data sources failed: " + ex.Message; }
     }
 
     /// <summary>Walks the map layer tree depth first so every node is persisted, not just the roots.</summary>

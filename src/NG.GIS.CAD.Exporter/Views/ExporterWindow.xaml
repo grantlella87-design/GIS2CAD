@@ -49,6 +49,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <Grid Grid.Row="0">
                     <StackPanel x:Name="WorkOrderModePanel">
@@ -108,6 +109,34 @@
                             </TreeView>
                         </DockPanel>
                     </GroupBox>
+                    <Expander Grid.Row="2" Header="Data sources" Margin="0,8,0,0">
+                        <StackPanel Margin="4,6,4,4">
+                            <ItemsControl ItemsSource="{Binding MapDataSources}" Margin="0,0,0,6">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <CheckBox Content="{Binding Name}" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalContentAlignment="Center"/>
+                                                <TextBlock Text="{Binding Url}" Foreground="#777777" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding Status}" Foreground="#777777" FontSize="11" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="Remove" Padding="8,2" VerticalAlignment="Top"
+                                                    Command="{Binding DataContext.RemoveMapDataSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="Add a MapServer, FeatureServer layer, VectorTileServer or KML URL" Foreground="#777777" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                            <TextBox Text="{Binding NewMapDataSourceName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4" ToolTip="Display name (optional)"/>
+                            <TextBox Text="{Binding NewMapDataSourceUrl, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4" ToolTip="Service URL"/>
+                            <Button Content="Add data source" Command="{Binding AddMapDataSourceCommand}" Padding="8,2" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </Expander>
                 </Grid>
                 <Grid Grid.Column="2">
                     <Grid.RowDefinitions>

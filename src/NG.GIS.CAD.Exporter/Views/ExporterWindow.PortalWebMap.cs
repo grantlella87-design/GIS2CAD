@@ -65,7 +65,7 @@ public partial class ExporterWindow
             _extentWebMapLoaded = true;
 
             await EnsureMaterialViewLayerAsync(map);
-            await BuildMapLayerTogglesAsync(map);
+            await ApplyMapDataSourcesAsync();
 
             SetExtentMapStatus("Portal web map loaded: " + item.Title + ". Operational layers: " + map.OperationalLayers.Count + ".");
         }

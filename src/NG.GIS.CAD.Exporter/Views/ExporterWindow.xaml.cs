@@ -70,8 +70,15 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
         {
             vm.PropertyChanged -= ViewModel_PropertyChanged;
             vm.PropertyChanged += ViewModel_PropertyChanged;
+            vm.MapDataSourcesChanged -= ViewModel_MapDataSourcesChanged;
+            vm.MapDataSourcesChanged += ViewModel_MapDataSourcesChanged;
         }
     }
+    private async void ViewModel_MapDataSourcesChanged()
+    {
+        await ApplyMapDataSourcesAsync();
+    }
+
     private async void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (DataContext is not ExporterViewModel vm) { return; }
