@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
@@ -14,6 +15,32 @@ public sealed class CadSymbolCatalog
     public IReadOnlyList<string> Blocks { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> LineTypes { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> Layers { get; init; } = Array.Empty<string>();
+
+    /// <summary>Paper space viewports, which the strip map index takes its sheet size from.</summary>
+    public IReadOnlyList<CadViewport> Viewports { get; init; } = Array.Empty<CadViewport>();
+}
+
+/// <summary>A paper space viewport in one of the drawing's layouts.</summary>
+public sealed class CadViewport
+{
+    public string LayoutName { get; init; } = string.Empty;
+    public int Number { get; init; }
+
+    /// <summary>Width and height in the layout's paper units, not in drawing units.</summary>
+    public double Width { get; init; }
+    public double Height { get; init; }
+
+    public bool IsMillimetres { get; init; }
+
+    /// <summary>Stable key used to remember the choice in the profile.</summary>
+    public string Key => LayoutName + " / viewport " + Number.ToString(CultureInfo.InvariantCulture);
+
+    public string UnitAbbreviation => IsMillimetres ? "mm" : "in";
+
+    public string Display =>
+        LayoutName + " — viewport " + Number.ToString(CultureInfo.InvariantCulture)
+        + " (" + Width.ToString("0.##", CultureInfo.InvariantCulture) + " × "
+        + Height.ToString("0.##", CultureInfo.InvariantCulture) + " " + UnitAbbreviation + ")";
 }
 
 /// <summary>
@@ -225,10 +252,52 @@ public sealed class CadDrawingCatalog
         {
             Blocks = Sorted(ReadBlockNames(database, transaction)),
             LineTypes = Sorted(ReadLineTypes(database, transaction)),
-            Layers = Sorted(ReadLayerNames(database, transaction))
+            Layers = Sorted(ReadLayerNames(database, transaction)),
+            Viewports = ReadViewports(database, transaction)
         };
         transaction.Commit();
         return catalog;
+    }
+
+    /// <summary>
+    /// Reads every paper space viewport in every layout, so the strip map index can be sized from the
+    /// one the drawing already uses rather than from typed-in numbers.
+    /// </summary>
+    private static List<CadViewport> ReadViewports(Database database, Transaction transaction)
+    {
+        var viewports = new List<CadViewport>();
+        var layouts = (DBDictionary)transaction.GetObject(database.LayoutDictionaryId, OpenMode.ForRead);
+
+        foreach (DBDictionaryEntry entry in layouts)
+        {
+            if (transaction.GetObject(entry.Value, OpenMode.ForRead) is not Layout layout) { continue; }
+            var isMillimetres = layout.PlotPaperUnits == PlotPaperUnit.Millimeters;
+
+            foreach (ObjectId id in layout.GetViewports())
+            {
+                if (transaction.GetObject(id, OpenMode.ForRead) is not Viewport viewport) { continue; }
+
+                // Number 1 is the paper space viewport itself: the whole sheet, not a window onto the
+                // model. Sizing a strip map from it would measure the paper rather than the drawing
+                // area. Model space is in this dictionary too and has nothing above number 1.
+                if (viewport.Number <= 1) { continue; }
+                if (viewport.Width <= 0 || viewport.Height <= 0) { continue; }
+
+                viewports.Add(new CadViewport
+                {
+                    LayoutName = layout.LayoutName,
+                    Number = viewport.Number,
+                    Width = viewport.Width,
+                    Height = viewport.Height,
+                    IsMillimetres = isMillimetres
+                });
+            }
+        }
+
+        return viewports
+            .OrderBy(v => v.LayoutName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(v => v.Number)
+            .ToList();
     }
 
     private static List<string> ReadBlockNames(Database database, Transaction transaction)

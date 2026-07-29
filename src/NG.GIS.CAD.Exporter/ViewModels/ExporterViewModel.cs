@@ -156,6 +156,7 @@ public sealed partial class ExporterViewModel : ObservableObject
             var profile = await _services.ProfileStore.LoadAsync(ProfilePath, CancellationToken.None);
             _profile = profile;
             LoadMapDataSources();
+            LoadStripMapSettings();
 
             // Deliberately no success status here: the work order lookup owns the status line while
             // page 1 is on screen, and overwriting it would hide the lookup's own progress.
@@ -276,6 +277,7 @@ public sealed partial class ExporterViewModel : ObservableObject
             foreach (var name in catalog.Blocks) { Blocks.Add(name); }
             foreach (var name in catalog.LineTypes) { LineTypes.Add(name); }
             foreach (var name in catalog.Layers) { CadLayers.Add(name); }
+            LoadStripMapViewports(catalog.Viewports);
 
             Status = UseTemplateSymbols
                 ? $"Read {Blocks.Count} blocks and {LineTypes.Count} line types from {System.IO.Path.GetFileName(TemplatePath)}."

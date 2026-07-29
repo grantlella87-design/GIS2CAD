@@ -24,6 +24,9 @@ public sealed class ExportProfile
     /// <summary>Where the SharePoint CAD template browser looks, and which app registration it signs in with.</summary>
     public SharePointTemplateSettings SharePointTemplates { get; set; } = new();
 
+    /// <summary>How the strip map index along the proposed main is sized and laid out.</summary>
+    public StripMapIndexSettings StripMapIndex { get; set; } = new();
+
     /// <summary>
     /// Properties present in the profile file that this model does not declare, captured so that
     /// saving the profile round-trips them instead of dropping them. The profile carries keys such
@@ -81,6 +84,36 @@ public sealed class SharePointTemplateSettings
     /// consented permissions here, so asking for it would stall on a consent prompt.
     /// </summary>
     public List<string> Scopes { get; set; } = new() { "User.Read", "Sites.ReadWrite.All" };
+}
+
+/// <summary>
+/// Sizing for the strip map index laid along the proposed main. The sheet size comes either from a
+/// viewport in the CAD template or from typed dimensions, so both are kept: choosing a viewport and
+/// then losing access to the template should not lose the numbers it gave.
+/// </summary>
+public sealed class StripMapIndexSettings
+{
+    /// <summary>Key of the chosen template viewport, or empty when the dimensions are typed.</summary>
+    public string ViewportKey { get; set; } = string.Empty;
+
+    /// <summary>Sheet size in paper units, running along the route and across it.</summary>
+    public double SheetWidth { get; set; }
+    public double SheetHeight { get; set; }
+
+    /// <summary>True when the sheet dimensions are millimetres rather than inches.</summary>
+    public bool SheetIsMillimetres { get; set; }
+
+    /// <summary>
+    /// The denominator of the plot scale. 240 means 1:240, which puts one paper inch to twenty feet
+    /// on the ground and is the usual scale for this work.
+    /// </summary>
+    public double ScaleDenominator { get; set; } = 240;
+
+    /// <summary>
+    /// How much of each sheet repeats on the next, as a fraction of the sheet's along-route size.
+    /// Without some overlap a feature landing on a sheet edge is cut in half on both sheets.
+    /// </summary>
+    public double OverlapFraction { get; set; } = 0.05;
 }
 
 /// <summary>A service the user added to the extent page map.</summary>
