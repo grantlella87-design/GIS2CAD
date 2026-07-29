@@ -153,7 +153,17 @@ finally {
             using var process = Process.Start(psi) ?? throw new InvalidOperationException("Could not start the PowerShell process for NG_ODS.");
             var outputTask = process.StandardOutput.ReadToEndAsync();
             var errorTask = process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancelling only stops the wait. Without this the query keeps running to completion
+                // in a process nobody is listening to, holding its SQL connection open.
+                try { if (!process.HasExited) { process.Kill(entireProcessTree: true); } } catch { }
+                throw;
+            }
             var output = await outputTask.ConfigureAwait(false);
             var error = await errorTask.ConfigureAwait(false);
 

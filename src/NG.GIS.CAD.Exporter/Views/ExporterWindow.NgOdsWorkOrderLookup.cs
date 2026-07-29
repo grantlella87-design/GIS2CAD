@@ -13,24 +13,23 @@ namespace NG.GIS.CAD.Exporter.Views;
 public partial class ExporterWindow
 {
     private CancellationTokenSource? _ngOdsWorkOrderLookupCts;
-    private Task? _ngOdsStartupLoadTask;
+    private Task? _ngOdsLoadInFlight;
+    private bool _ngOdsLoadFailed;
+    private bool _ngOdsConnectionDeclined;
     private bool _syncingNgOdsWorkOrderSelection;
     private List<NgOdsWorkOrderItem> _ngOdsWorkOrders = new();
     private const int NgOdsDropdownDisplayLimit = 1000;
 
     private async void NgOdsWorkOrderCombos_Loaded(object sender, RoutedEventArgs e)
     {
-        if (_ngOdsStartupLoadTask == null)
-        {
-            _ngOdsStartupLoadTask = LoadNgOdsWorkOrdersOnceAsync();
-        }
-        await _ngOdsStartupLoadTask;
+        await EnsureNgOdsWorkOrdersLoadedAsync(userInitiated: false);
     }
 
     /// <summary>
     /// Makes sure a working NG_ODS connection is configured, prompting for one when it is missing or
     /// when <paramref name="forcePrompt"/> says the configured one has just failed. Returns false when
-    /// the user cancels, in which case the caller should give up quietly rather than retry.
+    /// the user cancels, which latches <see cref="_ngOdsConnectionDeclined"/> so nothing prompts again
+    /// until the user explicitly opens a work order dropdown.
     /// </summary>
     private bool EnsureNgOdsConnection(bool forcePrompt)
     {
@@ -39,17 +38,19 @@ public partial class ExporterWindow
         var dialog = new NgOdsConnectionWindow();
         if (IsLoaded) { dialog.Owner = this; }
 
-        if (dialog.ShowDialog() == true) { return true; }
+        if (dialog.ShowDialog() == true)
+        {
+            _ngOdsConnectionDeclined = false;
+            return true;
+        }
 
-        // Clear the once-only guard so reopening a dropdown genuinely runs the flow again and
-        // prompts a second time, rather than silently awaiting the task that just gave up.
-        _ngOdsStartupLoadTask = null;
+        _ngOdsConnectionDeclined = true;
         SetNgOdsStatus("NG_ODS connection was not configured, so work order lookup is unavailable. "
-            + "Reopen the work order dropdown to enter it.");
+            + "Open a work order dropdown to enter it.");
         return false;
     }
 
-    private async Task LoadNgOdsWorkOrdersOnceAsync()
+    private async Task LoadNgOdsWorkOrdersOnceAsync(bool userInitiated)
     {
         if (_ngOdsWorkOrders.Count > 0) { return; }
         _ngOdsWorkOrderLookupCts?.Cancel();
@@ -70,26 +71,31 @@ public partial class ExporterWindow
             catch (OperationCanceledException) { return; }
             catch (Exception firstAttempt)
             {
-                // A stored connection that no longer works should not be a dead end. Show what went
-                // wrong, let the user correct it, and try once more.
                 if (token.IsCancellationRequested) { return; }
                 SetNgOdsStatus("NG_ODS work order load failed: " + FlattenNgOdsException(firstAttempt));
-                if (!EnsureNgOdsConnection(forcePrompt: true)) { return; }
+
+                // Only offer to re-enter the connection when the user asked for this load. A failure
+                // during the startup load is reported and left alone, so an unreachable database does
+                // not throw a credentials dialog at every AutoCAD start.
+                if (!userInitiated) { _ngOdsLoadFailed = true; return; }
+                if (!EnsureNgOdsConnection(forcePrompt: true)) { _ngOdsLoadFailed = true; return; }
+
                 SetNgOdsStatus("Retrying the NG_ODS work order load...");
                 items = await NgOdsWorkOrderLookup.LoadAllAsync(token);
             }
 
             if (token.IsCancellationRequested) { return; }
             _ngOdsWorkOrders = items.ToList();
+            _ngOdsLoadFailed = false;
             BindNgOdsDropdowns(_ngOdsWorkOrders.Take(NgOdsDropdownDisplayLimit).ToList(), null, null);
             var shown = Math.Min(NgOdsDropdownDisplayLimit, _ngOdsWorkOrders.Count);
             SetNgOdsStatus($"Loaded {_ngOdsWorkOrders.Count:N0} work orders from NG_ODS. Showing first {shown:N0}; type to filter locally.");
         }
         catch (Exception ex)
         {
-            // Leave the flow retryable so reopening a dropdown attempts the load again.
-            _ngOdsStartupLoadTask = null;
-            SetNgOdsStatus("NG_ODS work order full startup load failed: " + FlattenNgOdsException(ex));
+            _ngOdsLoadFailed = true;
+            SetNgOdsStatus("NG_ODS work order load failed: " + FlattenNgOdsException(ex)
+                + " Open a work order dropdown to try again.");
         }
         finally
         {
@@ -100,35 +106,56 @@ public partial class ExporterWindow
 
     private async void NgOdsWorkOrderNumberCombo_DropDownOpened(object sender, EventArgs e)
     {
-        await EnsureNgOdsWorkOrdersLoadedAsync();
+        await EnsureNgOdsWorkOrdersLoadedAsync(userInitiated: true);
         ApplyNgOdsLocalFilter(WorkOrderSelectionComboBox?.Text, null, "wonum dropdown");
     }
 
     private async void NgOdsWorkOrderNameCombo_DropDownOpened(object sender, EventArgs e)
     {
-        await EnsureNgOdsWorkOrdersLoadedAsync();
+        await EnsureNgOdsWorkOrdersLoadedAsync(userInitiated: true);
         ApplyNgOdsLocalFilter(null, WorkOrderNameComboBox?.Text, "name dropdown");
     }
 
     private async void NgOdsWorkOrderNumberCombo_KeyUp(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Tab || e.Key == Key.Enter) { return; }
-        await EnsureNgOdsWorkOrdersLoadedAsync();
+        await EnsureNgOdsWorkOrdersLoadedAsync(userInitiated: false);
         ApplyNgOdsLocalFilter(WorkOrderSelectionComboBox?.Text, null, "wonum local filter");
     }
 
     private async void NgOdsWorkOrderNameCombo_KeyUp(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Tab || e.Key == Key.Enter) { return; }
-        await EnsureNgOdsWorkOrdersLoadedAsync();
+        await EnsureNgOdsWorkOrdersLoadedAsync(userInitiated: false);
         ApplyNgOdsLocalFilter(null, WorkOrderNameComboBox?.Text, "name local filter");
     }
 
-    private async Task EnsureNgOdsWorkOrdersLoadedAsync()
+    /// <summary>
+    /// Single entry point for loading the work order list. At most one load ever runs: callers that
+    /// arrive while one is in flight await that same task instead of starting another.
+    ///
+    /// <paramref name="userInitiated"/> separates a deliberate gesture, opening a dropdown, from
+    /// incidental ones like typing. Only a deliberate gesture retries after a failure or a declined
+    /// connection prompt. Without that distinction every keystroke would restart a full table load
+    /// against a database that is not answering.
+    /// </summary>
+    private async Task EnsureNgOdsWorkOrdersLoadedAsync(bool userInitiated)
     {
         if (_ngOdsWorkOrders.Count > 0) { return; }
-        if (_ngOdsStartupLoadTask == null) { _ngOdsStartupLoadTask = LoadNgOdsWorkOrdersOnceAsync(); }
-        await _ngOdsStartupLoadTask;
+
+        var inFlight = _ngOdsLoadInFlight;
+        if (inFlight != null) { await inFlight; return; }
+
+        if (!userInitiated && (_ngOdsLoadFailed || _ngOdsConnectionDeclined)) { return; }
+        if (userInitiated) { _ngOdsLoadFailed = false; _ngOdsConnectionDeclined = false; }
+
+        var task = LoadNgOdsWorkOrdersOnceAsync(userInitiated);
+        _ngOdsLoadInFlight = task;
+        try { await task; }
+        finally
+        {
+            if (ReferenceEquals(_ngOdsLoadInFlight, task)) { _ngOdsLoadInFlight = null; }
+        }
     }
 
     private void ApplyNgOdsLocalFilter(string? wonumText, string? nameText, string source)
