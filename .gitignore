@@ -21,3 +21,14 @@ packages/
 ## Local secrets / tokens (do not commit)
 *.pat
 appsettings.*.json
+
+## Editor / script backup copies (keep history in git, not on disk)
+*.bak
+*.bak_*
+*.disabled
+*.orig
+*~
+*.backup-[0-9]*
+*-backup-[0-9]*
+*.[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9].*
+*.[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].*
