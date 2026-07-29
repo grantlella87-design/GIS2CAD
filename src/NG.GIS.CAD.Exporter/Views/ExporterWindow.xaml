@@ -30,6 +30,13 @@
                     <TextBlock Text="Padding ft (applies to Work Order driven export and Manual proposed pipeline segments)"/>
                     <TextBox x:Name="WorkOrderPaddingTextBox" Text="{Binding PaddingFeet, UpdateSourceTrigger=PropertyChanged}" TextChanged="PaddingInput_TextChanged" Margin="0,0,0,12"/>
                     <TextBlock Text="The full NG_ODS work order query loads once when this page opens, then both dropdowns filter locally. Selecting either Work Order Number or Work Order Name updates the other dropdown from the same NG_ODS row." TextWrapping="Wrap" Foreground="#555555"/>
+                    <TextBlock Text="CAD template (.dwt)" FontSize="16" FontWeight="Bold" Margin="0,18,0,8"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                        <Button Content="Pick .dwt" Click="PickLocalDwtTemplate_Click" Width="80" Height="24" Margin="0,0,5,0"/>
+                        <TextBox x:Name="LocalDwtPathTextBox" Width="440" Height="24" IsReadOnly="True" Margin="0,0,5,0"/>
+                        <Button Content="Open" Click="OpenLocalDwtTemplate_Click" Width="70" Height="24"/>
+                    </StackPanel>
+                    <TextBlock x:Name="LocalDwtStatusText" Text="Select a local or synced SharePoint .dwt. No Graph sign-in is used." TextWrapping="Wrap" Foreground="#555555"/>
                 </StackPanel>
             </Grid>
                         <Grid x:Name="ExtentPage" Visibility="Collapsed" IsVisibleChanged="ExtentPage_IsVisibleChanged">
