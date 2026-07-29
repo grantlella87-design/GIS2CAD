@@ -30,6 +30,7 @@ public partial class ExporterWindow
         _selectedDwtPath = dialog.FileName;
         LocalDwtPathTextBox.Text = dialog.FileName;
         SetLocalDwtStatus("Selected template: " + dialog.FileName);
+        PublishTemplatePath(dialog.FileName);
     }
 
     private void OpenLocalDwtTemplate_Click(object sender, RoutedEventArgs e)
@@ -97,7 +98,17 @@ public partial class ExporterWindow
         _selectedDwtPath = browser.SelectedTemplatePath;
         LocalDwtPathTextBox.Text = browser.SelectedTemplatePath;
         SetLocalDwtStatus("Selected template: " + browser.SelectedTemplatePath);
+        PublishTemplatePath(browser.SelectedTemplatePath);
         SetSharePointStatus("Downloaded from SharePoint as " + (service.SignedInAs ?? "the signed-in account") + ".");
+    }
+
+    /// <summary>
+    /// Hands the chosen template to the view model, so page 4 can offer its blocks and line types as
+    /// an alternative to the ones in the open drawing.
+    /// </summary>
+    private void PublishTemplatePath(string path)
+    {
+        if (DataContext is ExporterViewModel vm) { vm.TemplatePath = path; }
     }
 
     private void SetSharePointStatus(string message) => SharePointStatusText.Text = message;

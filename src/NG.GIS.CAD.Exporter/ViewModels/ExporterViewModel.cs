@@ -23,6 +23,8 @@ public sealed partial class ExporterViewModel : ObservableObject
     private string _newMapDataSourceUrl = string.Empty;
     private bool _layerMetadataLoaded;
     private bool _cadCatalogLoaded;
+    private string? _templatePath;
+    private bool _useTemplateSymbols;
     public ExporterViewModel(AppServices services)
     {
         _services = services;
@@ -222,22 +224,91 @@ public sealed partial class ExporterViewModel : ObservableObject
         }
     }
 
-    /// <summary>Reads block, line type and layer names from the active drawing, once.</summary>
+    /// <summary>Reads block, line type and layer names from the chosen source, once.</summary>
     private void EnsureCadCatalogLoaded()
     {
         if (_cadCatalogLoaded) { return; }
         _cadCatalogLoaded = true;
+        ReloadCadCatalog();
+    }
+
+    /// <summary>
+    /// Refills the block, line type and layer lists from whichever source is selected: the drawing
+    /// that is open, or the template picked on page 1.
+    /// </summary>
+    public void ReloadCadCatalog()
+    {
         try
         {
-            foreach (var name in _services.CadDrawingCatalog.GetBlockNames()) { Blocks.Add(name); }
-            foreach (var name in _services.CadDrawingCatalog.GetLineTypes()) { LineTypes.Add(name); }
-            foreach (var name in _services.CadDrawingCatalog.GetLayerNames()) { CadLayers.Add(name); }
+            var source = UseTemplateSymbols ? TemplatePath : null;
+
+            Blocks.Clear();
+            LineTypes.Clear();
+            CadLayers.Clear();
+
+            foreach (var name in _services.CadDrawingCatalog.GetBlockNames(source)) { Blocks.Add(name); }
+            foreach (var name in _services.CadDrawingCatalog.GetLineTypes(source)) { LineTypes.Add(name); }
+            foreach (var name in _services.CadDrawingCatalog.GetLayerNames(source)) { CadLayers.Add(name); }
+
+            Status = UseTemplateSymbols
+                ? $"Read {Blocks.Count} blocks and {LineTypes.Count} line types from the CAD template."
+                : $"Read {Blocks.Count} blocks and {LineTypes.Count} line types from the open drawing.";
         }
         catch (Exception ex)
         {
             _cadCatalogLoaded = false;
-            Status = "Reading the drawing's blocks, line types and layers failed: " + ex.Message;
+            Status = "Reading blocks, line types and layers failed: " + ex.Message;
         }
+    }
+
+    /// <summary>
+    /// The .dwt chosen on page 1. Setting it makes the template a usable symbol source; clearing it
+    /// falls the page back to the open drawing.
+    /// </summary>
+    public string? TemplatePath
+    {
+        get => _templatePath;
+        set
+        {
+            if (!SetProperty(ref _templatePath, value)) { return; }
+            RaisePropertyChanged(nameof(HasTemplate));
+            if (UseTemplateSymbols) { ReloadCadCatalog(); }
+        }
+    }
+
+    public bool HasTemplate => !string.IsNullOrWhiteSpace(TemplatePath);
+
+    /// <summary>Whether blocks and line types are read from the template rather than the open drawing.</summary>
+    public bool UseTemplateSymbols
+    {
+        get => _useTemplateSymbols;
+        set
+        {
+            if (!SetProperty(ref _useTemplateSymbols, value)) { return; }
+            RaisePropertyChanged(nameof(UseDrawingSymbols));
+            ReloadCadCatalog();
+        }
+    }
+
+    public bool UseDrawingSymbols
+    {
+        get => !UseTemplateSymbols;
+        set { if (value) { UseTemplateSymbols = false; } }
+    }
+
+    /// <summary>
+    /// Whether a block of this name exists in the drawing that is open. The block editor works on the
+    /// open drawing, so a name taken from a template is not necessarily editable.
+    /// </summary>
+    public bool BlockExistsInOpenDrawing(string blockName)
+    {
+        if (string.IsNullOrWhiteSpace(blockName)) { return false; }
+        try
+        {
+            return _services.CadDrawingCatalog.GetBlockNames(null)
+                .Contains(blockName, StringComparer.OrdinalIgnoreCase);
+        }
+        catch { return false; }
     }
     private async Task LoadWorkOrdersAsync()
     {
