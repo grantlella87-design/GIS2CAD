@@ -54,7 +54,23 @@ public sealed record NgOdsWorkOrderItem(
 
 public static class NgOdsWorkOrderLookup
 {
-    private const string ConnectionString = @"Data Source=dmapeus2d02-sql.database.windows.net;Initial Catalog=NG_ODS;Persist Security Info=True;User ID=lellag;Password=xaN\WT}F8<A({8`25June;Pooling=False;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Application Name=""NG GIS CAD Exporter"";";
+    private const string ConnectionStringVariable = "NGGISCAD_ODS_CONN";
+
+    private static string ResolveConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable(ConnectionStringVariable, EnvironmentVariableTarget.Process)
+            ?? Environment.GetEnvironmentVariable(ConnectionStringVariable, EnvironmentVariableTarget.User)
+            ?? Environment.GetEnvironmentVariable(ConnectionStringVariable, EnvironmentVariableTarget.Machine);
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException(
+                "The NG_ODS connection string is not configured. Set the " + ConnectionStringVariable +
+                " environment variable to the NG_ODS SQL connection string before running the work order lookup.");
+        }
+
+        return connectionString;
+    }
 
     private const string LookupScript = """
 $ErrorActionPreference = 'Stop'
@@ -177,6 +193,7 @@ finally {
 
     public static async Task<IReadOnlyList<NgOdsWorkOrderItem>> LoadAllAsync(CancellationToken cancellationToken = default)
     {
+        var connectionString = ResolveConnectionString();
         var scriptPath = Path.Combine(Path.GetTempPath(), "NGGisCadExporter_WorkOrderFullLoad_" + Guid.NewGuid().ToString("N") + ".ps1");
         await File.WriteAllTextAsync(scriptPath, LookupScript, new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
         try
@@ -196,7 +213,7 @@ finally {
             psi.ArgumentList.Add("Bypass");
             psi.ArgumentList.Add("-File");
             psi.ArgumentList.Add(scriptPath);
-            psi.Environment["NGGISCAD_ODS_CONN"] = ConnectionString;
+            psi.Environment[ConnectionStringVariable] = connectionString;
 
             using var process = Process.Start(psi) ?? throw new InvalidOperationException("Could not start PowerShell work order lookup process.");
             var outputTask = process.StandardOutput.ReadToEndAsync();

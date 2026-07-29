@@ -343,6 +343,3 @@ public partial class ExporterWindow
         return RuntimeGeometry.FromJson(json.ToString());
     }
 }
-
-
-

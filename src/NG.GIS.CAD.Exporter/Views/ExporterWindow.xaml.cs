@@ -495,10 +495,3 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
         private void PaddingInput_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
         {
         }}
-
-
-
-
-
-
-

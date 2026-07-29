@@ -311,5 +311,3 @@ public sealed class ArcGisRestClient
         }
     }
 }
-
-

@@ -1,14 +1,16 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
-            <PlatformTarget>x64</PlatformTarget>
-<RuntimeIdentifier>win-x64</RuntimeIdentifier>
-<TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
+
   <ItemGroup>
     <Reference Include="AcMgd">
       <HintPath>$(AcadReferencePath)\AcMgd.dll</HintPath>
@@ -27,24 +29,5 @@
   <ItemGroup>
     <PackageReference Include="Esri.ArcGISRuntime.WPF" Version="300.0.0" />
   </ItemGroup>
+
 </Project>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
