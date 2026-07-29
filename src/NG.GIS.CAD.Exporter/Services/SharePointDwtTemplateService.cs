@@ -157,79 +157,103 @@ public sealed class SharePointDwtTemplateService
         SignedInAs = null;
     }
 
-    public async Task<IReadOnlyList<SharePointDwtTemplateItem>> ListTemplatesAsync(CancellationToken cancellationToken)
+    /// <summary>Sites the user follows. The usual starting point, since it is short and personal.</summary>
+    public async Task<IReadOnlyList<SharePointSite>> ListFollowedSitesAsync(CancellationToken cancellationToken)
     {
         var token = await AcquireTokenSilentlyAsync(cancellationToken).ConfigureAwait(false);
-        var (driveId, itemId) = await ResolveFolderAsync(token, cancellationToken).ConfigureAwait(false);
-
-        var found = new List<SharePointDwtTemplateItem>();
-        await AddTemplatesFromFolderAsync(token, driveId, itemId, found, 0, cancellationToken).ConfigureAwait(false);
-        return found.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        using var document = await GetJsonAsync(token, "/me/followedSites", cancellationToken).ConfigureAwait(false);
+        return ReadSites(document);
     }
 
     /// <summary>
-    /// Finds the folder to read, returning its drive and item ids.
-    ///
-    /// A folder URL is preferred because it is what the user can actually see and copy. Graph
-    /// resolves it through the shares endpoint, which returns the drive and item ids, so nobody has
-    /// to know the internal identifiers. The drive id and path route is kept as a fallback.
+    /// Searches sites by name. A tenant can hold thousands, so browsing all of them is not useful;
+    /// searching is how anything outside the followed list gets found.
     /// </summary>
-    private async Task<(string DriveId, string ItemId)> ResolveFolderAsync(string token, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<SharePointSite>> SearchSitesAsync(string query, CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(_settings.FolderUrl))
+        var token = await AcquireTokenSilentlyAsync(cancellationToken).ConfigureAwait(false);
+        var search = string.IsNullOrWhiteSpace(query) ? "*" : query.Trim();
+        using var document = await GetJsonAsync(token, "/sites?search=" + Uri.EscapeDataString(search), cancellationToken).ConfigureAwait(false);
+        return ReadSites(document);
+    }
+
+    /// <summary>The document libraries in a site.</summary>
+    public async Task<IReadOnlyList<SharePointDrive>> ListDrivesAsync(string siteId, CancellationToken cancellationToken)
+    {
+        var token = await AcquireTokenSilentlyAsync(cancellationToken).ConfigureAwait(false);
+        using var document = await GetJsonAsync(token, "/sites/" + siteId + "/drives", cancellationToken).ConfigureAwait(false);
+
+        var drives = new List<SharePointDrive>();
+        if (document.RootElement.TryGetProperty("value", out var value))
         {
-            var folderUrl = _settings.FolderUrl.Trim();
-            var encoded = EncodeSharingUrl(folderUrl);
-            using var shared = await GetJsonAsync(token, "/shares/" + encoded + "/driveItem", cancellationToken,
-                "Tried to open this folder URL: " + folderUrl
-                + " — check it opens in a browser while signed in as " + (SignedInAs ?? "this account") + ".")
-                .ConfigureAwait(false);
-
-            var root = shared.RootElement;
-            var itemId = root.TryGetProperty("id", out var id) ? id.GetString() ?? string.Empty : string.Empty;
-            var driveId = root.TryGetProperty("parentReference", out var parent) && parent.TryGetProperty("driveId", out var drive)
-                ? drive.GetString() ?? string.Empty
-                : string.Empty;
-
-            if (string.IsNullOrWhiteSpace(driveId) || string.IsNullOrWhiteSpace(itemId))
+            foreach (var drive in value.EnumerateArray())
             {
-                throw new InvalidOperationException("The SharePoint folder URL resolved, but without a drive and item id.");
+                var id = drive.TryGetProperty("id", out var i) ? i.GetString() ?? string.Empty : string.Empty;
+                var name = drive.TryGetProperty("name", out var n) ? n.GetString() ?? string.Empty : string.Empty;
+                if (!string.IsNullOrWhiteSpace(id)) { drives.Add(new SharePointDrive(id, string.IsNullOrWhiteSpace(name) ? id : name)); }
             }
-            return (driveId, itemId);
         }
-
-        if (string.IsNullOrWhiteSpace(_settings.DriveId))
-        {
-            throw new InvalidOperationException(
-                "No SharePoint folder is set. Open the template folder in SharePoint, copy the address from the browser, "
-                + "and paste it into the folder URL box above.");
-        }
-
-        var path = "/drives/" + _settings.DriveId + "/root:/" + EscapePath(_settings.FolderPath);
-        using var folder = await GetJsonAsync(token, path, cancellationToken,
-            "The configured drive id and folder path did not resolve. Paste the folder's URL from your browser instead.")
-            .ConfigureAwait(false);
-
-        var folderId = folder.RootElement.TryGetProperty("id", out var fid) ? fid.GetString() ?? string.Empty : string.Empty;
-        if (string.IsNullOrWhiteSpace(folderId))
-        {
-            throw new InvalidOperationException("The configured SharePoint folder resolved without an item id.");
-        }
-        return (_settings.DriveId, folderId);
+        return drives.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     /// <summary>
-    /// Graph takes a sharing or absolute URL as unpadded base64url with a "u!" prefix.
+    /// One level of a library. Pass null for <paramref name="itemId"/> to read the library root.
+    /// Folders come first, then .dwt files; anything else is left out because it cannot be chosen.
     /// </summary>
-    private static string EncodeSharingUrl(string url)
+    public async Task<IReadOnlyList<SharePointItem>> ListChildrenAsync(string driveId, string? itemId, CancellationToken cancellationToken)
     {
-        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(url))
-            .TrimEnd('=')
-            .Replace('/', '_')
-            .Replace('+', '-');
-        return "u!" + encoded;
+        var token = await AcquireTokenSilentlyAsync(cancellationToken).ConfigureAwait(false);
+        var endpoint = string.IsNullOrWhiteSpace(itemId)
+            ? "/drives/" + driveId + "/root/children"
+            : "/drives/" + driveId + "/items/" + itemId + "/children";
+
+        using var document = await GetJsonAsync(token, endpoint, cancellationToken).ConfigureAwait(false);
+
+        var folders = new List<SharePointItem>();
+        var files = new List<SharePointItem>();
+        if (document.RootElement.TryGetProperty("value", out var value))
+        {
+            foreach (var child in value.EnumerateArray())
+            {
+                var name = child.TryGetProperty("name", out var n) ? n.GetString() ?? string.Empty : string.Empty;
+                var id = child.TryGetProperty("id", out var i) ? i.GetString() ?? string.Empty : string.Empty;
+                var webUrl = child.TryGetProperty("webUrl", out var w) ? w.GetString() ?? string.Empty : string.Empty;
+                if (string.IsNullOrWhiteSpace(id)) { continue; }
+
+                if (child.TryGetProperty("folder", out _))
+                {
+                    folders.Add(new SharePointItem(driveId, id, name, true, webUrl));
+                }
+                else if (name.EndsWith(".dwt", StringComparison.OrdinalIgnoreCase))
+                {
+                    files.Add(new SharePointItem(driveId, id, name, false, webUrl));
+                }
+            }
+        }
+
+        return folders.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+            .Concat(files.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+            .ToList();
     }
 
+    private static IReadOnlyList<SharePointSite> ReadSites(JsonDocument document)
+    {
+        var sites = new List<SharePointSite>();
+        if (!document.RootElement.TryGetProperty("value", out var value)) { return sites; }
+
+        foreach (var site in value.EnumerateArray())
+        {
+            var id = site.TryGetProperty("id", out var i) ? i.GetString() ?? string.Empty : string.Empty;
+            if (string.IsNullOrWhiteSpace(id)) { continue; }
+
+            var name = site.TryGetProperty("displayName", out var d) ? d.GetString() ?? string.Empty : string.Empty;
+            if (string.IsNullOrWhiteSpace(name) && site.TryGetProperty("name", out var n)) { name = n.GetString() ?? string.Empty; }
+            var webUrl = site.TryGetProperty("webUrl", out var w) ? w.GetString() ?? string.Empty : string.Empty;
+
+            sites.Add(new SharePointSite(id, string.IsNullOrWhiteSpace(name) ? webUrl : name, webUrl));
+        }
+        return sites.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
     /// <summary>Downloads a template next to the other cached templates and returns its local path.</summary>
     public async Task<string> DownloadTemplateAsync(SharePointDwtTemplateItem item, CancellationToken cancellationToken)
     {
@@ -294,49 +318,6 @@ public sealed class SharePointDwtTemplateService
             throw new InvalidOperationException("The SharePoint session expired. Use Sign in to SharePoint again.");
         }
     }
-
-    /// <summary>
-    /// Walks the folder by item id rather than by path. Ids need no escaping, so a folder whose name
-    /// contains spaces, punctuation or non-ASCII cannot break the request the way a rebuilt path can.
-    /// </summary>
-    private async Task AddTemplatesFromFolderAsync(
-        string token, string driveId, string itemId, List<SharePointDwtTemplateItem> found, int depth, CancellationToken cancellationToken)
-    {
-        // Template libraries are shallow; the cap only stops a pathological tree from spinning.
-        if (depth > 5) { return; }
-
-        var endpoint = "/drives/" + driveId + "/items/" + itemId + "/children";
-        using var document = await GetJsonAsync(token, endpoint, cancellationToken).ConfigureAwait(false);
-
-        if (!document.RootElement.TryGetProperty("value", out var children)) { return; }
-
-        foreach (var child in children.EnumerateArray())
-        {
-            var name = child.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? string.Empty : string.Empty;
-            var childId = child.TryGetProperty("id", out var idElement) ? idElement.GetString() ?? string.Empty : string.Empty;
-
-            if (child.TryGetProperty("folder", out _))
-            {
-                if (!string.IsNullOrWhiteSpace(childId))
-                {
-                    await AddTemplatesFromFolderAsync(token, driveId, childId, found, depth + 1, cancellationToken).ConfigureAwait(false);
-                }
-                continue;
-            }
-
-            if (!name.EndsWith(".dwt", StringComparison.OrdinalIgnoreCase)) { continue; }
-
-            found.Add(new SharePointDwtTemplateItem(
-                driveId,
-                childId,
-                name,
-                child.TryGetProperty("webUrl", out var webUrl) ? webUrl.GetString() ?? string.Empty : string.Empty));
-        }
-    }
-
-    private static string EscapePath(string path) =>
-        string.Join("/", path.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(Uri.EscapeDataString));
-
     private async Task<JsonDocument> GetJsonAsync(string token, string graphPath, CancellationToken cancellationToken, string? hint = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, GraphRoot + graphPath);
@@ -378,4 +359,24 @@ public sealed class SharePointDwtTemplateService
 public sealed record SharePointDwtTemplateItem(string DriveId, string ItemId, string Name, string WebUrl)
 {
     public override string ToString() => Name;
+}
+
+public sealed record SharePointSite(string Id, string Name, string WebUrl)
+{
+    public override string ToString() => Name;
+}
+
+public sealed record SharePointDrive(string Id, string Name)
+{
+    public override string ToString() => Name;
+}
+
+public sealed record SharePointItem(string DriveId, string Id, string Name, bool IsFolder, string WebUrl)
+{
+    /// <summary>Folders are marked so the list reads as a folder tree rather than a flat name list.</summary>
+    public string Display => IsFolder ? "[ " + Name + " ]" : Name;
+
+    public SharePointDwtTemplateItem ToTemplate() => new(DriveId, Id, Name, WebUrl);
+
+    public override string ToString() => Display;
 }

@@ -49,35 +49,10 @@
                         <Button Content="Open" Click="OpenLocalDwtTemplate_Click" Width="70" Height="24"/>
                     </StackPanel>
                     <TextBlock x:Name="LocalDwtStatusText" Text="Select a local or synced .dwt, or sign in below to browse SharePoint." TextWrapping="Wrap" Foreground="#555555"/>
-                    <Expander x:Name="SharePointTemplatesExpander" Header="SharePoint templates" Margin="0,8,0,0" Expanded="SharePointTemplates_Expanded">
-                        <StackPanel Margin="4,6,4,4">
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                <Button x:Name="SharePointSignInButton" Content="Sign in to SharePoint" Click="SharePointSignIn_Click" Padding="8,2" Margin="0,0,6,0"/>
-                                <Button x:Name="SharePointRefreshButton" Content="Refresh list" Click="SharePointRefresh_Click" Padding="8,2" Margin="0,0,6,0"/>
-                                <Button x:Name="SharePointSignOutButton" Content="Sign out" Click="SharePointSignOut_Click" Padding="8,2"/>
-                            </StackPanel>
-                            <Grid Margin="0,0,0,6">
-                                <TextBox x:Name="SharePointFolderUrlBox" LostFocus="SharePointFolderUrl_LostFocus"
-                                         ToolTip="Open the template folder in SharePoint and paste the address bar URL here. Leave empty to use the drive id and path from the profile."/>
-                                <TextBlock Text="SharePoint folder URL (paste from your browser)">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock" BasedOn="{StaticResource FieldPlaceholder}">
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Text, ElementName=SharePointFolderUrlBox}" Value="">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-                            </Grid>
-                            <ListBox x:Name="SharePointTemplateList" Height="120" DisplayMemberPath="Name" Margin="0,0,0,6"/>
-                            <StackPanel Orientation="Horizontal">
-                                <Button x:Name="SharePointUseButton" Content="Download and use" Click="SharePointUseSelected_Click" Padding="8,2" Margin="0,0,6,0"/>
-                                <TextBlock x:Name="SharePointStatusText" Text="Not signed in." VerticalAlignment="Center" Foreground="#555555" TextWrapping="Wrap"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Expander>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="Pick from SharePoint" Click="PickSharePointTemplate_Click" Padding="8,2" Margin="0,0,6,0"/>
+                        <TextBlock x:Name="SharePointStatusText" Text="" VerticalAlignment="Center" Foreground="#555555" TextWrapping="Wrap"/>
+                    </StackPanel>
                 </StackPanel>
             </Grid>
                         <Grid x:Name="ExtentPage" Visibility="Collapsed" IsVisibleChanged="ExtentPage_IsVisibleChanged">
