@@ -247,13 +247,17 @@ public sealed partial class ExporterViewModel : ObservableObject
         {
             var source = UseTemplateSymbols ? TemplatePath : null;
 
+            // Read before clearing, so a failure leaves the previous lists in place rather than
+            // emptying the page and then reporting why.
+            var catalog = _services.CadDrawingCatalog.Read(source);
+
             Blocks.Clear();
             LineTypes.Clear();
             CadLayers.Clear();
 
-            foreach (var name in _services.CadDrawingCatalog.GetBlockNames(source)) { Blocks.Add(name); }
-            foreach (var name in _services.CadDrawingCatalog.GetLineTypes(source)) { LineTypes.Add(name); }
-            foreach (var name in _services.CadDrawingCatalog.GetLayerNames(source)) { CadLayers.Add(name); }
+            foreach (var name in catalog.Blocks) { Blocks.Add(name); }
+            foreach (var name in catalog.LineTypes) { LineTypes.Add(name); }
+            foreach (var name in catalog.Layers) { CadLayers.Add(name); }
 
             Status = UseTemplateSymbols
                 ? $"Read {Blocks.Count} blocks and {LineTypes.Count} line types from {System.IO.Path.GetFileName(TemplatePath)}."

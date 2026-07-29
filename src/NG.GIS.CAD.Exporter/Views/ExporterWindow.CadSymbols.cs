@@ -22,8 +22,7 @@ public partial class ExporterWindow
     /// Opens AutoCAD's own colour dialog, so the index tab, true colour tab and colour books are the
     /// ones the user already knows, rather than a lesser picker built here.
     ///
-    /// The RGB is recorded whichever tab was used: for an index pick the dialog has already resolved
-    /// it, and it gives the panel a swatch to show.
+    /// The RGB is recorded whichever tab was used, so the panel always has a swatch to show.
     /// </summary>
     private void PickColor_Click(object sender, RoutedEventArgs e)
     {
@@ -38,10 +37,18 @@ public partial class ExporterWindow
             if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) { return; }
 
             var color = dialog.Color;
-            var isAci = color.ColorMethod == Autodesk.AutoCAD.Colors.ColorMethod.ByAci;
-            var rgbHex = "#" + color.Red.ToString("X2") + color.Green.ToString("X2") + color.Blue.ToString("X2");
 
-            vm.SelectedTransform.ApplyPickedColor(isAci, color.ColorIndex, rgbHex);
+            // The dialog also offers ByLayer and ByBlock. Treating those as a true colour, which is
+            // what anything that is not ByAci used to become, recorded a colour the user did not pick.
+            if (color.IsByLayer || color.IsByBlock)
+            {
+                vm.SelectedTransform.ApplyByLayerColor();
+            }
+            else
+            {
+                vm.SelectedTransform.ApplyPickedColor(color.IsByAci, color.ColorIndex, ResolvePickedRgbHex(color));
+            }
+
             vm.Status = "Colour set to " + vm.SelectedTransform.ColorDescription + " for " + vm.SelectedTransform.LayerName + ".";
         }
         catch (Exception ex)
@@ -49,6 +56,29 @@ public partial class ExporterWindow
             vm.Status = "Could not open the colour dialog: " + ex.Message;
         }
     }
+
+    /// <summary>
+    /// Reads the picked colour back as "#RRGGBB".
+    ///
+    /// Red, Green and Blue only carry a value for a true colour. For an index they are all zero, the
+    /// index being the whole of the colour, which is why an ACI pick used to leave a black swatch.
+    /// ColorValue resolves an index through the ACI table, so it answers for both kinds.
+    /// </summary>
+    private static string ResolvePickedRgbHex(Autodesk.AutoCAD.Colors.Color color)
+    {
+        try
+        {
+            var resolved = color.ColorValue;
+            return FormatRgbHex(resolved.R, resolved.G, resolved.B);
+        }
+        catch
+        {
+            return FormatRgbHex(color.Red, color.Green, color.Blue);
+        }
+    }
+
+    private static string FormatRgbHex(byte red, byte green, byte blue) =>
+        "#" + red.ToString("X2") + green.ToString("X2") + blue.ToString("X2");
 
     /// <summary>
     /// Opens the selected block in AutoCAD's own block editor rather than reimplementing one. The

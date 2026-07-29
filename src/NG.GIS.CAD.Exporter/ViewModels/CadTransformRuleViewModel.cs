@@ -84,7 +84,15 @@ public sealed class CadTransformRuleViewModel : ObservableObject
         set
         {
             Rule.AciColor = value;
+
+            // Only the colour dialog can turn an index into an RGB, so an index typed here leaves the
+            // stored RGB describing whichever colour was picked before. Clearing it blanks the swatch
+            // rather than showing a colour that is no longer the one named beside it. The dialog is
+            // the way to get a swatch back.
+            Rule.RgbColor = string.Empty;
+
             RaisePropertyChanged();
+            RaisePropertyChanged(nameof(RgbColor));
             RaiseColorDisplayChanged();
         }
     }
@@ -143,6 +151,20 @@ public sealed class CadTransformRuleViewModel : ObservableObject
 
         RaisePropertyChanged(nameof(ColorMode));
         RaisePropertyChanged(nameof(AciColor));
+        RaisePropertyChanged(nameof(RgbColor));
+        RaiseColorDisplayChanged();
+    }
+
+    /// <summary>
+    /// Records a ByLayer or ByBlock pick. The stored RGB is cleared with it, so the swatch stops
+    /// showing whatever colour was chosen before rather than implying this rule still has one.
+    /// </summary>
+    public void ApplyByLayerColor()
+    {
+        Rule.ColorMode = "ByLayer";
+        Rule.RgbColor = string.Empty;
+
+        RaisePropertyChanged(nameof(ColorMode));
         RaisePropertyChanged(nameof(RgbColor));
         RaiseColorDisplayChanged();
     }
