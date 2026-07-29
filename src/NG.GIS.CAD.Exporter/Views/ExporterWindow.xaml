@@ -347,9 +347,11 @@
                             <TextBlock Text="{Binding SelectedTransform.ColorDescription}" VerticalAlignment="Center" Width="90" Foreground="#555555"/>
                             <Button Content="Pick color..." Click="PickColor_Click" Padding="8,2" Margin="0,0,6,0"
                                     ToolTip="Opens the AutoCAD color dialog, with the index, true color and color book tabs."/>
-                            <TextBlock Text="ACI" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="#555555"/>
+                            <TextBlock Text="ACI" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="#555555"
+                                       Visibility="{Binding SelectedTransform.IsAciColor, Converter={StaticResource BoolToVisibility}}"/>
                             <TextBox Width="60" Text="{Binding SelectedTransform.AciColor, UpdateSourceTrigger=PropertyChanged}"
-                                     ToolTip="The ACI index, if you would rather type it than pick it."/>
+                                     Visibility="{Binding SelectedTransform.IsAciColor, Converter={StaticResource BoolToVisibility}}"
+                                     ToolTip="The ACI index, if you would rather type it than pick it. Hidden for a true color, where the index no longer describes the color."/>
                         </StackPanel>
 
                         <!-- Point only: rotation and scale apply to a block reference. -->

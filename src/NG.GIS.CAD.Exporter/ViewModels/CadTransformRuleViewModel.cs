@@ -76,6 +76,7 @@ public sealed class CadTransformRuleViewModel : ObservableObject
             Rule.ColorMode = value;
             RaisePropertyChanged();
             RaisePropertyChanged(nameof(ColorDescription));
+            RaisePropertyChanged(nameof(IsAciColor));
         }
     }
     public int AciColor
@@ -86,6 +87,7 @@ public sealed class CadTransformRuleViewModel : ObservableObject
             Rule.AciColor = value;
             RaisePropertyChanged();
             RaisePropertyChanged(nameof(ColorDescription));
+            RaisePropertyChanged(nameof(IsAciColor));
         }
     }
 
@@ -104,6 +106,13 @@ public sealed class CadTransformRuleViewModel : ObservableObject
     };
 
     /// <summary>
+    /// Whether the colour is an index. The ACI box is only shown for these: after a true colour pick
+    /// the index is whatever was chosen last and no longer describes the colour, so displaying it
+    /// would be worse than showing nothing.
+    /// </summary>
+    public bool IsAciColor => string.Equals(Rule.ColorMode, "ACI", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Records a colour chosen in the CAD colour dialog. Takes plain values rather than an AutoCAD
     /// colour so the view models stay clear of the AutoCAD assemblies.
     /// </summary>
@@ -117,6 +126,7 @@ public sealed class CadTransformRuleViewModel : ObservableObject
         RaisePropertyChanged(nameof(AciColor));
         RaisePropertyChanged(nameof(ColorPreview));
         RaisePropertyChanged(nameof(ColorDescription));
+        RaisePropertyChanged(nameof(IsAciColor));
     }
     public double RotationOffsetDegrees
     {

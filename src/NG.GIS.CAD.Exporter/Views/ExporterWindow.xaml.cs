@@ -28,10 +28,8 @@ public partial class ExporterWindow : Window
         ManualProposedPipeline
     }
     private readonly DispatcherTimer _extentRefreshTimer;
-    private readonly HashSet<string> _workOrderSuggestions = new(StringComparer.OrdinalIgnoreCase);
     private ExportDisplayMode _displayMode = ExportDisplayMode.WorkOrder;
     private bool _mapInitialized;
-    private bool _handlingWorkOrderInput;
     private LocatorTask? _locatorTask;
     private MapView? _mapView;
     private GeometryEditor? _geometryEditor;
@@ -51,7 +49,6 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
         };
         Loaded += async (_, _) =>
         {
-            LoadWorkOrderSuggestions();
             UpdatePageVisibility();
             ApplyDisplayModeToExtentPage();
 
@@ -152,96 +149,6 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
         else if (ReferenceEquals(sender, ManualProposedPipelineRadio)) { _displayMode = ExportDisplayMode.ManualProposedPipeline; }
         ApplyDisplayModeToExtentPage();
     }
-    private void WorkOrderInput_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        SwitchToWorkOrderMode("WO number or padding changed. Export method switched to Work Order driven export.");
-    }
-    private void WorkOrderSelectionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (WorkOrderSelectionComboBox?.SelectedItem != null)
-        {
-            WorkOrderSelectionComboBox.Text = WorkOrderSelectionComboBox.SelectedItem.ToString() ?? string.Empty;
-            AddWorkOrderSuggestion(WorkOrderSelectionComboBox.Text);
-            SwitchToWorkOrderMode("Work order selected. Export method switched to Work Order driven export.");
-        }
-    }
-    private void WorkOrderSelectionComboBox_DropDownOpened(object sender, EventArgs e)
-    {
-        LoadWorkOrderSuggestions();
-    }
-    private void WorkOrderSelectionComboBox_LostFocus(object sender, RoutedEventArgs e)
-    {
-        AddWorkOrderSuggestion(WorkOrderSelectionComboBox?.Text);
-        SwitchToWorkOrderMode("Work order updated. Export method switched to Work Order driven export.");
-    }
-    private void SwitchToWorkOrderMode(string status)
-    {
-        if (_handlingWorkOrderInput) { return; }
-        _handlingWorkOrderInput = true;
-        try
-        {
-            _displayMode = ExportDisplayMode.WorkOrder;
-            if (WorkOrderDrivenExportRadio != null) { WorkOrderDrivenExportRadio.IsChecked = true; }
-            ApplyDisplayModeToExtentPage();
-            if (DataContext is ExporterViewModel vm) { vm.Status = status; }
-        }
-        finally
-        {
-            _handlingWorkOrderInput = false;
-        }
-    }
-    private void LoadWorkOrderSuggestions()
-    {
-        try
-        {
-            var profilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NationalGrid", "GisCadExporter", "ng-gis-export-profile.json");
-            if (File.Exists(profilePath))
-            {
-                using var doc = JsonDocument.Parse(File.ReadAllText(profilePath));
-                ExtractWorkOrderSuggestions(doc.RootElement);
-            }
-            AddWorkOrderSuggestion(WorkOrderSelectionComboBox?.Text);
-            if (WorkOrderSelectionComboBox == null) { return; }
-            var currentText = WorkOrderSelectionComboBox.Text;
-            WorkOrderSelectionComboBox.Items.Clear();
-            foreach (var value in _workOrderSuggestions.OrderByDescending(x => x))
-            {
-                WorkOrderSelectionComboBox.Items.Add(value);
-            }
-            WorkOrderSelectionComboBox.Text = currentText;
-        }
-        catch
-        {
-        }
-    }
-    private void ExtractWorkOrderSuggestions(JsonElement element)
-    {
-        switch (element.ValueKind)
-        {
-            case JsonValueKind.Object:
-                foreach (var property in element.EnumerateObject())
-                {
-                    var nameLooksRelevant = property.Name.Contains("work", StringComparison.OrdinalIgnoreCase) || property.Name.Equals("wo", StringComparison.OrdinalIgnoreCase) || property.Name.Contains("order", StringComparison.OrdinalIgnoreCase);
-                    if (nameLooksRelevant && property.Value.ValueKind == JsonValueKind.String) { AddWorkOrderSuggestion(property.Value.GetString()); }
-                    ExtractWorkOrderSuggestions(property.Value);
-                }
-                break;
-            case JsonValueKind.Array:
-                foreach (var child in element.EnumerateArray()) { ExtractWorkOrderSuggestions(child); }
-                break;
-            case JsonValueKind.String:
-                AddWorkOrderSuggestion(element.GetString());
-                break;
-        }
-    }
-    private void AddWorkOrderSuggestion(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) { return; }
-        var text = value.Trim();
-        if (text.Length < 4 || text.Length > 40) { return; }
-        if (!Regex.IsMatch(text, "[0-9]{4,}")) { return; }
-        _workOrderSuggestions.Add(text);
-    }
     private void ApplyDisplayModeToExtentPage()
     {
         if (WorkOrderModePanel == null || VisibleMapModePanel == null || ManualProposedPipelineModePanel == null) { return; }
@@ -278,7 +185,6 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
         try
         {
             await InitializeArcGisMapAsync();
-            AddWorkOrderSuggestion(WorkOrderSelectionComboBox?.Text);
             if (DataContext is not ExporterViewModel vm) { return; }
             if (vm.ResolveWorkOrderExtentCommand != null && vm.ResolveWorkOrderExtentCommand.CanExecute(null))
             {
