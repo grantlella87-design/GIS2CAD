@@ -63,6 +63,136 @@ public sealed class ArcGisRestClient
         }
         return 0;
     }
+    /// <summary>
+    /// Fetches the features to export from one layer.
+    ///
+    /// The service is asked for <paramref name="outWkid"/> directly, so the coordinates that come back
+    /// are already drawing coordinates and nothing downstream has to reproject. Reprojecting locally
+    /// would mean picking a datum transformation, which the service is better placed to do.
+    ///
+    /// Paged, because a service caps how many records one query returns and quietly says so through
+    /// exceededTransferLimit rather than by failing. Reading one page and stopping would silently drop
+    /// features the user asked to export.
+    /// </summary>
+    public async Task<IReadOnlyList<ExportFeature>> QueryFeaturesAsync(
+        string layerUrl, ExportExtent extent, IReadOnlyList<string> fields, int outWkid, CancellationToken cancellationToken)
+    {
+        var features = new List<ExportFeature>();
+        var offset = 0;
+        const int pageSize = 1000;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var parameters = new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["where"] = "1=1",
+                ["geometryType"] = "esriGeometryEnvelope",
+                ["geometry"] = $"{extent.XMin},{extent.YMin},{extent.XMax},{extent.YMax}",
+                ["inSR"] = extent.Wkid.ToString(),
+                ["outSR"] = outWkid.ToString(),
+                ["spatialRel"] = "esriSpatialRelIntersects",
+                ["outFields"] = fields.Count == 0 ? "*" : string.Join(",", fields),
+                ["returnGeometry"] = "true",
+                ["resultOffset"] = offset.ToString(),
+                ["resultRecordCount"] = pageSize.ToString()
+            };
+
+            using var json = await PostJsonAsync(layerUrl.TrimEnd('/') + "/query", parameters, cancellationToken);
+            var root = json.RootElement;
+
+            if (root.TryGetProperty("error", out var error))
+            {
+                var message = error.TryGetProperty("message", out var text) ? text.GetString() : "unknown error";
+                throw new InvalidOperationException("The service rejected the feature query: " + message);
+            }
+
+            var pageCount = 0;
+            if (root.TryGetProperty("features", out var featureArray) && featureArray.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var featureElement in featureArray.EnumerateArray())
+                {
+                    pageCount++;
+                    var feature = ReadFeature(featureElement);
+                    if (feature.Parts.Count > 0) { features.Add(feature); }
+                }
+            }
+
+            var more = root.TryGetProperty("exceededTransferLimit", out var exceeded)
+                && exceeded.ValueKind == JsonValueKind.True;
+
+            // A service that ignores resultOffset would return the same page forever, so paging stops
+            // unless the page was full as well as flagged.
+            if (!more || pageCount < pageSize) { break; }
+            offset += pageCount;
+        }
+
+        return features;
+    }
+
+    private static ExportFeature ReadFeature(JsonElement featureElement)
+    {
+        var feature = new ExportFeature();
+
+        if (featureElement.TryGetProperty("attributes", out var attributes) && attributes.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var attribute in attributes.EnumerateObject())
+            {
+                feature.Attributes[attribute.Name] = attribute.Value.ValueKind switch
+                {
+                    JsonValueKind.String => attribute.Value.GetString() ?? string.Empty,
+                    JsonValueKind.Null => string.Empty,
+                    _ => attribute.Value.ToString()
+                };
+            }
+        }
+
+        if (!featureElement.TryGetProperty("geometry", out var geometry) || geometry.ValueKind != JsonValueKind.Object)
+        {
+            return feature;
+        }
+
+        // A point carries x and y directly; everything else carries paths or rings.
+        if (geometry.TryGetProperty("x", out var x) && geometry.TryGetProperty("y", out var y)
+            && x.TryGetDouble(out var pointX) && y.TryGetDouble(out var pointY))
+        {
+            feature.Parts.Add(new List<ExportVertex> { new ExportVertex(pointX, pointY) });
+            return feature;
+        }
+
+        AddParts(feature, geometry, "paths");
+        AddParts(feature, geometry, "rings");
+        return feature;
+    }
+
+    private static void AddParts(ExportFeature feature, JsonElement geometry, string propertyName)
+    {
+        if (!geometry.TryGetProperty(propertyName, out var partArray) || partArray.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (var partElement in partArray.EnumerateArray())
+        {
+            if (partElement.ValueKind != JsonValueKind.Array) { continue; }
+
+            var part = new List<ExportVertex>();
+            foreach (var vertexElement in partElement.EnumerateArray())
+            {
+                if (vertexElement.ValueKind != JsonValueKind.Array) { continue; }
+                var values = vertexElement.EnumerateArray().ToArray();
+                if (values.Length < 2) { continue; }
+                if (values[0].TryGetDouble(out var vx) && values[1].TryGetDouble(out var vy))
+                {
+                    part.Add(new ExportVertex(vx, vy));
+                }
+            }
+            if (part.Count > 0) { feature.Parts.Add(part); }
+        }
+    }
+
     public async Task<IReadOnlyList<string>> QueryDistinctWorkOrderIdsAsync(string proposedLayerUrl, CancellationToken cancellationToken)
     {
         var results = new List<string>();

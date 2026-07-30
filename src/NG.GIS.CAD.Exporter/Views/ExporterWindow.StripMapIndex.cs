@@ -58,6 +58,10 @@ public partial class ExporterWindow
             DrawStripMapSheets(_stripMapSheets);
             WriteStripMapProof(vm);
 
+            // Handed to the view model so the export can put the same sheets in the drawing, on their
+            // own CAD layer, rather than recomputing a set that might not match what is on the map.
+            vm.StripMapSheets = _stripMapSheets;
+
             if (_stripMapSheets.Count == 0)
             {
                 vm.StripMapSummary = "The proposed main produced no sheets. It may have no length, or be a single point.";
@@ -92,6 +96,8 @@ public partial class ExporterWindow
         _stripMapOverlay?.Graphics.Clear();
         if (DataContext is ExporterViewModel vm)
         {
+            // Cleared here too, so an export after this does not still write the old sheets.
+            vm.StripMapSheets = _stripMapSheets;
             vm.StripMapSummary = "Strip map sheets cleared.";
         }
     }

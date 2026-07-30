@@ -510,8 +510,21 @@
                 <StackPanel>
                     <TextBlock Text="Review + Export Plan" FontSize="18" FontWeight="Bold" Margin="0,0,0,10"/>
                     <TextBlock Text="{Binding ResolvedExtentText}" TextWrapping="Wrap" Margin="0,0,0,10"/>
-                    <Button Content="Build Dry-Run Export Plan" Command="{Binding BuildReviewCommand}" Width="220" Padding="8" HorizontalAlignment="Left"/>
-                    <TextBlock Text="The current version writes export-plan-latest.json. Actual CAD entity creation comes after this dry-run plan is validated." TextWrapping="Wrap" Margin="0,20,0,0"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <Button Content="Build Dry-Run Export Plan" Command="{Binding BuildReviewCommand}" Width="220" Padding="8" Margin="0,0,10,0"
+                                ToolTip="Writes export-plan-latest.json describing what would be exported, without touching the drawing."/>
+                        <Button Content="Export to CAD" Command="{Binding ExportCommand}" Width="160" Padding="8" FontWeight="SemiBold"
+                                ToolTip="Fetches the selected layers and writes them into the open drawing."/>
+                    </StackPanel>
+
+                    <TextBlock Text="Export writes into the drawing that is open, in one transaction: if any part fails, nothing is written. Each GIS layer becomes a CAD layer named by its rule on page 4."
+                               TextWrapping="Wrap" Foreground="#555555" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Strip map index layer" FontWeight="SemiBold" Margin="0,6,0,4"/>
+                    <TextBox Text="{Binding StripMapCadLayerName, UpdateSourceTrigger=PropertyChanged}" Width="320" HorizontalAlignment="Left"
+                             ToolTip="The CAD layer the strip map sheet frames and their numbers are drawn on. Kept separate from the GIS layers, because the index describes the sheet set rather than anything in the ground."/>
+                    <TextBlock Text="Sheet frames go on this layer only, so they can be turned off or plotted on their own. Nothing is written here unless a strip map index has been built on page 2."
+                               TextWrapping="Wrap" Foreground="#777777" FontSize="11" Margin="0,4,0,0"/>
                 </StackPanel>
             </Grid>
         </Grid>
