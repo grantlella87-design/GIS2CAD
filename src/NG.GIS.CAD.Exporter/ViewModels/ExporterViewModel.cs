@@ -60,7 +60,9 @@ public sealed partial class ExporterViewModel : ObservableObject
         UseCurrentViewExtentCommand = new RelayCommand(_ => UseCurrentViewExtentAsync());
         SetManualExtentCommand = new RelayCommand(_ => SetManualExtentAsync());
         BuildReviewCommand = new RelayCommand(_ => BuildReviewAsync());
-        ExportCommand = new RelayCommand(_ => BuildReviewAsync());
+        // Export now writes into the drawing. The dry-run plan stays on its own command, because
+        // seeing what would be written without writing it is still worth having.
+        ExportCommand = new RelayCommand(_ => ExportToCadAsync());
         AddMapDataSourceCommand = new RelayCommand(_ => AddMapDataSourceAsync());
         RemoveMapDataSourceCommand = new RelayCommand(RemoveMapDataSourceAsync);
         // LoadWorkOrdersAsync is deliberately not started here. It queries work order IDs from the

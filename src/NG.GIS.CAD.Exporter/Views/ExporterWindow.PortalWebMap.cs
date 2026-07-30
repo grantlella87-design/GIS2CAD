@@ -140,6 +140,9 @@ public partial class ExporterWindow
 
         // Pages 3 and 4 list the layers on this map, so they are rebuilt from the new tree.
         vm.OnMapLayersChanged();
+
+        // Swatches fill in behind the tree rather than holding it up. See ExporterWindow.MapLegend.cs.
+        StartMapLayerLegendLoad(vm);
     }
 
     /// <summary>

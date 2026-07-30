@@ -1,3 +1,5 @@
+using System.Windows.Media;
+
 namespace NG.GIS.CAD.Exporter.ViewModels;
 
 /// <summary>
@@ -37,6 +39,37 @@ public sealed class MapLayerToggleViewModel : ObservableObject
     public bool IsLeaf { get; }
 
     public ObservableCollection<MapLayerToggleViewModel> Children { get; } = new();
+
+    /// <summary>
+    /// What this layer draws with. One entry for a layer with a single symbol, one per class for a
+    /// layer drawn by category or by range, and none for a group, which draws nothing of its own.
+    /// </summary>
+    public ObservableCollection<MapLegendItemViewModel> LegendItems { get; } = new();
+
+    /// <summary>
+    /// The swatch shown beside the layer name, for a layer that draws with a single symbol. Null for
+    /// anything else, because a layer drawn by category has no one symbol that stands for it.
+    /// </summary>
+    public ImageSource? SingleSwatch => LegendItems.Count == 1 ? LegendItems[0].Swatch : null;
+
+    /// <summary>
+    /// Whether this layer needs a row per symbol rather than one swatch beside its name. Kept off for
+    /// a single symbol so the common case stays a one line entry.
+    /// </summary>
+    public bool HasLegendList => LegendItems.Count > 1;
+
+    /// <summary>
+    /// Fills in the legend once the runtime has rendered the swatches. Separate from the constructor
+    /// because rendering a symbol is asynchronous and the tree is built before it finishes.
+    /// </summary>
+    public void SetLegendItems(IEnumerable<MapLegendItemViewModel> items)
+    {
+        LegendItems.Clear();
+        foreach (var item in items) { LegendItems.Add(item); }
+
+        RaisePropertyChanged(nameof(SingleSwatch));
+        RaisePropertyChanged(nameof(HasLegendList));
+    }
 
     /// <summary>The node this one sits under, or null for a top level layer.</summary>
     public MapLayerToggleViewModel? Parent { get; internal set; }

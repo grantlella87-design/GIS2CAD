@@ -9,6 +9,7 @@ public sealed class AppServices
     public required CadDrawingCatalog CadDrawingCatalog { get; init; }
     public required ExportPlanStore ExportPlanStore { get; init; }
     public required CadExtentService CadExtentService { get; init; }
+    public required CadExportWriter CadExportWriter { get; init; }
     public static AppServices CreateDefault()
     {
         var httpClient = new HttpClient();
@@ -24,7 +25,8 @@ public sealed class AppServices
             ExportCoordinator = new ExportCoordinator(arcGisRestClient, settingsStore),
             CadDrawingCatalog = new CadDrawingCatalog(),
             ExportPlanStore = new ExportPlanStore(),
-            CadExtentService = new CadExtentService()
+            CadExtentService = new CadExtentService(),
+            CadExportWriter = new CadExportWriter()
         };
     }
 }

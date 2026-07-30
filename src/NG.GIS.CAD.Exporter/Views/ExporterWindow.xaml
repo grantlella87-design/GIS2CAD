@@ -144,7 +144,9 @@
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,4,4,6">
                                 <Button Content="Expand all" Click="ExpandAllMapLayers_Click" Padding="8,2" Margin="0,0,6,0"/>
-                                <Button Content="Collapse all" Click="CollapseAllMapLayers_Click" Padding="8,2"/>
+                                <Button Content="Collapse all" Click="CollapseAllMapLayers_Click" Padding="8,2" Margin="0,0,10,0"/>
+                                <CheckBox Content="Legend" IsChecked="{Binding ShowMapLegend}" VerticalAlignment="Center"
+                                          ToolTip="Show each layer's symbols. A layer drawn by category takes a row per class, so turning this off gives back the compact list."/>
                             </StackPanel>
                             <TreeView ItemsSource="{Binding MapLayers}" BorderThickness="0" Background="Transparent"
                                       ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
@@ -155,7 +157,60 @@
                                 </TreeView.ItemContainerStyle>
                                 <TreeView.ItemTemplate>
                                     <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                        <CheckBox Content="{Binding Name}" IsChecked="{Binding IsVisible, Mode=TwoWay}" VerticalContentAlignment="Center" Margin="0,2,0,2"/>
+                                        <StackPanel Margin="0,2,0,2">
+                                            <!-- A layer with one symbol keeps its swatch on the same
+                                                 line as its checkbox, so the common case stays a one
+                                                 line entry. -->
+                                            <StackPanel Orientation="Horizontal">
+                                                <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                <Image Source="{Binding SingleSwatch}" Width="16" Height="16" Margin="0,0,4,0"
+                                                       VerticalAlignment="Center" Stretch="Uniform">
+                                                    <Image.Style>
+                                                        <Style TargetType="Image">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding SingleSwatch}" Value="{x:Null}">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding DataContext.ShowMapLegend, RelativeSource={RelativeSource AncestorType=Window}}" Value="False">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Image.Style>
+                                                </Image>
+                                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                            </StackPanel>
+
+                                            <!-- A layer drawn by category or by range needs a row per
+                                                 class, indented under the layer it belongs to. -->
+                                            <ItemsControl ItemsSource="{Binding LegendItems}" Margin="22,2,0,2">
+                                                <ItemsControl.Style>
+                                                    <Style TargetType="ItemsControl">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding HasLegendList}" Value="True"/>
+                                                                    <Condition Binding="{Binding DataContext.ShowMapLegend, RelativeSource={RelativeSource AncestorType=Window}}" Value="True"/>
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </MultiDataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </ItemsControl.Style>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Orientation="Horizontal" Margin="0,1,0,1">
+                                                            <Image Source="{Binding Swatch}" Width="16" Height="16" Margin="0,0,4,0"
+                                                                   VerticalAlignment="Center" Stretch="Uniform"/>
+                                                            <TextBlock Text="{Binding Label}" VerticalAlignment="Center"
+                                                                       Foreground="#555555" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
                                     </HierarchicalDataTemplate>
                                 </TreeView.ItemTemplate>
                             </TreeView>
@@ -455,8 +510,21 @@
                 <StackPanel>
                     <TextBlock Text="Review + Export Plan" FontSize="18" FontWeight="Bold" Margin="0,0,0,10"/>
                     <TextBlock Text="{Binding ResolvedExtentText}" TextWrapping="Wrap" Margin="0,0,0,10"/>
-                    <Button Content="Build Dry-Run Export Plan" Command="{Binding BuildReviewCommand}" Width="220" Padding="8" HorizontalAlignment="Left"/>
-                    <TextBlock Text="The current version writes export-plan-latest.json. Actual CAD entity creation comes after this dry-run plan is validated." TextWrapping="Wrap" Margin="0,20,0,0"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <Button Content="Build Dry-Run Export Plan" Command="{Binding BuildReviewCommand}" Width="220" Padding="8" Margin="0,0,10,0"
+                                ToolTip="Writes export-plan-latest.json describing what would be exported, without touching the drawing."/>
+                        <Button Content="Export to CAD" Command="{Binding ExportCommand}" Width="160" Padding="8" FontWeight="SemiBold"
+                                ToolTip="Fetches the selected layers and writes them into the open drawing."/>
+                    </StackPanel>
+
+                    <TextBlock Text="Export writes into the drawing that is open, in one transaction: if any part fails, nothing is written. Each GIS layer becomes a CAD layer named by its rule on page 4."
+                               TextWrapping="Wrap" Foreground="#555555" Margin="0,0,0,10"/>
+
+                    <TextBlock Text="Strip map index layer" FontWeight="SemiBold" Margin="0,6,0,4"/>
+                    <TextBox Text="{Binding StripMapCadLayerName, UpdateSourceTrigger=PropertyChanged}" Width="320" HorizontalAlignment="Left"
+                             ToolTip="The CAD layer the strip map sheet frames and their numbers are drawn on. Kept separate from the GIS layers, because the index describes the sheet set rather than anything in the ground."/>
+                    <TextBlock Text="Sheet frames go on this layer only, so they can be turned off or plotted on their own. Nothing is written here unless a strip map index has been built on page 2."
+                               TextWrapping="Wrap" Foreground="#777777" FontSize="11" Margin="0,4,0,0"/>
                 </StackPanel>
             </Grid>
         </Grid>
