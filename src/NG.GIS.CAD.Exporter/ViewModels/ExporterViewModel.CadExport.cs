@@ -20,6 +20,62 @@ public sealed partial class ExporterViewModel
     /// <summary>The layer the strip map frames go on. Its own, because the index is not GIS data.</summary>
     public string StripMapCadLayerName { get; set; } = "GIS_STRIP_MAP_INDEX";
 
+    private bool _includeBasemapInExport;
+    private BasemapChoice _selectedExportBasemap = BasemapImageService.DefaultChoices[0];
+    private string _basemapCadLayerName = "GIS_BASEMAP";
+    private int _basemapImagePixels = 2048;
+    private string _customBasemapUrl = string.Empty;
+
+    /// <summary>The basemaps offered for the export, plus None.</summary>
+    public IReadOnlyList<BasemapChoice> ExportBasemapChoices { get; } = BasemapImageService.DefaultChoices;
+
+    /// <summary>
+    /// Whether a basemap image goes into the drawing. Off by default: it is a real raster file written
+    /// beside the drawing, which the drawing then depends on, and that is not something to do unasked.
+    /// </summary>
+    public bool IncludeBasemapInExport
+    {
+        get => _includeBasemapInExport;
+        set => SetProperty(ref _includeBasemapInExport, value);
+    }
+
+    public BasemapChoice SelectedExportBasemap
+    {
+        get => _selectedExportBasemap;
+        set => SetProperty(ref _selectedExportBasemap, value);
+    }
+
+    /// <summary>
+    /// A service to use instead of the listed ones, for a basemap this organisation publishes itself.
+    /// Takes precedence over the dropdown when it is filled in.
+    /// </summary>
+    public string CustomBasemapUrl
+    {
+        get => _customBasemapUrl;
+        set => SetProperty(ref _customBasemapUrl, value);
+    }
+
+    /// <summary>The layer the basemap raster is placed on, so it can be turned off on its own.</summary>
+    public string BasemapCadLayerName
+    {
+        get => _basemapCadLayerName;
+        set => SetProperty(ref _basemapCadLayerName, value);
+    }
+
+    /// <summary>
+    /// Long edge of the basemap image in pixels. More pixels means a sharper backdrop and a larger file;
+    /// a service will not return more than 4096 on one request and says nothing when it clamps.
+    /// </summary>
+    public int BasemapImagePixels
+    {
+        get => _basemapImagePixels;
+        set => SetProperty(ref _basemapImagePixels, Math.Clamp(value, 256, BasemapImageService.MaxImagePixels));
+    }
+
+    /// <summary>The service the export will actually ask, once the custom URL is taken into account.</summary>
+    private string ResolveBasemapServiceUrl() =>
+        string.IsNullOrWhiteSpace(CustomBasemapUrl) ? SelectedExportBasemap.ServiceUrl : CustomBasemapUrl.Trim();
+
     /// <summary>
     /// Writes the selected layers into the open drawing.
     ///
@@ -77,6 +133,7 @@ public sealed partial class ExporterViewModel
             }
 
             AddStripMapSheetsToRequest(request, outWkid);
+            await AddBasemapToRequestAsync(request, outWkid);
 
             Status = $"Writing {totalFeatures} feature(s) into the drawing...";
             var result = _services.CadExportWriter.Write(request);
@@ -87,6 +144,82 @@ public sealed partial class ExporterViewModel
         {
             Status = "Export to CAD failed: " + ex.GetType().Name + ": " + ex.Message;
         }
+    }
+
+    /// <summary>
+    /// Downloads the chosen basemap over the export extent and adds it to the request.
+    ///
+    /// The extent is requested in the output spatial reference for both the bounding box and the image,
+    /// so the pixels are already in drawing coordinates. That is what lets the raster be placed on the
+    /// extent it was asked for with no transform, and it is why the basemap lands accurately while the
+    /// strip map frames go through a projection.
+    /// </summary>
+    private async Task AddBasemapToRequestAsync(CadExportRequest request, int outWkid)
+    {
+        if (!IncludeBasemapInExport || _resolvedExtent == null) { return; }
+
+        var serviceUrl = ResolveBasemapServiceUrl();
+        if (string.IsNullOrWhiteSpace(serviceUrl))
+        {
+            Status = "No basemap was chosen, so none was included. Pick one, or clear the include tick.";
+            return;
+        }
+
+        try
+        {
+            Status = "Fetching the basemap image...";
+
+            // Beside the profile, which is where this plug-in already keeps what it writes. The drawing
+            // will reference this file by path, so it has to live somewhere lasting rather than in temp.
+            var directory = Path.Combine(
+                Path.GetDirectoryName(ProfilePath) ?? Path.GetTempPath(), "basemaps");
+
+            var image = await _services.BasemapImageService.DownloadAsync(
+                serviceUrl, _resolvedExtent, outWkid, BasemapImagePixels, directory, CancellationToken.None);
+
+            // The extent is in its own WKID, which may not be the drawing's. The image was requested in
+            // the output WKID, so the corners have to be too, or the raster would be placed at the
+            // extent's coordinates rather than the drawing's.
+            var corners = ProjectExtentCorners(_resolvedExtent, outWkid);
+
+            request.Basemap = new BasemapImagePlacement
+            {
+                ImagePath = image.ImagePath,
+                LayerName = BasemapCadLayerName,
+                OriginX = corners.MinX,
+                OriginY = corners.MinY,
+                Width = corners.MaxX - corners.MinX,
+                Height = corners.MaxY - corners.MinY
+            };
+        }
+        catch (Exception ex)
+        {
+            // The features are the export. A basemap that will not come down should not stop them.
+            Status = "The basemap could not be fetched, so the export continued without it: " + ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// The export extent's corners in the output spatial reference. Returned unchanged when the extent
+    /// is already in it, which is the common case and avoids a needless projection.
+    /// </summary>
+    private static (double MinX, double MinY, double MaxX, double MaxY) ProjectExtentCorners(
+        ExportExtent extent, int outWkid)
+    {
+        if (extent.Wkid == outWkid)
+        {
+            return (Math.Min(extent.XMin, extent.XMax), Math.Min(extent.YMin, extent.YMax),
+                    Math.Max(extent.XMin, extent.XMax), Math.Max(extent.YMin, extent.YMax));
+        }
+
+        var source = new Envelope(extent.XMin, extent.YMin, extent.XMax, extent.YMax, SpatialReference.Create(extent.Wkid));
+        if (GeometryEngine.Project(source, SpatialReference.Create(outWkid)) is not Envelope projected)
+        {
+            throw new InvalidOperationException(
+                "The export extent could not be projected from WKID " + extent.Wkid + " to WKID " + outWkid + ".");
+        }
+
+        return (projected.XMin, projected.YMin, projected.XMax, projected.YMax);
     }
 
     /// <summary>
@@ -194,6 +327,10 @@ public sealed partial class ExporterViewModel
         if (result.StripMapSheetsWritten > 0)
         {
             message += $" Strip map index: {result.StripMapSheetsWritten} sheet(s).";
+        }
+        if (result.BasemapPlaced)
+        {
+            message += " Basemap placed behind the features.";
         }
         if (result.CadLayersCreated.Count > 0)
         {

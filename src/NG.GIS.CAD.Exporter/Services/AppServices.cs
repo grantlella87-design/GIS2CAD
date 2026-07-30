@@ -10,6 +10,7 @@ public sealed class AppServices
     public required ExportPlanStore ExportPlanStore { get; init; }
     public required CadExtentService CadExtentService { get; init; }
     public required CadExportWriter CadExportWriter { get; init; }
+    public required BasemapImageService BasemapImageService { get; init; }
     public static AppServices CreateDefault()
     {
         var httpClient = new HttpClient();
@@ -26,7 +27,8 @@ public sealed class AppServices
             CadDrawingCatalog = new CadDrawingCatalog(),
             ExportPlanStore = new ExportPlanStore(),
             CadExtentService = new CadExtentService(),
-            CadExportWriter = new CadExportWriter()
+            CadExportWriter = new CadExportWriter(),
+            BasemapImageService = new BasemapImageService(httpClient)
         };
     }
 }

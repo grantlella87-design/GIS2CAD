@@ -53,8 +53,101 @@ public sealed class CadExportWriter
             WriteStripMapIndex(request, database, transaction, modelSpace, result);
         }
 
+        // Last, so it can be sent behind everything already written in this pass.
+        if (request.Basemap != null)
+        {
+            PlaceBasemap(request.Basemap, database, transaction, modelSpace, result);
+        }
+
         transaction.Commit();
         return result;
+    }
+
+    /// <summary>
+    /// Places the basemap image, georeferenced to the extent it was requested for, on its own layer and
+    /// at the bottom of the draw order.
+    ///
+    /// Bottom of the draw order matters: a raster placed last draws over everything, which would hide
+    /// every feature the export just wrote and make the result look empty.
+    /// </summary>
+    private static void PlaceBasemap(
+        BasemapImagePlacement basemap, Database database, Transaction transaction,
+        BlockTableRecord modelSpace, CadExportResult result)
+    {
+        if (!File.Exists(basemap.ImagePath))
+        {
+            result.Warnings.Add("The basemap image was not found at " + basemap.ImagePath + ", so no basemap was placed.");
+            return;
+        }
+
+        if (basemap.Width <= 0 || basemap.Height <= 0)
+        {
+            result.Warnings.Add("The basemap extent has no area, so no basemap was placed.");
+            return;
+        }
+
+        try
+        {
+            var layerName = SanitizeSymbolName(basemap.LayerName);
+            EnsureLayer(database, transaction, layerName, null, result);
+
+            // The image dictionary does not exist in a drawing that has never held a raster.
+            var dictionaryId = RasterImageDef.GetImageDictionary(database);
+            if (dictionaryId.IsNull) { dictionaryId = RasterImageDef.CreateImageDictionary(database); }
+
+            var dictionary = (DBDictionary)transaction.GetObject(dictionaryId, OpenMode.ForWrite);
+            var definitionName = RasterImageDef.SuggestName(dictionary, basemap.DefinitionName);
+
+            var definition = new RasterImageDef { SourceFileName = basemap.ImagePath };
+            definition.Load();
+
+            var definitionId = dictionary.SetAt(definitionName, definition);
+            transaction.AddNewlyCreatedDBObject(definition, true);
+
+            var image = new RasterImage
+            {
+                ImageDefId = definitionId,
+
+                // Origin plus the two edge vectors, which is how AutoCAD georeferences a raster: the
+                // vectors are the full width and height of the image in drawing units, so the picture
+                // lands on exactly the ground it was requested for.
+                Orientation = new CoordinateSystem3d(
+                    new Point3d(basemap.OriginX, basemap.OriginY, 0),
+                    new Vector3d(basemap.Width, 0, 0),
+                    new Vector3d(0, basemap.Height, 0)),
+                ShowImage = true,
+                Layer = layerName
+            };
+            image.AssociateRasterDef(definition);
+
+            modelSpace.AppendEntity(image);
+            transaction.AddNewlyCreatedDBObject(image, true);
+
+            SendToBackOfDrawOrder(modelSpace, transaction, image.ObjectId, result);
+
+            result.EntitiesWritten++;
+            result.BasemapPlaced = true;
+        }
+        catch (Exception ex)
+        {
+            // A basemap is a backdrop. Losing it should not cost the features, which are the export.
+            result.Warnings.Add("The basemap image could not be placed: " + ex.GetType().Name + ": " + ex.Message);
+        }
+    }
+
+    private static void SendToBackOfDrawOrder(
+        BlockTableRecord modelSpace, Transaction transaction, ObjectId imageId, CadExportResult result)
+    {
+        try
+        {
+            var drawOrder = (DrawOrderTable)transaction.GetObject(modelSpace.DrawOrderTableId, OpenMode.ForWrite);
+            drawOrder.MoveToBottom(new ObjectIdCollection { imageId });
+        }
+        catch (Exception ex)
+        {
+            // The image is placed either way; it just sits on top until someone reorders it.
+            result.Warnings.Add("The basemap was placed but could not be sent behind the features, so it may cover them: " + ex.Message);
+        }
     }
 
     private static Database? OpenTemplate(string? templatePath, CadExportResult result)

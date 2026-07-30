@@ -525,6 +525,53 @@
                              ToolTip="The CAD layer the strip map sheet frames and their numbers are drawn on. Kept separate from the GIS layers, because the index describes the sheet set rather than anything in the ground."/>
                     <TextBlock Text="Sheet frames go on this layer only, so they can be turned off or plotted on their own. Nothing is written here unless a strip map index has been built on page 2."
                                TextWrapping="Wrap" Foreground="#777777" FontSize="11" Margin="0,4,0,0"/>
+
+                    <Separator Margin="0,16,0,12"/>
+
+                    <CheckBox Content="Include a basemap image in the drawing" IsChecked="{Binding IncludeBasemapInExport}"
+                              FontWeight="SemiBold" Margin="0,0,0,6"
+                              ToolTip="Downloads the basemap over the export extent and places it, georeferenced, behind the features."/>
+                    <TextBlock Text="Off by default: this writes a real image file beside the profile, which the drawing then references by path. Moving or deleting that file leaves the drawing with a missing reference."
+                               TextWrapping="Wrap" Foreground="#777777" FontSize="11" Margin="20,0,0,8"/>
+
+                    <StackPanel Margin="20,0,0,0" IsEnabled="{Binding IncludeBasemapInExport}">
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="240"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="100"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Basemap" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <ComboBox Grid.Column="1" ItemsSource="{Binding ExportBasemapChoices}"
+                                      SelectedItem="{Binding SelectedExportBasemap}" DisplayMemberPath="Name" Margin="0,0,12,0"
+                                      ToolTip="Cached ArcGIS Online services, which answer without a portal sign-in."/>
+                            <TextBlock Grid.Column="2" Text="Image px" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBox Grid.Column="3" Text="{Binding BasemapImagePixels, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Long edge of the image. More is sharper and larger; a service will not return over 4096 and does not say when it clamps."/>
+                        </Grid>
+
+                        <TextBlock Text="Basemap CAD layer" Margin="0,4,0,4"/>
+                        <TextBox Text="{Binding BasemapCadLayerName, UpdateSourceTrigger=PropertyChanged}" Width="320" HorizontalAlignment="Left" Margin="0,0,0,8"
+                                 ToolTip="The raster goes on this layer alone and is sent to the back of the draw order, so it can be turned off without touching the features."/>
+
+                        <Grid Margin="0,0,0,4">
+                            <TextBox x:Name="CustomBasemapUrlBox" Text="{Binding CustomBasemapUrl, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="A MapServer URL to use instead of the list above, for a basemap your organisation publishes. Takes precedence over the dropdown when filled in."/>
+                            <TextBlock Text="Custom basemap MapServer URL (optional)">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource FieldPlaceholder}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text, ElementName=CustomBasemapUrlBox}" Value="">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </StackPanel>
                 </StackPanel>
             </Grid>
         </Grid>
