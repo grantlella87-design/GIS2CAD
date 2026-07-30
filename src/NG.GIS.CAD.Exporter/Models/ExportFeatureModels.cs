@@ -82,6 +82,22 @@ public sealed class CadExportRequest
     /// downloaded, so the writer only ever deals with a file already on disk.
     /// </summary>
     public BasemapImagePlacement? Basemap { get; set; }
+
+    /// <summary>
+    /// The export extent, and the padding buffer around the proposed main where there is one. Their own
+    /// layer, because they describe what was asked for rather than anything found in the ground, and
+    /// because being able to switch off the boundary you worked to is the point of having it separate.
+    /// </summary>
+    public List<ExportOutline> ExtentOutlines { get; } = new();
+
+    public string ExtentLayerName { get; init; } = "GIS_EXPORT_EXTENT";
+}
+
+/// <summary>A boundary drawn as a polyline, with a name saying which boundary it is.</summary>
+public sealed class ExportOutline
+{
+    public string Label { get; init; } = string.Empty;
+    public List<ExportVertex> Vertices { get; } = new();
 }
 
 /// <summary>
@@ -113,6 +129,7 @@ public sealed class CadExportResult
 {
     public int EntitiesWritten { get; set; }
     public int StripMapSheetsWritten { get; set; }
+    public int ExtentOutlinesWritten { get; set; }
     public bool BasemapPlaced { get; set; }
     public List<string> CadLayersCreated { get; } = new();
 

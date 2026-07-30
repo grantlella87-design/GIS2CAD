@@ -140,6 +140,7 @@ public partial class ExporterWindow
         if (paddingFeet > 0)
         {
             var buffer = GeometryEngine.Buffer(geometry, paddingFeet * 0.3048);
+            RememberProposedMainBuffer(buffer);
             var bufferSymbol = new SimpleFillSymbol(
                 SimpleFillSymbolStyle.Solid,
                 System.Drawing.Color.FromArgb(45, ClampByte(s.R), ClampByte(s.G), ClampByte(s.B)),

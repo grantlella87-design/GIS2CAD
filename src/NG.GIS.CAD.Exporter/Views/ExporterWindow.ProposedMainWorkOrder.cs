@@ -154,9 +154,23 @@ public partial class ExporterWindow
             if (unionGeometry != null && !unionGeometry.IsEmpty)
             {
                 var buffer = GeometryEngine.Buffer(unionGeometry, paddingFeet * 0.3048);
+                RememberProposedMainBuffer(buffer);
                 var bufferSymbol = new SimpleFillSymbol(SimpleFillSymbolStyle.Solid, System.Drawing.Color.FromArgb(45, ClampByte(s.R), ClampByte(s.G), ClampByte(s.B)), new SimpleLineSymbol(lineStyle, lineColor, 2));
                 _workOrderOverlay.Graphics.Add(new Graphic(buffer, bufferSymbol));
             }
+        }
+    }
+
+    /// <summary>
+    /// Hands the padding buffer to the view model, so the export can draw the same shape rather than a
+    /// recomputed one. Cleared when there is no buffer, so an export after the padding is set to zero
+    /// does not still write the old boundary.
+    /// </summary>
+    private void RememberProposedMainBuffer(Geometry? buffer)
+    {
+        if (DataContext is ViewModels.ExporterViewModel vm)
+        {
+            vm.ProposedMainBufferOutline = buffer != null && !buffer.IsEmpty ? buffer : null;
         }
     }
 
