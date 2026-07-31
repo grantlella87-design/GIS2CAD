@@ -18,8 +18,26 @@ namespace NG.GIS.CAD.Exporter.Services;
 /// </summary>
 public sealed class CadGeoMapService
 {
-    /// <summary>Aerial. The point is comparing exported features against real ground, not a drawn map.</summary>
-    private const short AerialMode = 1;
+    /// <summary>
+    /// The map types worth asking GEOMAPMODE for, best first, as imagery in each generation of AutoCAD.
+    ///
+    /// The values are AutoCAD's own, read out of the GeomapType enum in AcDbMgd rather than assumed:
+    /// NoMap 0, Aerial 1, Road 2, Hybrid 3, EsriImagery 4, EsriOpenStreetMap 5, EsriStreets 6,
+    /// EsriLightGray 7, EsriDarkGray 8. They are written as numbers because that enum is a nested type
+    /// and GEOMAPMODE takes an integer anyway.
+    ///
+    /// Aerial is the Bing era imagery and is what eInvalidInput was about: the service behind it is gone
+    /// and the mode with it, so a release that has moved to Esri refuses the value outright. EsriImagery
+    /// is the same thing on the map service that replaced it, and is what a current release wants.
+    ///
+    /// Both are offered, newest first, so this works on a release either side of that change without
+    /// having to ask which one is running.
+    /// </summary>
+    private static readonly (string Name, short Mode)[] ImageryMapTypes =
+    {
+        ("Esri imagery", 4),
+        ("aerial", 1)
+    };
 
     /// <summary>
     /// AutoCAD's own name for the systems this work uses, which is what a geographic location holds.
@@ -86,27 +104,34 @@ public sealed class CadGeoMapService
                     + "drawing sits on the earth without one.").TrimStart();
         }
 
-        // Short first and then int, the same way this codebase already sets PROXYNOTICE and XREFNOTIFY.
-        // Which of the two a system variable accepts is not something the managed API tells you, and
-        // the wrong one throws, so both are tried rather than guessed at.
-        Exception? failure = null;
-        foreach (object value in new object[] { AerialMode, (int)AerialMode })
+        // Each map type, newest first, and each as a short and then an int. Which of the two a system
+        // variable accepts is not something the managed API tells you and the wrong one throws, the same
+        // reason this codebase already offers both when it sets PROXYNOTICE and XREFNOTIFY.
+        var refusals = new List<string>();
+        foreach (var (name, mode) in ImageryMapTypes)
         {
-            try
+            foreach (object value in new object[] { mode, (int)mode })
             {
-                CoreApplication.SetSystemVariable("GEOMAPMODE", value);
-                return ("Geographic map turned on (aerial). " + locationNote).TrimEnd();
-            }
-            catch (Exception ex)
-            {
-                failure = ex;
+                try
+                {
+                    CoreApplication.SetSystemVariable("GEOMAPMODE", value);
+                    return ("Geographic map turned on (" + name + "). " + locationNote).TrimEnd();
+                }
+                catch (Exception ex)
+                {
+                    // Recorded once per map type rather than once per width, since the width is a detail
+                    // of how it is offered and repeating it would say the same thing twice.
+                    var note = name + " (" + ex.Message + ")";
+                    if (!refusals.Contains(note)) { refusals.Add(note); }
+                }
             }
         }
 
-        // Most likely no Autodesk sign-in, which is what the online map service needs. The export
-        // itself has already been written by this point, so this is worth reporting and no more.
-        return ("The geographic map could not be turned on, so the export is there without it: "
-                + (failure?.Message ?? "the setting was refused.") + " " + locationNote).TrimEnd();
+        // Every type refused. Most likely no Autodesk sign-in, which is what the online map service
+        // needs, and which no choice of map type gets around. The export itself has already been
+        // written by this point, so this is worth reporting and no more.
+        return ("The geographic map could not be turned on, so the export is there without it. What was "
+                + "tried, and what each said: " + string.Join("; ", refusals) + ". " + locationNote).TrimEnd();
     }
 
     /// <summary>
