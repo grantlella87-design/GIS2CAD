@@ -95,6 +95,22 @@ public sealed class CadExportRequest
     public List<ExportOutline> BoundaryOutlines { get; } = new();
 
     public string BoundaryLayerName { get; init; } = "GIS_EXPORT_BOUNDARY";
+
+    /// <summary>
+    /// Whether the fields chosen on page 3 are attached to each entity as extended data.
+    ///
+    /// On by default, because choosing fields and then having them reach nothing is not what choosing
+    /// them looks like. They were already being fetched and, apart from driving a block's rotation or
+    /// scale, thrown away once drawn.
+    /// </summary>
+    public bool AttachAttributes { get; init; } = true;
+
+    /// <summary>
+    /// The application name the extended data is filed under. Everything AutoCAD holds on an entity for
+    /// somebody else is filed under a name like this, so it can be found again and so two tools writing
+    /// to the same entity do not overwrite each other.
+    /// </summary>
+    public string AttributeAppName { get; init; } = "NGGIS";
 }
 
 /// <summary>A boundary drawn as a polyline, with a name saying which boundary it is.</summary>
@@ -190,6 +206,9 @@ public sealed class CadExportResult
 
     /// <summary>Polygon fills written. Counted apart from entities so the report can say they happened.</summary>
     public int HatchesWritten { get; set; }
+
+    /// <summary>Entities that came away carrying their GIS attributes.</summary>
+    public int EntitiesWithAttributes { get; set; }
     public bool BasemapPlaced { get; set; }
     public List<string> CadLayersCreated { get; } = new();
 

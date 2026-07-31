@@ -601,6 +601,19 @@
 
                     <Separator Margin="0,16,0,12"/>
 
+                    <CheckBox Content="Attach the selected attributes to each entity" IsChecked="{Binding AttachAttributesToEntities}"
+                              FontWeight="SemiBold" Margin="0,0,0,6"
+                              ToolTip="Writes the fields ticked on page 3 onto each entity as extended data, so a line in the drawing carries what the GIS knew about it."/>
+                    <StackPanel Margin="20,0,0,0" IsEnabled="{Binding AttachAttributesToEntities}">
+                        <TextBlock Text="Filed under" Margin="0,0,0,4"/>
+                        <TextBox Text="{Binding AttributeAppName, UpdateSourceTrigger=PropertyChanged}" Width="180" HorizontalAlignment="Left"
+                                 ToolTip="The application name the data is stored against, so it can be found again and so another tool writing to the same entity does not overwrite it."/>
+                        <TextBlock Text="A polyline on its own says where something runs; carrying its diameter, material and work order it says what it is. AutoCAD shows this under Properties, and any tool reading the drawing can pick it up, so nothing has to go back to the GIS to identify a line. Values longer than 255 characters are shortened to fit what extended data allows."
+                                   TextWrapping="Wrap" Foreground="#777777" FontSize="11" Margin="0,4,0,0"/>
+                    </StackPanel>
+
+                    <Separator Margin="0,16,0,12"/>
+
                     <CheckBox Content="Include the export boundary as a layer" IsChecked="{Binding IncludeBoundaryInExport}"
                               FontWeight="SemiBold" Margin="0,0,0,6"
                               ToolTip="Draws the shape that decided which features were fetched, as a closed polyline."/>

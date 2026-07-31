@@ -215,6 +215,13 @@ public sealed class CadExportWriter
                 transaction.AddNewlyCreatedDBObject(entity, true);
                 result.EntitiesWritten++;
 
+                // After the entity is in the drawing, because extended data is stored against a
+                // database object and there is nothing to store it against until then.
+                if (request.AttachAttributes)
+                {
+                    AttachFeatureAttributes(entity, feature, request.AttributeAppName, database, transaction, result);
+                }
+
                 // A hatch needs a boundary that is already in the drawing, so this follows the outline
                 // rather than replacing it. A ring with fewer than three vertices encloses nothing and
                 // would give the hatch no area to fill.
@@ -353,6 +360,82 @@ public sealed class CadExportWriter
             if (!result.Warnings.Contains(note)) { result.Warnings.Add(note); }
         }
     }
+
+    /// <summary>
+    /// Attaches a feature's GIS attributes to the entity drawn for it, as extended data.
+    ///
+    /// This is what makes an exported line answer questions. A polyline on its own says where something
+    /// runs; carrying its diameter, material and work order it says what it is, which is most of why the
+    /// fields on page 3 are worth choosing. AutoCAD shows it under Properties and any tool reading the
+    /// drawing can pick it up, so nothing has to come back to the GIS to identify a line.
+    ///
+    /// Written as name and value pairs so the drawing is readable without a schema. That doubles the
+    /// strings stored, which is worth it against the alternative of a positional list that means nothing
+    /// once the field selection changes.
+    ///
+    /// Extended data caps a string at 255 characters and an application's data at about 16kB per entity.
+    /// Values are cut to fit rather than dropped, because a shortened value still identifies a feature
+    /// and a refused write would lose the lot.
+    /// </summary>
+    private static void AttachFeatureAttributes(
+        Entity entity, ExportFeature feature, string appName,
+        Database database, Transaction transaction, CadExportResult result)
+    {
+        if (feature.Attributes.Count == 0) { return; }
+
+        var application = string.IsNullOrWhiteSpace(appName) ? "NGGIS" : SanitizeSymbolName(appName);
+
+        try
+        {
+            EnsureRegisteredApplication(database, transaction, application);
+
+            var buffer = new ResultBuffer();
+            buffer.Add(new TypedValue((int)DxfCode.ExtendedDataRegAppName, application));
+
+            var used = 0;
+            foreach (var pair in feature.Attributes)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Value)) { continue; }
+
+                var name = Truncate(pair.Key, 255);
+                var value = Truncate(pair.Value, 255);
+
+                // Two strings and their overhead against the per application budget. Stopping short
+                // keeps the entity writable rather than having AutoCAD refuse the whole buffer.
+                used += name.Length + value.Length + 8;
+                if (used > 15000) { break; }
+
+                buffer.Add(new TypedValue((int)DxfCode.ExtendedDataAsciiString, name));
+                buffer.Add(new TypedValue((int)DxfCode.ExtendedDataAsciiString, value));
+            }
+
+            entity.XData = buffer;
+            result.EntitiesWithAttributes++;
+        }
+        catch (Exception ex)
+        {
+            var note = "Attributes could not be attached to one or more entities: " + ex.Message;
+            if (!result.Warnings.Contains(note)) { result.Warnings.Add(note); }
+        }
+    }
+
+    /// <summary>
+    /// Makes sure the application name exists in the drawing, since extended data filed under a name the
+    /// drawing does not know is refused.
+    /// </summary>
+    private static void EnsureRegisteredApplication(Database database, Transaction transaction, string application)
+    {
+        var table = (RegAppTable)transaction.GetObject(database.RegAppTableId, OpenMode.ForRead);
+        if (table.Has(application)) { return; }
+
+        table.UpgradeOpen();
+        var record = new RegAppTableRecord { Name = application };
+        table.Add(record);
+        transaction.AddNewlyCreatedDBObject(record, true);
+    }
+
+    private static string Truncate(string value, int limit) =>
+        value.Length <= limit ? value : value[..limit];
 
     /// <summary>
     /// The polygon offset inwards, as bare points for a hatch loop, or null when there is nothing left.

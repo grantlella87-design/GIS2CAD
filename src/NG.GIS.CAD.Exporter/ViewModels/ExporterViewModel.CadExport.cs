@@ -30,6 +30,28 @@ public sealed partial class ExporterViewModel
 
     private bool _includeBoundaryInExport = true;
     private string _boundaryCadLayerName = "GIS_EXPORT_BOUNDARY";
+    private bool _attachAttributesToEntities = true;
+    private string _attributeAppName = "NGGIS";
+
+    /// <summary>
+    /// Whether the fields chosen on page 3 travel with the entities drawn from them.
+    ///
+    /// On by default. The fields are already fetched, and until now nothing but a block's rotation or
+    /// scale read them, so choosing a field and having it reach the drawing as nothing was not what
+    /// choosing it looked like.
+    /// </summary>
+    public bool AttachAttributesToEntities
+    {
+        get => _attachAttributesToEntities;
+        set => SetProperty(ref _attachAttributesToEntities, value);
+    }
+
+    /// <summary>The name the extended data is filed under, so it can be found again in the drawing.</summary>
+    public string AttributeAppName
+    {
+        get => _attributeAppName;
+        set => SetProperty(ref _attributeAppName, value);
+    }
 
     /// <summary>
     /// Anything the export did differently from what the settings imply, read once it has finished: a
@@ -180,7 +202,9 @@ public sealed partial class ExporterViewModel
                 StripMapLayerName = StripMapCadLayerName,
                 BoundaryLayerName = BoundaryCadLayerName,
                 TemplatePath = HasTemplate ? TemplatePath : null,
-                StripMapLabelHeight = 10.0
+                StripMapLabelHeight = 10.0,
+                AttachAttributes = AttachAttributesToEntities,
+                AttributeAppName = AttributeAppName
             };
 
             // Worked out once, before anything is fetched, and then used for both the queries and the
@@ -654,6 +678,10 @@ public sealed partial class ExporterViewModel
         if (result.HatchesWritten > 0)
         {
             message += $" Polygon fills: {result.HatchesWritten}.";
+        }
+        if (result.EntitiesWithAttributes > 0)
+        {
+            message += $" Attributes attached to {result.EntitiesWithAttributes} entit(ies).";
         }
         if (result.BasemapPlaced)
         {
