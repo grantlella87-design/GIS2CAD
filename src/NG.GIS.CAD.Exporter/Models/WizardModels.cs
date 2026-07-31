@@ -81,6 +81,18 @@ public sealed class CadTransformRule
     public double HatchScale { get; set; } = 1.0;
 
     /// <summary>
+    /// How far inside the polygon the fill stops, in drawing units.
+    ///
+    /// The fill is drawn to a smaller polygon offset inwards from the boundary, so the outline stays
+    /// visible as a line in its own right with clear paper either side of it rather than being buried
+    /// under the edge of its own hatch. It is the same thing OFFSET does to a closed polyline.
+    ///
+    /// Zero fills to the boundary, which is what a hatch normally does. An inset larger than the polygon
+    /// can absorb leaves nothing to fill, which is reported rather than drawn.
+    /// </summary>
+    public double HatchInsetDistance { get; set; }
+
+    /// <summary>
     /// How see-through the fill is, 0 for opaque and 90 for nearly invisible, which is AutoCAD's own
     /// range for entity transparency.
     ///

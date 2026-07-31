@@ -555,6 +555,15 @@
                                              ToolTip="Multiplies the pattern's line spacing. Too small on a large area draws as a solid block and takes a long time; too large draws nothing visible."/>
                                 </StackPanel>
 
+                                <!-- Outside the pattern block: an inset means the same for a solid fill
+                                     as for a line pattern. -->
+                                <TextBlock Text="Inset from boundary (drawing units)" Margin="0,0,0,4"/>
+                                <TextBox Width="180" HorizontalAlignment="Left"
+                                         Text="{Binding SelectedTransform.HatchInsetDistance, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4"
+                                         ToolTip="Fills a smaller polygon offset inwards from the boundary, the same as OFFSET on a closed polyline. Zero fills right up to the outline."/>
+                                <TextBlock Text="The fill stops short of the outline, so the boundary reads as a line in its own right instead of being buried under the edge of its own hatch. An inset wider than the polygon can absorb leaves nothing to fill, and is reported rather than drawn. An inset fill does not follow later edits to the boundary, since there is no drawn boundary to follow."
+                                           TextWrapping="Wrap" Foreground="#777777" FontSize="11" Margin="0,0,0,6"/>
+
                                 <TextBlock Text="Transparency %" Margin="0,0,0,4"/>
                                 <TextBox Width="180" HorizontalAlignment="Left"
                                          Text="{Binding SelectedTransform.HatchTransparencyPercent, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4"

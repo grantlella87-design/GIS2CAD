@@ -114,6 +114,16 @@ public sealed class CadTransformRuleViewModel : ObservableObject
         }
     }
 
+    public double HatchInsetDistance
+    {
+        get => Rule.HatchInsetDistance;
+        set
+        {
+            Rule.HatchInsetDistance = Math.Max(0, value);
+            RaisePropertyChanged();
+        }
+    }
+
     public int HatchTransparencyPercent
     {
         get => Rule.HatchTransparencyPercent;

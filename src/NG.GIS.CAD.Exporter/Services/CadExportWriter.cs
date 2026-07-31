@@ -300,8 +300,35 @@ public sealed class CadExportWriter
                 hatch.SetHatchPattern(HatchPatternType.PreDefined, pattern);
             }
 
-            hatch.Associative = true;
-            hatch.AppendLoop(HatchLoopTypes.Outermost, new ObjectIdCollection { boundary.ObjectId });
+            var inset = rule.HatchInsetDistance > 0 && boundary is Curve curve
+                ? BuildInsetLoop(curve, rule.HatchInsetDistance)
+                : null;
+
+            if (inset != null)
+            {
+                // The inset ring is handed over as bare points rather than drawn. It is a boundary for
+                // the fill, not something the user asked to have in their drawing, and adding it would
+                // leave a second outline inside every polygon.
+                //
+                // Which also means the hatch cannot be associative: there is no entity to associate to.
+                // A fill inset from a boundary that then moves has to be re-exported either way.
+                hatch.Associative = false;
+                hatch.AppendLoop(HatchLoopTypes.Polyline, inset, new DoubleCollection(new double[inset.Count]));
+            }
+            else
+            {
+                if (rule.HatchInsetDistance > 0)
+                {
+                    var note = "A polygon on layer " + cadLayerName + " was filled to its boundary rather "
+                               + "than inset, because an inset of " + rule.HatchInsetDistance
+                               + " leaves it nothing to fill.";
+                    if (!result.Warnings.Contains(note)) { result.Warnings.Add(note); }
+                }
+
+                hatch.Associative = true;
+                hatch.AppendLoop(HatchLoopTypes.Outermost, new ObjectIdCollection { boundary.ObjectId });
+            }
+
             hatch.EvaluateHatch(true);
 
             // After evaluating, so the fill is drawn with the transparency rather than evaluated and then
@@ -325,6 +352,86 @@ public sealed class CadExportWriter
                        + ex.Message;
             if (!result.Warnings.Contains(note)) { result.Warnings.Add(note); }
         }
+    }
+
+    /// <summary>
+    /// The polygon offset inwards, as bare points for a hatch loop, or null when there is nothing left.
+    ///
+    /// AutoCAD offsets a closed curve to one side or the other depending on which way its vertices run,
+    /// and GIS rings come in both windings, so a sign cannot be assumed. Both are offered and the smaller
+    /// result is the inward one, which is true whichever way the ring was wound.
+    ///
+    /// An offset can also come back as several curves, when a shape narrow enough to close up on itself
+    /// breaks into pieces. The largest of those is taken: it is the body of the polygon, and the slivers
+    /// are the corners that folded away.
+    ///
+    /// Null when the offset collapses entirely, which is an inset wider than the polygon is. The caller
+    /// fills to the boundary instead and says why, rather than drawing a shape the inset did not ask for.
+    /// </summary>
+    private static Point2dCollection? BuildInsetLoop(Curve boundary, double distance)
+    {
+        var originalArea = SafeArea(boundary);
+        if (originalArea <= 0) { return null; }
+
+        Polyline? best = null;
+        var bestArea = 0.0;
+
+        foreach (var signed in new[] { -distance, distance })
+        {
+            DBObjectCollection? offsets = null;
+            try { offsets = boundary.GetOffsetCurves(signed); }
+            catch { continue; }
+
+            using (offsets)
+            {
+                foreach (DBObject candidate in offsets)
+                {
+                    if (candidate is not Polyline polyline) { candidate.Dispose(); continue; }
+
+                    var area = SafeArea(polyline);
+
+                    // Smaller than what it came from is what makes it the inward one; larger is the
+                    // outward offset, which would put the fill outside the polygon it belongs to.
+                    if (area > 0 && area < originalArea && area > bestArea)
+                    {
+                        best?.Dispose();
+                        best = polyline;
+                        bestArea = area;
+                        continue;
+                    }
+
+                    polyline.Dispose();
+                }
+            }
+        }
+
+        if (best == null) { return null; }
+
+        using (best)
+        {
+            if (best.NumberOfVertices < 3) { return null; }
+
+            var points = new Point2dCollection();
+            for (var i = 0; i < best.NumberOfVertices; i++)
+            {
+                points.Add(best.GetPoint2dAt(i));
+            }
+
+            // Closed explicitly, because a hatch loop given as points is a list rather than a shape and
+            // has no Closed of its own to read.
+            if (points[0] != points[^1]) { points.Add(points[0]); }
+            return points;
+        }
+    }
+
+    /// <summary>
+    /// A curve's enclosed area, or zero when it will not give one. An open or self crossing curve throws
+    /// rather than answering, and for choosing between offsets that is the same as having no area.
+    /// </summary>
+    private static double SafeArea(Curve curve)
+    {
+        try { return Math.Abs(curve.Area); }
+        catch { return 0.0; }
     }
 
     /// <summary>
