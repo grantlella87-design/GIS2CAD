@@ -152,6 +152,21 @@ public sealed partial class ExporterViewModel : ObservableObject
           + $"\nCoordinates in {SpatialReferenceNames.Describe(_resolvedExtent.Wkid)}";
 
     /// <summary>
+    /// Forgets the committed extent, for when the export method changes and what it was resolved from
+    /// no longer applies.
+    ///
+    /// An extent carries the mode it came from, so one resolved under a different method describes an
+    /// area nobody asked for under the new one. Better to have none and say so than to keep a number
+    /// that looks settled.
+    /// </summary>
+    public void ClearResolvedExtent()
+    {
+        if (_resolvedExtent == null) { return; }
+        _resolvedExtent = null;
+        RaisePropertyChanged(nameof(ResolvedExtentText));
+    }
+
+    /// <summary>
     /// The system the drawing's coordinates come out in. Shown by name, because the WKID alone says
     /// nothing to most people and this is the setting that decides where the features land.
     /// </summary>

@@ -172,10 +172,11 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
     /// feeding the buffer while belonging to a question no longer being asked. Leaving it also reads as
     /// though it had been kept deliberately.
     ///
-    /// The buffer held by the view model goes with it, so the export cannot be scoped to a corridor that
-    /// is no longer on screen. The committed extent is left alone: switching back to the work order
-    /// method re-imports on page 2, and dropping the extent would only produce a refusal to export where
-    /// the user has not yet done anything wrong.
+    /// The buffer, the committed extent and the strip map index go with it. All three were derived from
+    /// the main being cleared or from the method being left, so keeping any of them would leave the
+    /// export working to something nobody asked for under the new method. An extent in particular
+    /// carries the mode it was resolved from, so a stale one looks settled while describing the wrong
+    /// area, which is worse than page 2 saying there is no extent yet.
     /// </summary>
     private void ClearProposedMainForMethodChange()
     {
@@ -194,7 +195,21 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
         _isEditingImportedProposedMain = false;
         _lastProposedMainEndpointSnapCount = 0;
 
+        // The index is a run of sheets along the main just cleared, so it has nothing left to describe.
+        // Left behind it would still be written into the drawing, which is the trap the viewport method
+        // already had to be guarded against.
+        _stripMapSheets = Array.Empty<Services.StripMapSheet>();
+        _stripMapOverlay?.Graphics.Clear();
+
         RememberProposedMainBuffer(null);
+
+        if (DataContext is ExporterViewModel vm)
+        {
+            vm.ClearResolvedExtent();
+            vm.StripMapSheets = _stripMapSheets;
+            vm.StripMapSummary = "Export method changed, so the proposed main, the extent and any strip "
+                                 + "map sheets were cleared.";
+        }
 
         if (IsLoaded) { UpdateManualProposedPipelineSegmentSummary(); }
     }
