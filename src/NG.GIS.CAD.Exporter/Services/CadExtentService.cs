@@ -55,6 +55,11 @@ public sealed class CadExtentService
             transaction.AddNewlyCreatedDBObject(polyline, true);
             transaction.Commit();
         }
-        return new ExportExtent { Mode = "DrawPipelineRoute", XMin = points.Min(p => p.X) - paddingFeet, YMin = points.Min(p => p.Y) - paddingFeet, XMax = points.Max(p => p.X) + paddingFeet, YMax = points.Max(p => p.Y) + paddingFeet, Wkid = wkid, PaddingFeet = paddingFeet };
+        var extent = new ExportExtent { Mode = "DrawPipelineRoute", XMin = points.Min(p => p.X) - paddingFeet, YMin = points.Min(p => p.Y) - paddingFeet, XMax = points.Max(p => p.X) + paddingFeet, YMax = points.Max(p => p.Y) + paddingFeet, Wkid = wkid, PaddingFeet = paddingFeet };
+
+        // The route itself, not just its bounds. The export is scoped to the corridor around this line,
+        // and the padded box kept above is only the fallback for when there is no padding to buffer by.
+        foreach (var point in points) { extent.RouteVertices.Add(new RouteVertex(point.X, point.Y)); }
+        return extent;
     }
 }

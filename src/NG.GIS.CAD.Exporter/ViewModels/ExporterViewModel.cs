@@ -135,7 +135,12 @@ public sealed partial class ExporterViewModel : ObservableObject
     public bool IsCurrentDrawingViewMethod { get => SelectedMethod == ExportMethod.CurrentDrawingView; set { if (value) { SelectedMethod = ExportMethod.CurrentDrawingView; } } }
     public bool IsManualMethod { get => SelectedMethod == ExportMethod.ManualExtent; set { if (value) { SelectedMethod = ExportMethod.ManualExtent; } } }
     public string WorkOrderId { get => _workOrderId; set => SetProperty(ref _workOrderId, value); }
-    public double PaddingFeet { get => _paddingFeet; set => SetProperty(ref _paddingFeet, value); }
+    public double PaddingFeet
+    {
+        get => _paddingFeet;
+        // The padding is the buffer's width, so the review page's account of the scope moves with it.
+        set { if (SetProperty(ref _paddingFeet, value)) { RaisePropertyChanged(nameof(BoundaryDescription)); } }
+    }
     public double ManualXMin { get => _manualXMin; set => SetProperty(ref _manualXMin, value); }
     public double ManualYMin { get => _manualYMin; set => SetProperty(ref _manualYMin, value); }
     public double ManualXMax { get => _manualXMax; set => SetProperty(ref _manualXMax, value); }
@@ -646,14 +651,21 @@ public sealed partial class ExporterViewModel : ObservableObject
             if (selected.Count == 0) { Status = "Select at least one layer before building the export plan."; return; }
             Status = "Building dry-run export plan...";
             var plan = new ExportPlan { Extent = _resolvedExtent };
+
+            // The same boundary the export itself will use. A dry run counted against a wider shape than
+            // the export would fetch is worse than no dry run, because it reads as a checked number.
+            var boundary = BuildExportBoundary(_profile.DefaultOutputSpatialReferenceWkid);
+
             foreach (var layer in selected)
             {
-                var count = await _services.ArcGisRestClient.QueryCountAsync(layer.Url, _resolvedExtent, CancellationToken.None);
+                var count = await _services.ArcGisRestClient.QueryCountAsync(layer.Url, _resolvedExtent, CancellationToken.None, boundary);
                 var transform = TransformRules.FirstOrDefault(t => string.Equals(t.LayerUrl, layer.Url, StringComparison.OrdinalIgnoreCase));
                 plan.Layers.Add(new ExportPlanLayer { Name = layer.Name, Url = layer.Url, GeometryType = layer.GeometryType, FeatureCount = count, SelectedFields = layer.Fields.Where(f => f.Selected).Select(f => f.Name).ToList(), Transform = transform?.Rule ?? new CadTransformRule() });
             }
             var path = await _services.ExportPlanStore.SaveLatestAsync(plan, CancellationToken.None);
-            Status = $"Export plan saved: {path}";
+            var scope = boundary?.Kind == ExportBoundaryKind.Buffer ? "padding buffer" : "extent bounding box";
+            Status = $"Export plan saved: {path}. Counted against the {scope}."
+                     + (string.IsNullOrEmpty(_boundaryNote) ? string.Empty : " " + _boundaryNote);
         }
         catch (Exception ex) { Status = "Export plan failed: " + ex.Message; }
     }
@@ -664,6 +676,7 @@ public sealed partial class ExporterViewModel : ObservableObject
         var selected = saved.SelectedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var field in state.Fields) { field.Selected = field.Field.Required || selected.Contains(field.Field.Name); }
     }
-    private void RaiseMethodFlags() { RaisePropertyChanged(nameof(IsWorkOrderMethod)); RaisePropertyChanged(nameof(IsDrawPipelineRouteMethod)); RaisePropertyChanged(nameof(IsCurrentDrawingViewMethod)); RaisePropertyChanged(nameof(IsManualMethod)); }
+    // The method decides the boundary, so the review page's account of the scope follows the choice.
+    private void RaiseMethodFlags() { RaisePropertyChanged(nameof(IsWorkOrderMethod)); RaisePropertyChanged(nameof(IsDrawPipelineRouteMethod)); RaisePropertyChanged(nameof(IsCurrentDrawingViewMethod)); RaisePropertyChanged(nameof(IsManualMethod)); RaisePropertyChanged(nameof(BoundaryKind)); RaisePropertyChanged(nameof(BoundaryDescription)); }
     private void RaisePageFlags() { RaisePropertyChanged(nameof(IsMethodPage)); RaisePropertyChanged(nameof(IsExtentPage)); RaisePropertyChanged(nameof(IsLayerPage)); RaisePropertyChanged(nameof(IsTransformPage)); RaisePropertyChanged(nameof(IsReviewPage)); RaisePropertyChanged(nameof(PageTitle)); }
 }
