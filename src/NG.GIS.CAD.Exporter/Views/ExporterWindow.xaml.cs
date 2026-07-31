@@ -60,6 +60,10 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
             await InitializeArcGisMapAsync();
             if (DataContext is ExporterViewModel viewModel) { await viewModel.PreloadLaterPagesAsync(); }
         };
+        // Delete removes the manual segment being edited. On the window rather than the map, because the
+        // map view is built later and the key has to reach it wherever focus happens to be.
+        PreviewKeyDown += ExporterWindow_PreviewKeyDown;
+
         DataContextChanged += (_, _) =>
         {
             UpdatePageVisibility();
@@ -124,6 +128,10 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
             AddArcGisRuntimeFoldersToPath();
             _mapView = new MapView();
             _mapView.ViewpointChanged += ArcGisMapView_ViewpointChanged;
+
+            // Only acted on while a segment is being picked, so an ordinary click on the map still does
+            // nothing. Wired once here because the map view is built once.
+            _mapView.GeoViewTapped += ExporterMapView_GeoViewTapped;
             _workOrderOverlay = new GraphicsOverlay { Id = "Work Order Geometry + Buffer" };
             _proposedPipelineOverlay = new GraphicsOverlay { Id = "Manual Proposed Pipeline" };
             _mapView.GraphicsOverlays.Add(_workOrderOverlay);
@@ -184,6 +192,8 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
 
         _manualProposedPipelineSegmentGeometries.Clear();
         _manualProposedPipelineEndpointSnapCount = 0;
+        _editingManualProposedPipelineSegmentIndex = -1;
+        _pickingManualProposedPipelineSegment = false;
         _manualProposedPipelineSegmentOverlay?.Graphics.Clear();
         SetLegacySingleManualPipelineGeometry(null);
 
