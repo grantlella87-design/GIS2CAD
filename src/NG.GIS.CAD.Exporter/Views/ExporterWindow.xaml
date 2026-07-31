@@ -563,7 +563,7 @@
                     <CheckBox Content="Include a basemap image in the drawing" IsChecked="{Binding IncludeBasemapInExport}"
                               FontWeight="SemiBold" Margin="0,0,0,6"
                               ToolTip="Downloads the basemap over the export extent and places it, georeferenced, behind the features."/>
-                    <TextBlock Text="Off by default: this writes a real image file beside the profile, which the drawing then references by path. Moving or deleting that file leaves the drawing with a missing reference."
+                    <TextBlock Text="On by default, so the placement can be checked: features exported onto blank paper give nothing to judge them against, and an extent that was wrong by a street looks the same as one that was right. Untick it for a drawing being issued. It writes a real image file beside the profile which the drawing then references by path, so moving or deleting that file leaves the drawing with a missing reference."
                                TextWrapping="Wrap" Foreground="#777777" FontSize="11" Margin="20,0,0,8"/>
 
                     <StackPanel Margin="20,0,0,0" IsEnabled="{Binding IncludeBasemapInExport}">

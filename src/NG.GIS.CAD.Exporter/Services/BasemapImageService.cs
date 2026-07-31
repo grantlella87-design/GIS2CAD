@@ -52,6 +52,22 @@ public sealed class BasemapImageService
     };
 
     /// <summary>
+    /// What the export starts with, so the backdrop is there to check the placement against without
+    /// anyone having to ask for it.
+    ///
+    /// Aerial imagery rather than a street or canvas map, because confirming placement means comparing
+    /// the exported features against the ground they sit on: kerbs, buildings and driveways are what a
+    /// main is checked against, and a drawn map shows its own idea of where those are.
+    ///
+    /// Found by name rather than taken by index, so reordering the list above cannot quietly change what
+    /// every export starts with. Falls back to the first entry that has a service, and only then to None.
+    /// </summary>
+    public static BasemapChoice DefaultChoice { get; } =
+        DefaultChoices.FirstOrDefault(c => c.Name == "Aerial imagery")
+        ?? DefaultChoices.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.ServiceUrl))
+        ?? DefaultChoices[0];
+
+    /// <summary>
     /// The largest image an ArcGIS service will normally return on one export request. Asking for more
     /// gets a smaller image back without saying so, which would place a stretched picture.
     /// </summary>

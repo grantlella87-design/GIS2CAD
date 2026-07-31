@@ -82,8 +82,8 @@ public sealed partial class ExporterViewModel
           + "and that buffer is the only boundary drawn. The extent rectangle around it is not written."
         : "Everything intersecting the extent bounding box is imported, and that box is what gets drawn.";
 
-    private bool _includeBasemapInExport;
-    private BasemapChoice _selectedExportBasemap = BasemapImageService.DefaultChoices[0];
+    private bool _includeBasemapInExport = true;
+    private BasemapChoice _selectedExportBasemap = BasemapImageService.DefaultChoice;
     private string _basemapCadLayerName = "GIS_BASEMAP";
     private int _basemapImagePixels = 2048;
     private string _customBasemapUrl = string.Empty;
@@ -92,8 +92,16 @@ public sealed partial class ExporterViewModel
     public IReadOnlyList<BasemapChoice> ExportBasemapChoices { get; } = BasemapImageService.DefaultChoices;
 
     /// <summary>
-    /// Whether a basemap image goes into the drawing. Off by default: it is a real raster file written
-    /// beside the drawing, which the drawing then depends on, and that is not something to do unasked.
+    /// Whether a basemap image goes into the drawing.
+    ///
+    /// On by default. Exported features land on blank paper otherwise, and nothing in the drawing shows
+    /// whether they came down in the right place: a projection or extent that was wrong by a street
+    /// looks exactly like one that was right. A backdrop is what makes the placement checkable, and it
+    /// is worth having by default for the same reason a survey is checked against a known point.
+    ///
+    /// It does write a real raster beside the profile that the drawing then references by path, so the
+    /// drawing gains a dependency on a file that can be moved. That is the cost of being able to see
+    /// where the export landed, and the tick turns it off for a drawing being issued.
     /// </summary>
     public bool IncludeBasemapInExport
     {
