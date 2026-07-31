@@ -1,3 +1,4 @@
+using System.Globalization;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
@@ -116,7 +117,12 @@ public sealed class CadGeoMapService
 
         using var geoData = new GeoLocationData();
         geoData.BlockTableRecordId = modelSpaceId;
-        geoData.CoordinateSystem = wkText;
+        geoData.CoordinateSystem = ResolveCoordinateSystem(wkText, outWkid);
+
+        // Without this the location is left as CoordinateTypeUnknown, which is what a location that has
+        // not really been set looks like, and AutoCAD treats it accordingly. A state plane projection is
+        // a grid system, so that is what it is declared as.
+        geoData.TypeOfCoordinates = TypeOfCoordinates.CoordinateTypeGrid;
 
         // The same point twice. The drawing is in the system just named, so the point on the ground and
         // the point in the drawing are the same numbers, and the transformation is an identity.
@@ -127,6 +133,36 @@ public sealed class CadGeoMapService
         geoData.UpdateTransformationMatrix();
 
         return "Geographic location set to " + SpatialReferenceNames.Describe(outWkid) + ".";
+    }
+
+    /// <summary>
+    /// What to hand AutoCAD as the coordinate system.
+    ///
+    /// AutoCAD keeps its own library of coordinate systems, each with an ID of its own, and that ID is
+    /// what a geographic location is normally set from. It will take a full definition instead, which is
+    /// what the well known text is, but going through the library first means the drawing ends up naming
+    /// the same system AutoCAD would have named had someone picked it from the dialog.
+    ///
+    /// Tried by well known text and then by EPSG code, since the library indexes both, and falling back
+    /// to the well known text itself when neither is recognised. Every step is a way of saying the same
+    /// projection, so a fallback narrows nothing.
+    /// </summary>
+    private static string ResolveCoordinateSystem(string wkText, int outWkid)
+    {
+        foreach (var candidate in new[] { wkText, "EPSG:" + outWkid.ToString(CultureInfo.InvariantCulture) })
+        {
+            try
+            {
+                using var system = GeoCoordinateSystem.Create(candidate);
+                if (!string.IsNullOrWhiteSpace(system?.ID)) { return system.ID; }
+            }
+            catch
+            {
+                // Not a form this library recognises. The next candidate, or the raw definition below.
+            }
+        }
+
+        return wkText;
     }
 
     /// <summary>
