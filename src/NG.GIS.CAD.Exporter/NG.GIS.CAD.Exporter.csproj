@@ -38,6 +38,17 @@
     <AutoCadNuGetVersion Condition="'$(AutoCadNuGetVersion)' == ''">25.0.0</AutoCadNuGetVersion>
   </PropertyGroup>
 
+  <!-- AutoCAD.NET 25.0.0 declares its dependency on AutoCAD.NET.Core as exactly [25.0.0-V058], a version
+       Autodesk never published: only 25.0.0 is on NuGet. No version satisfies the constraint, so NuGet
+       resolves the nearest and reports NU1608 every restore.
+
+       Suppressed rather than worked around because there is nothing to move to, and only on the NuGet
+       path, so a developer build is not silenced for a problem it does not have. A warning nobody can act
+       on is the kind that teaches people to stop reading them, which is the opposite of why CI is here. -->
+  <PropertyGroup Condition="'$(UseAutoCadNuGet)' == 'true'">
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup Condition="'$(UseAutoCadNuGet)' != 'true'">
     <Reference Include="AcMgd">
       <HintPath>$(AcadReferencePath)\AcMgd.dll</HintPath>
