@@ -53,9 +53,9 @@ public sealed class CadExportWriter
             WriteStripMapIndex(request, database, transaction, modelSpace, result);
         }
 
-        if (request.ExtentOutlines.Count > 0)
+        if (request.BoundaryOutlines.Count > 0)
         {
-            WriteExtentOutlines(request, database, transaction, modelSpace, result);
+            WriteBoundaryOutlines(request, database, transaction, modelSpace, result);
         }
 
         // Last, so it can be sent behind everything already written in this pass.
@@ -299,19 +299,19 @@ public sealed class CadExportWriter
     }
 
     /// <summary>
-    /// Draws the export extent and the padding buffer as closed polylines, on a layer of their own.
+    /// Draws the boundary that scoped the import as a closed polyline, on a layer of its own.
     ///
-    /// These say what was asked for rather than what was found, so they belong apart from the data: a
+    /// It says what was asked for rather than what was found, so it belongs apart from the data: a
     /// drawing that is being issued usually wants the boundary off, and one being checked wants it on.
     /// </summary>
-    private void WriteExtentOutlines(
+    private void WriteBoundaryOutlines(
         CadExportRequest request, Database database, Transaction transaction,
         BlockTableRecord modelSpace, CadExportResult result)
     {
-        var layerName = SanitizeSymbolName(request.ExtentLayerName);
+        var layerName = SanitizeSymbolName(request.BoundaryLayerName);
         EnsureLayer(database, transaction, layerName, AcadColor.FromColorIndex(AcadColorMethod.ByAci, 8), result);
 
-        foreach (var outline in request.ExtentOutlines)
+        foreach (var outline in request.BoundaryOutlines)
         {
             if (outline.Vertices.Count < 3) { continue; }
 
@@ -326,7 +326,7 @@ public sealed class CadExportWriter
             modelSpace.AppendEntity(polyline);
             transaction.AddNewlyCreatedDBObject(polyline, true);
             result.EntitiesWritten++;
-            result.ExtentOutlinesWritten++;
+            result.BoundaryOutlinesWritten++;
         }
     }
 

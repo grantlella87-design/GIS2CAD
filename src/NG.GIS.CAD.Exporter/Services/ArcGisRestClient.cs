@@ -1,14 +1,103 @@
-﻿using NG.GIS.CAD.Exporter.Models;
+﻿using System.Globalization;
+using NG.GIS.CAD.Exporter.Models;
 namespace NG.GIS.CAD.Exporter.Services;
 public sealed class ArcGisRestClient
 {
     private readonly HttpClient _httpClient;
     private readonly ArcGisTokenProvider _tokenProvider;
+
     public ArcGisRestClient(HttpClient httpClient, ArcGisTokenProvider tokenProvider)
     {
         _httpClient = httpClient;
         _tokenProvider = tokenProvider;
     }
+
+    /// <summary>
+    /// Puts the query geometry on a request: the buffer polygon where the export is scoped to one, the
+    /// bounding box otherwise.
+    ///
+    /// This is the single place the import scope is decided, so the shape drawn into the drawing and the
+    /// shape the service filtered by cannot come apart. Asking for a polygon costs a longer request and
+    /// a little more work at the service, and it is what stops a diagonal corridor dragging in the whole
+    /// rectangle around it.
+    ///
+    /// Coordinates are written invariant. A service parses "1.5" and not "1,5", and the separator would
+    /// otherwise follow whatever regional settings the workstation happens to have.
+    /// </summary>
+    private static void ApplyBoundary(
+        Dictionary<string, string> parameters, ExportExtent extent, ExportBoundary? boundary)
+    {
+        if (boundary is { HasRings: true })
+        {
+            parameters["geometryType"] = "esriGeometryPolygon";
+            parameters["geometry"] = BuildPolygonJson(boundary);
+            parameters["inSR"] = boundary.Wkid.ToString(CultureInfo.InvariantCulture);
+            return;
+        }
+
+        // A box, either because that is what the method produces or because there was no buffer to use.
+        var wkid = boundary?.Wkid ?? extent.Wkid;
+        var minX = boundary?.XMin ?? extent.XMin;
+        var minY = boundary?.YMin ?? extent.YMin;
+        var maxX = boundary?.XMax ?? extent.XMax;
+        var maxY = boundary?.YMax ?? extent.YMax;
+
+        parameters["geometryType"] = "esriGeometryEnvelope";
+        parameters["geometry"] = string.Join(",", new[]
+        {
+            minX.ToString("R", CultureInfo.InvariantCulture),
+            minY.ToString("R", CultureInfo.InvariantCulture),
+            maxX.ToString("R", CultureInfo.InvariantCulture),
+            maxY.ToString("R", CultureInfo.InvariantCulture)
+        });
+        parameters["inSR"] = wkid.ToString(CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// The buffer as ArcGIS polygon JSON. Built by hand rather than round-tripped through the runtime's
+    /// geometry so this stays usable from the query path without a runtime geometry in hand.
+    /// </summary>
+    private static string BuildPolygonJson(ExportBoundary boundary)
+    {
+        var json = new StringBuilder("{\"rings\":[");
+        var firstRing = true;
+
+        foreach (var ring in boundary.Rings)
+        {
+            if (ring.Count < 3) { continue; }
+            if (!firstRing) { json.Append(','); }
+            firstRing = false;
+
+            json.Append('[');
+            for (var i = 0; i < ring.Count; i++)
+            {
+                if (i > 0) { json.Append(','); }
+                AppendPoint(json, ring[i]);
+            }
+
+            // ArcGIS wants the ring closed explicitly; the rest of this codebase carries them open. The
+            // tolerance matches the one the rings were opened with, so a ring is not closed twice.
+            if (Math.Abs(ring[0].X - ring[^1].X) > 1e-9 || Math.Abs(ring[0].Y - ring[^1].Y) > 1e-9)
+            {
+                json.Append(',');
+                AppendPoint(json, ring[0]);
+            }
+            json.Append(']');
+        }
+
+        json.Append("],\"spatialReference\":{\"wkid\":")
+            .Append(boundary.Wkid.ToString(CultureInfo.InvariantCulture))
+            .Append("}}");
+        return json.ToString();
+
+        static void AppendPoint(StringBuilder builder, ExportVertex vertex) =>
+            builder.Append('[')
+                   .Append(vertex.X.ToString("R", CultureInfo.InvariantCulture))
+                   .Append(',')
+                   .Append(vertex.Y.ToString("R", CultureInfo.InvariantCulture))
+                   .Append(']');
+    }
+
     public async Task<IReadOnlyList<LayerMetadata>> LoadServiceLayersAsync(string serviceUrl, CancellationToken cancellationToken)
     {
         var layers = new List<LayerMetadata>();
@@ -44,18 +133,17 @@ public sealed class ArcGisRestClient
         }
         return layers;
     }
-    public async Task<int> QueryCountAsync(string layerUrl, ExportExtent extent, CancellationToken cancellationToken)
+    public async Task<int> QueryCountAsync(
+        string layerUrl, ExportExtent extent, CancellationToken cancellationToken, ExportBoundary? boundary = null)
     {
         var parameters = new Dictionary<string, string>
         {
             ["f"] = "json",
             ["where"] = "1=1",
             ["returnCountOnly"] = "true",
-            ["geometryType"] = "esriGeometryEnvelope",
-            ["geometry"] = $"{extent.XMin},{extent.YMin},{extent.XMax},{extent.YMax}",
-            ["inSR"] = extent.Wkid.ToString(),
             ["spatialRel"] = "esriSpatialRelIntersects"
         };
+        ApplyBoundary(parameters, extent, boundary);
         var json = await PostJsonAsync(layerUrl + "/query", parameters, cancellationToken);
         if (json.RootElement.TryGetProperty("count", out var count))
         {
@@ -75,7 +163,8 @@ public sealed class ArcGisRestClient
     /// features the user asked to export.
     /// </summary>
     public async Task<IReadOnlyList<ExportFeature>> QueryFeaturesAsync(
-        string layerUrl, ExportExtent extent, IReadOnlyList<string> fields, int outWkid, CancellationToken cancellationToken)
+        string layerUrl, ExportExtent extent, IReadOnlyList<string> fields, int outWkid,
+        CancellationToken cancellationToken, ExportBoundary? boundary = null)
     {
         var features = new List<ExportFeature>();
         var offset = 0;
@@ -89,9 +178,6 @@ public sealed class ArcGisRestClient
             {
                 ["f"] = "json",
                 ["where"] = "1=1",
-                ["geometryType"] = "esriGeometryEnvelope",
-                ["geometry"] = $"{extent.XMin},{extent.YMin},{extent.XMax},{extent.YMax}",
-                ["inSR"] = extent.Wkid.ToString(),
                 ["outSR"] = outWkid.ToString(),
                 ["spatialRel"] = "esriSpatialRelIntersects",
                 ["outFields"] = fields.Count == 0 ? "*" : string.Join(",", fields),
@@ -99,6 +185,7 @@ public sealed class ArcGisRestClient
                 ["resultOffset"] = offset.ToString(),
                 ["resultRecordCount"] = pageSize.ToString()
             };
+            ApplyBoundary(parameters, extent, boundary);
 
             using var json = await PostJsonAsync(layerUrl.TrimEnd('/') + "/query", parameters, cancellationToken);
             var root = json.RootElement;

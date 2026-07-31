@@ -84,13 +84,17 @@ public sealed class CadExportRequest
     public BasemapImagePlacement? Basemap { get; set; }
 
     /// <summary>
-    /// The export extent, and the padding buffer around the proposed main where there is one. Their own
-    /// layer, because they describe what was asked for rather than anything found in the ground, and
-    /// because being able to switch off the boundary you worked to is the point of having it separate.
+    /// The boundary that decided which features were fetched: the padding buffer on a proposed main job,
+    /// the bounding box on a viewport or typed one. Its own layer, because it describes what was asked
+    /// for rather than anything found in the ground, and because being able to switch off the boundary
+    /// you worked to is the point of having it separate.
+    ///
+    /// One boundary, not both, and the one the query actually used. A drawing that showed a buffer while
+    /// the features came from its bounding box would be drawing a line that lies about its own contents.
     /// </summary>
-    public List<ExportOutline> ExtentOutlines { get; } = new();
+    public List<ExportOutline> BoundaryOutlines { get; } = new();
 
-    public string ExtentLayerName { get; init; } = "GIS_EXPORT_EXTENT";
+    public string BoundaryLayerName { get; init; } = "GIS_EXPORT_BOUNDARY";
 }
 
 /// <summary>A boundary drawn as a polyline, with a name saying which boundary it is.</summary>
@@ -98,6 +102,59 @@ public sealed class ExportOutline
 {
     public string Label { get; init; } = string.Empty;
     public List<ExportVertex> Vertices { get; } = new();
+}
+
+/// <summary>
+/// Which shape decides what gets imported.
+///
+/// A proposed main job is about a corridor, so the padding buffer around the main is the honest scope:
+/// a rectangle around a main that runs diagonally pulls in a great deal of ground nobody asked about.
+/// A viewport export is about a rectangle already — what is on screen — so a buffer would be a shape
+/// nobody drew.
+/// </summary>
+public enum ExportBoundaryKind
+{
+    /// <summary>The bounding box, used for a viewport or a typed extent.</summary>
+    ExtentBox,
+
+    /// <summary>The padding buffer around a proposed main, used for a work order or drawn segments.</summary>
+    Buffer
+}
+
+/// <summary>
+/// The shape the feature query is run against, and the same shape that gets drawn into the drawing.
+///
+/// Both roles are deliberately one object. The layer written into the drawing has to be the thing that
+/// governed the import for it to mean anything, so there is no way for the two to drift apart.
+/// </summary>
+public sealed class ExportBoundary
+{
+    public required ExportBoundaryKind Kind { get; init; }
+
+    /// <summary>The spatial reference the coordinates below are in.</summary>
+    public required int Wkid { get; init; }
+
+    /// <summary>What this boundary is, for the status line and the drawn outline's label.</summary>
+    public required string Label { get; init; }
+
+    /// <summary>
+    /// The bounding box. Always populated: it is the boundary itself for <see cref="ExportBoundaryKind.ExtentBox"/>,
+    /// and the buffer's own bounds otherwise, which the basemap and the review page still need.
+    /// </summary>
+    public double XMin { get; init; }
+    public double YMin { get; init; }
+    public double XMax { get; init; }
+    public double YMax { get; init; }
+
+    /// <summary>
+    /// The buffer's rings, empty for a box. Every ring, not just the outer one: a buffer around a main
+    /// that doubles back on itself can enclose a hole, and a query or an outline that dropped it would
+    /// claim ground the buffer excludes.
+    /// </summary>
+    public List<List<ExportVertex>> Rings { get; } = new();
+
+    /// <summary>True when this is a buffer with usable rings, rather than a box or an empty buffer.</summary>
+    public bool HasRings => Kind == ExportBoundaryKind.Buffer && Rings.Count > 0;
 }
 
 /// <summary>
@@ -129,7 +186,7 @@ public sealed class CadExportResult
 {
     public int EntitiesWritten { get; set; }
     public int StripMapSheetsWritten { get; set; }
-    public int ExtentOutlinesWritten { get; set; }
+    public int BoundaryOutlinesWritten { get; set; }
     public bool BasemapPlaced { get; set; }
     public List<string> CadLayersCreated { get; } = new();
 

@@ -16,6 +16,26 @@ public sealed class ExportExtent
     public double YMax { get; set; }
     public int Wkid { get; set; } = 2249;
     public double PaddingFeet { get; set; } = 300;
+
+    /// <summary>
+    /// The route as it was picked, for the methods that draw one. Kept because the corridor is what the
+    /// export is scoped to, and a bounding box cannot be turned back into the line that produced it.
+    /// Empty for the methods that are a rectangle to begin with.
+    /// </summary>
+    public List<RouteVertex> RouteVertices { get; } = new();
+}
+
+/// <summary>A picked route point, in the extent's own spatial reference.</summary>
+public readonly struct RouteVertex
+{
+    public RouteVertex(double x, double y)
+    {
+        X = x;
+        Y = y;
+    }
+
+    public double X { get; }
+    public double Y { get; }
 }
 public sealed class CadTransformRule
 {

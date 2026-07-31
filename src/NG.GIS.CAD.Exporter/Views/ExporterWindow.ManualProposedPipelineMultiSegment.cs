@@ -52,10 +52,11 @@ public partial class ExporterWindow
         TryStopGeometryEditor();
         _manualProposedPipelineSegmentGeometries.Clear();
         _manualProposedPipelineEndpointSnapCount = 0;
-        if (_manualProposedPipelineSegmentOverlay != null)
-        {
-            _manualProposedPipelineSegmentOverlay.Graphics.Clear();
-        }
+        // Dropped outright rather than left to the refresh, which gives up early when there is no map
+        // view to draw on. Clearing the segments has to clear the buffer whatever the map is doing, or
+        // the export stays scoped to a boundary around a main that is no longer drawn.
+        RememberProposedMainBuffer(null);
+        RefreshManualProposedPipelineSegmentOverlay();
         SetLegacySingleManualPipelineGeometry(null);
         UpdateManualProposedPipelineSegmentSummary();
         SetManualProposedPipelineStatus("Manual proposed pipeline segments cleared.");
@@ -180,9 +181,57 @@ public partial class ExporterWindow
         }
         _manualProposedPipelineSegmentSymbol ??= new SimpleLineSymbol(SimpleLineSymbolStyle.Solid, System.Drawing.Color.Red, 4.0);
         _manualProposedPipelineSegmentOverlay.Graphics.Clear();
+
+        // The buffer first, so the segments draw over it rather than under.
+        SyncManualProposedPipelineBufferAndExtent();
+
         foreach (var segment in _manualProposedPipelineSegmentGeometries)
         {
             _manualProposedPipelineSegmentOverlay.Graphics.Add(new Graphic(segment, _manualProposedPipelineSegmentSymbol));
+        }
+    }
+
+    /// <summary>
+    /// Draws the padding buffer around the segments drawn so far, hands it to the view model, and commits
+    /// the extent it covers.
+    ///
+    /// Without this a hand drawn pipeline showed no buffer and never set an extent at all, so the export
+    /// refused to run and told the user to commit an extent on a page where nothing does. The work order
+    /// import has always done these three things; drawing the segments by hand produces the same kind of
+    /// proposed main and has to end in the same state.
+    ///
+    /// The extent is committed from the buffer where there is one, so it covers the corridor rather than
+    /// the bare line. It is only ever the fallback now that the export is scoped by the buffer itself,
+    /// but it is what the rest of the wizard reads to know an extent exists.
+    /// </summary>
+    private void SyncManualProposedPipelineBufferAndExtent()
+    {
+        var combined = BuildManualProposedPipelineMultipartGeometry();
+        if (combined == null || combined.IsEmpty)
+        {
+            // Cleared, so the old buffer has to go with it. Leaving it would export a boundary around a
+            // main that is no longer there.
+            RememberProposedMainBuffer(null);
+            return;
+        }
+
+        var paddingFeet = GetSharedPaddingFeetForWorkOrderImport();
+        var buffer = paddingFeet > 0 ? GeometryEngine.Buffer(combined, paddingFeet * 0.3048) : null;
+        RememberProposedMainBuffer(buffer);
+
+        if (buffer != null && !buffer.IsEmpty && _manualProposedPipelineSegmentOverlay != null)
+        {
+            var fill = new SimpleFillSymbol(
+                SimpleFillSymbolStyle.Solid,
+                System.Drawing.Color.FromArgb(45, 200, 0, 0),
+                new SimpleLineSymbol(SimpleLineSymbolStyle.Solid, System.Drawing.Color.Red, 2));
+            _manualProposedPipelineSegmentOverlay.Graphics.Add(new Graphic(buffer, fill));
+        }
+
+        var extent = (buffer != null && !buffer.IsEmpty ? buffer.Extent : null) ?? combined.Extent;
+        if (extent != null)
+        {
+            CommitExtentToViewModelForWorkOrderImport(extent);
         }
     }
     private void UpdateManualProposedPipelineSegmentSummary()

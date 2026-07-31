@@ -532,14 +532,15 @@
 
                     <Separator Margin="0,16,0,12"/>
 
-                    <CheckBox Content="Include the export extent and padding buffer as a layer" IsChecked="{Binding IncludeExtentInExport}"
+                    <CheckBox Content="Include the export boundary as a layer" IsChecked="{Binding IncludeBoundaryInExport}"
                               FontWeight="SemiBold" Margin="0,0,0,6"
-                              ToolTip="Draws the export extent rectangle, and the buffer the padding produced around the proposed main, as closed polylines."/>
-                    <StackPanel Margin="20,0,0,0" IsEnabled="{Binding IncludeExtentInExport}">
-                        <TextBlock Text="Extent and buffer CAD layer" Margin="0,0,0,4"/>
-                        <TextBox Text="{Binding ExtentCadLayerName, UpdateSourceTrigger=PropertyChanged}" Width="320" HorizontalAlignment="Left"
-                                 ToolTip="Both boundaries go on this layer alone, so the area you worked to can be switched off when the drawing is issued."/>
-                        <TextBlock Text="The buffer is only drawn when a proposed main was imported or drawn with padding. Where the padding is zero there is no buffer, and only the extent rectangle is written."
+                              ToolTip="Draws the shape that decided which features were fetched, as a closed polyline."/>
+                    <TextBlock Text="{Binding BoundaryDescription}" TextWrapping="Wrap" Foreground="#555555" Margin="20,0,0,6"/>
+                    <StackPanel Margin="20,0,0,0" IsEnabled="{Binding IncludeBoundaryInExport}">
+                        <TextBlock Text="Export boundary CAD layer" Margin="0,0,0,4"/>
+                        <TextBox Text="{Binding BoundaryCadLayerName, UpdateSourceTrigger=PropertyChanged}" Width="320" HorizontalAlignment="Left"
+                                 ToolTip="The boundary goes on this layer alone, so the area you worked to can be switched off when the drawing is issued."/>
+                        <TextBlock Text="Which shape scopes the export follows the method chosen on page 1: a work order or a drawn pipeline is scoped to the padding buffer around the main, and the current drawing view or a typed extent to the bounding box. Where a buffer is called for but the padding is zero, the box is used and the status line says so."
                                    TextWrapping="Wrap" Foreground="#777777" FontSize="11" Margin="0,4,0,0"/>
                     </StackPanel>
 
