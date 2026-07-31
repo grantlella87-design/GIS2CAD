@@ -461,9 +461,36 @@ public sealed partial class ExporterViewModel : ObservableObject
             MapDataSources.Add(sourceVm);
         }
 
+        // Re-added after the profile's own, since rebuilding the list from the profile drops them and
+        // the map is not going to load again to put them back.
+        foreach (var baseLayer in _baseMapLayers) { MapDataSources.Add(new MapDataSourceViewModel(baseLayer)); }
+
         // The profile and the map load independently. If the map got there first it has already run
         // with an empty list, so signal it to reconcile now that the sources are known.
         MapDataSourcesChanged?.Invoke();
+    }
+
+    private IReadOnlyList<BaseMapLayerHandle> _baseMapLayers = Array.Empty<BaseMapLayerHandle>();
+
+    /// <summary>
+    /// Takes the layers the map brought with it, so the data sources panel lists everything on the map
+    /// rather than only what the user added.
+    ///
+    /// Held separately from the profile's sources and re-added whenever the list is rebuilt, because a
+    /// profile reload clears the list and the map will not load again to put them back.
+    /// </summary>
+    public void SetBaseMapLayers(IReadOnlyList<BaseMapLayerHandle> layers)
+    {
+        _baseMapLayers = layers ?? Array.Empty<BaseMapLayerHandle>();
+
+        // Anything listed from a previous load is dropped first, so switching web maps does not leave
+        // entries pointing at layers that are no longer on it.
+        for (var i = MapDataSources.Count - 1; i >= 0; i--)
+        {
+            if (MapDataSources[i].IsFromMap) { MapDataSources.RemoveAt(i); }
+        }
+
+        foreach (var baseLayer in _baseMapLayers) { MapDataSources.Add(new MapDataSourceViewModel(baseLayer)); }
     }
 
     private void OnMapDataSourceEnabledChanged(MapDataSourceViewModel source)
@@ -513,6 +540,16 @@ public sealed partial class ExporterViewModel : ObservableObject
     private async Task RemoveMapDataSourceAsync(object? parameter)
     {
         if (parameter is not MapDataSourceViewModel sourceVm) { return; }
+
+        // A layer the map brought with it is not the profile's to remove. Taking it off the list would
+        // only hide the entry until the map loaded again, so the tick is offered instead, which does
+        // what removing it was meant to do and says what it did.
+        if (sourceVm.IsFromMap)
+        {
+            Status = sourceVm.Name + " comes with the map rather than from this profile, so it cannot be "
+                     + "removed here. Untick it to stop it drawing.";
+            return;
+        }
 
         sourceVm.EnabledChanged -= OnMapDataSourceEnabledChanged;
         MapDataSources.Remove(sourceVm);

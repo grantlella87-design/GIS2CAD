@@ -237,9 +237,23 @@
                                                 <TextBlock Text="{Binding Url}" Foreground="#777777" FontSize="11" TextTrimming="CharacterEllipsis"/>
                                                 <TextBlock Text="{Binding Status}" Foreground="#777777" FontSize="11" TextWrapping="Wrap"/>
                                             </StackPanel>
+                                            <!-- Hidden for the layers the map brought with it. They are not
+                                                 this profile's to remove, and the tick already does what
+                                                 removing one was meant to do. -->
                                             <Button Grid.Column="1" Content="Remove" Padding="8,2" VerticalAlignment="Top"
                                                     Command="{Binding DataContext.RemoveMapDataSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CommandParameter="{Binding}"/>
+                                                    CommandParameter="{Binding}">
+                                                <Button.Style>
+                                                    <Style TargetType="Button">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsFromMap}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

@@ -67,6 +67,7 @@ public partial class ExporterWindow
 
             await EnsureMaterialViewLayerAsync(map);
             await ApplyMapDataSourcesAsync();
+            ListBaseLayersAsDataSources(map);
 
             SetExtentMapStatus("Portal web map loaded: " + item.Title + ". Operational layers: " + map.OperationalLayers.Count + ".");
         }
@@ -74,6 +75,31 @@ public partial class ExporterWindow
         {
             SetExtentMapStatus("Portal web map failed to load: " + ex.GetType().Name + ": " + ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Lists the layers that came with the map alongside the ones the user added, so the data sources
+    /// panel shows everything on the map rather than only the additions.
+    ///
+    /// These arrive from the portal web map and from Material_View_MA, and they are most of what page 2
+    /// actually draws, so a panel that left them out was describing a fraction of the map while looking
+    /// like it described all of it. Nobody is expected to turn them off often, but being able to is the
+    /// difference between a list you can work with and a list you can only read.
+    ///
+    /// Kept apart from the profile. Toggling one changes what the map draws for this session; it does not
+    /// write a user data source, because these are not the user's to own and would come back next time
+    /// from the web map regardless.
+    /// </summary>
+    private void ListBaseLayersAsDataSources(Map map)
+    {
+        if (DataContext is not ViewModels.ExporterViewModel vm) { return; }
+
+        vm.SetBaseMapLayers(map.OperationalLayers
+            .Select(layer => new ViewModels.BaseMapLayerHandle(
+                string.IsNullOrWhiteSpace(layer.Name) ? "Unnamed layer" : layer.Name,
+                () => layer.IsVisible,
+                visible => layer.IsVisible = visible))
+            .ToList());
     }
 
     /// <summary>
