@@ -102,7 +102,8 @@
                                 <Button Content="Start Segment" Click="StartManualProposedMainSegment_Click" Padding="8" Margin="0,0,4,0"/>
                                 <Button Content="Apply Segment" Click="ApplyManualProposedMainSegment_Click" Padding="8" Margin="4,0,4,0"/>
                                 <Button Content="Finish Segments" Click="FinishManualProposedMainSegments_Click" Padding="8" Margin="4,0,4,0"/>
-                                <Button Content="Clear Manual" Click="ClearManualProposedMainSegments_Click" Padding="8" Margin="4,0,0,0"/>
+                                <Button Content="Edit Segment" Click="EditManualProposedMainSegment_Click" Padding="8" Margin="4,0,0,0"
+                                        ToolTip="Pick a drawn segment by clicking it on the map, then drag its points and use Apply Segment, or press Delete to remove it."/>
                             </UniformGrid>
                         </StackPanel>
                         <StackPanel x:Name="VisibleMapModeHeader" Visibility="Collapsed">
@@ -517,6 +518,37 @@
                                    Visibility="{Binding SelectedTransform.IsPoint, Converter={StaticResource BoolToVisibility}}"/>
                         <TextBox Grid.Row="8" Grid.Column="1" Text="{Binding SelectedTransform.ScaleValue, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
                                  Visibility="{Binding SelectedTransform.IsPoint, Converter={StaticResource BoolToVisibility}}"/>
+
+                        <!-- Polygon only: a fill says the inside belongs to something, which is only a
+                             reading an area layer has. -->
+                        <StackPanel Grid.Row="9" Grid.Column="0" Grid.ColumnSpan="2"
+                                    Visibility="{Binding SelectedTransform.IsPolygon, Converter={StaticResource BoolToVisibility}}">
+                            <CheckBox Content="Fill polygons with a hatch" IsChecked="{Binding SelectedTransform.HatchPolygons}"
+                                      FontWeight="SemiBold" Margin="0,4,0,4"
+                                      ToolTip="Draws a hatch inside each polygon as well as its outline. The outline is always written; this adds the fill."/>
+                            <StackPanel Margin="20,0,0,0" IsEnabled="{Binding SelectedTransform.HatchPolygons}">
+                                <TextBlock Text="Pattern" Margin="0,0,0,4"/>
+                                <ComboBox Width="180" HorizontalAlignment="Left" IsEditable="True"
+                                          ItemsSource="{Binding SelectedTransform.HatchPatterns}"
+                                          Text="{Binding SelectedTransform.HatchPattern, UpdateSourceTrigger=PropertyChanged}"
+                                          Margin="0,0,0,6"
+                                          ToolTip="A pattern AutoCAD ships with. SOLID fills the area; the others draw lines and need a spacing that suits the plot scale."/>
+
+                                <StackPanel Visibility="{Binding SelectedTransform.HatchScaleApplies, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Text="Pattern spacing" Margin="0,0,0,4"/>
+                                    <TextBox Width="180" HorizontalAlignment="Left"
+                                             Text="{Binding SelectedTransform.HatchScale, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"
+                                             ToolTip="Multiplies the pattern's line spacing. Too small on a large area draws as a solid block and takes a long time; too large draws nothing visible."/>
+                                </StackPanel>
+
+                                <TextBlock Text="Transparency %" Margin="0,0,0,4"/>
+                                <TextBox Width="180" HorizontalAlignment="Left"
+                                         Text="{Binding SelectedTransform.HatchTransparencyPercent, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4"
+                                         ToolTip="0 is opaque, 90 is nearly invisible. The default leaves the fill see-through, so it shows what a polygon covers without hiding the features underneath it."/>
+                                <TextBlock Text="The fill follows its outline, so stretching the boundary in CAD restretches the hatch with it."
+                                           TextWrapping="Wrap" Foreground="#777777" FontSize="11" Margin="0,0,0,8"/>
+                            </StackPanel>
+                        </StackPanel>
                     </Grid>
                 </GroupBox>
             </Grid>
