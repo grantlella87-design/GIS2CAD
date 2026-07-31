@@ -22,6 +22,27 @@ public sealed class CadGeoMapService
     private const short AerialMode = 1;
 
     /// <summary>
+    /// AutoCAD's own name for the systems this work uses, which is what a geographic location holds.
+    ///
+    /// Read off the coordinate system list AutoCAD shows when a location is set by hand, so these are
+    /// the same names the dialog would have written. Only NAD83, because that is what the profile and
+    /// the services speak in, and because an EPSG code does not name one system on its own: 2805 is both
+    /// MAHP and HARN/NE.MA in that list, and choosing between them is a question about datum rather than
+    /// something the code answers.
+    ///
+    /// Anything not listed goes to the library search instead, so this is a shortcut rather than a
+    /// limit. Setting a location this way is the same thing the dialog does, and the same thing
+    /// Map 3D and Civil 3D assign a coordinate system with.
+    /// </summary>
+    private static readonly Dictionary<int, string> AutoCadCoordinateSystemIds = new()
+    {
+        [2249] = "MA83F",   // NAD83 Massachusetts Mainland, US survey feet
+        [26986] = "MA83",   // NAD83 Massachusetts Mainland, metres
+        [3438] = "RI83F",   // NAD83 Rhode Island, US survey feet
+        [32130] = "RI83"    // NAD83 Rhode Island, metres
+    };
+
+    /// <summary>
     /// Gives the drawing a geographic location if it has none, then switches the map on.
     ///
     /// The location has to exist first: without one the map has no way to know where the drawing sits on
@@ -240,6 +261,12 @@ public sealed class CadGeoMapService
 
         var epsg = "EPSG:" + outWkid.ToString(CultureInfo.InvariantCulture);
 
+        // The ID first, where it is known outright. An EPSG code does not name one system in this
+        // library: 2805 is both MAHP and HARN/NE.MA, and picking between them is a question about datum
+        // rather than something a code answers. For the systems this work uses the answer is settled, so
+        // it is written down rather than searched for.
+        if (AutoCadCoordinateSystemIds.TryGetValue(outWkid, out var knownId)) { Add(knownId); }
+
         foreach (var lookup in new[] { wkText, epsg })
         {
             try
@@ -261,15 +288,26 @@ public sealed class CadGeoMapService
             {
                 foreach (var system in GeoCoordinateSystem.CreateAll())
                 {
-                    using (system)
+                    // Each entry in its own guard. The library runs to thousands of systems and this one
+                    // throws on some of them, so a single guard around the whole walk lost every entry
+                    // after the first bad one -- which is how a library that demonstrably holds 2249 was
+                    // walked without finding it.
+                    try
                     {
-                        if (system.EPSGcode == outWkid) { Add(system.ID); break; }
+                        using (system)
+                        {
+                            if (system.EPSGcode == outWkid) { Add(system.ID); break; }
+                        }
+                    }
+                    catch
+                    {
+                        // This entry cannot say what it is. The next one still can.
                     }
                 }
             }
             catch
             {
-                // No library to walk, or it refused. The definition below still stands.
+                // No library to walk at all, which the forms below do not need.
             }
         }
 
