@@ -53,13 +53,16 @@ public sealed class CadGeoMapService
         }
         catch (Exception ex)
         {
-            return "The drawing's geographic location could not be set, so the map was left off: "
-                   + ex.Message;
+            locationNote = "The drawing's geographic location could not be set: " + ex.Message + ".";
         }
 
-        if (locationNote.Length > 0 && !HasGeographicLocation(document))
+        // Asked of the drawing rather than inferred from whether the attach threw. A location that was
+        // already there is as good as one just set, and one that failed to attach leaves the map with
+        // nothing to work from however the attempt ended.
+        if (!HasGeographicLocation(document))
         {
-            return locationNote;
+            return (locationNote + " The map was left off, because it has no way to know where the "
+                    + "drawing sits on the earth without one.").TrimStart();
         }
 
         // Short first and then int, the same way this codebase already sets PROXYNOTICE and XREFNOTIFY.
@@ -110,27 +113,50 @@ public sealed class CadGeoMapService
         using var documentLock = document.LockDocument();
         var database = document.Database;
 
-        // Model space by name rather than through a transaction on the block table. PostToDb attaches
-        // the object itself, so opening a transaction around it would only add something else to go
-        // wrong between creating the location and it being attached.
-        var modelSpaceId = SymbolUtilityServices.GetBlockModelSpaceId(database);
+        // PostToDb takes no arguments, so it has to find the database for itself, and what it finds is
+        // the working database rather than the one the block table record belongs to. From a modeless
+        // window there is nothing to make those the same, and when they are not the attach fails with
+        // eNoDatabase. Locking the document does not set it either: the lock says the drawing may be
+        // written to, not which drawing "the" drawing is.
+        //
+        // So it is pointed at this document for the length of the attach and put back afterwards, the
+        // same shape as the system variables this codebase already sets and restores around a read.
+        var previousWorkingDatabase = HostApplicationServices.WorkingDatabase;
+        try
+        {
+            HostApplicationServices.WorkingDatabase = database;
 
-        using var geoData = new GeoLocationData();
-        geoData.BlockTableRecordId = modelSpaceId;
-        geoData.CoordinateSystem = ResolveCoordinateSystem(wkText, outWkid);
+            // Model space by name rather than through a transaction on the block table. PostToDb
+            // attaches the object itself, so opening a transaction around it would only add something
+            // else to go wrong between creating the location and it being attached.
+            var modelSpaceId = SymbolUtilityServices.GetBlockModelSpaceId(database);
 
-        // Without this the location is left as CoordinateTypeUnknown, which is what a location that has
-        // not really been set looks like, and AutoCAD treats it accordingly. A state plane projection is
-        // a grid system, so that is what it is declared as.
-        geoData.TypeOfCoordinates = TypeOfCoordinates.CoordinateTypeGrid;
+            using var geoData = new GeoLocationData();
+            geoData.BlockTableRecordId = modelSpaceId;
+            geoData.CoordinateSystem = ResolveCoordinateSystem(wkText, outWkid);
 
-        // The same point twice. The drawing is in the system just named, so the point on the ground and
-        // the point in the drawing are the same numbers, and the transformation is an identity.
-        geoData.DesignPoint = new Point3d(anchorX, anchorY, 0.0);
-        geoData.ReferencePoint = new Point3d(anchorX, anchorY, 0.0);
+            // Without this the location is left as CoordinateTypeUnknown, which is what a location that
+            // has not really been set looks like, and AutoCAD treats it accordingly. A state plane
+            // projection is a grid system, so that is what it is declared as.
+            geoData.TypeOfCoordinates = TypeOfCoordinates.CoordinateTypeGrid;
 
-        geoData.PostToDb();
-        geoData.UpdateTransformationMatrix();
+            // The same point twice. The drawing is in the system just named, so the point on the ground
+            // and the point in the drawing are the same numbers, and the transformation is an identity.
+            geoData.DesignPoint = new Point3d(anchorX, anchorY, 0.0);
+            geoData.ReferencePoint = new Point3d(anchorX, anchorY, 0.0);
+
+            geoData.PostToDb();
+            geoData.UpdateTransformationMatrix();
+        }
+        finally
+        {
+            // Only when there was one. Assigning null here would leave AutoCAD worse off than the
+            // failure this is unwinding from.
+            if (previousWorkingDatabase != null)
+            {
+                try { HostApplicationServices.WorkingDatabase = previousWorkingDatabase; } catch { }
+            }
+        }
 
         return "Geographic location set to " + SpatialReferenceNames.Describe(outWkid) + ".";
     }
