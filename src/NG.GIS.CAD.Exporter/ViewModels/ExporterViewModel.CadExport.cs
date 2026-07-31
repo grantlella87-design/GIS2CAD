@@ -21,6 +21,88 @@ public sealed partial class ExporterViewModel
     public string StripMapCadLayerName { get; set; } = "GIS_STRIP_MAP_INDEX";
 
     /// <summary>
+    /// The padding buffer drawn around the proposed main on page 2, in Web Mercator. Set by the view
+    /// whenever it draws one, so the export can put the same shape in the drawing rather than a
+    /// recomputed one that might differ.
+    /// </summary>
+    public Geometry? ProposedMainBufferOutline { get; set; }
+
+    private bool _includeExtentInExport = true;
+    private string _extentCadLayerName = "GIS_EXPORT_EXTENT";
+
+    /// <summary>
+    /// Whether the export extent and the padding buffer are drawn in the drawing. On by default: it is
+    /// two polylines on a layer of their own, and knowing where the exported area stops is worth having.
+    /// </summary>
+    public bool IncludeExtentInExport
+    {
+        get => _includeExtentInExport;
+        set => SetProperty(ref _includeExtentInExport, value);
+    }
+
+    public string ExtentCadLayerName
+    {
+        get => _extentCadLayerName;
+        set => SetProperty(ref _extentCadLayerName, value);
+    }
+
+    private bool _includeBasemapInExport;
+    private BasemapChoice _selectedExportBasemap = BasemapImageService.DefaultChoices[0];
+    private string _basemapCadLayerName = "GIS_BASEMAP";
+    private int _basemapImagePixels = 2048;
+    private string _customBasemapUrl = string.Empty;
+
+    /// <summary>The basemaps offered for the export, plus None.</summary>
+    public IReadOnlyList<BasemapChoice> ExportBasemapChoices { get; } = BasemapImageService.DefaultChoices;
+
+    /// <summary>
+    /// Whether a basemap image goes into the drawing. Off by default: it is a real raster file written
+    /// beside the drawing, which the drawing then depends on, and that is not something to do unasked.
+    /// </summary>
+    public bool IncludeBasemapInExport
+    {
+        get => _includeBasemapInExport;
+        set => SetProperty(ref _includeBasemapInExport, value);
+    }
+
+    public BasemapChoice SelectedExportBasemap
+    {
+        get => _selectedExportBasemap;
+        set => SetProperty(ref _selectedExportBasemap, value);
+    }
+
+    /// <summary>
+    /// A service to use instead of the listed ones, for a basemap this organisation publishes itself.
+    /// Takes precedence over the dropdown when it is filled in.
+    /// </summary>
+    public string CustomBasemapUrl
+    {
+        get => _customBasemapUrl;
+        set => SetProperty(ref _customBasemapUrl, value);
+    }
+
+    /// <summary>The layer the basemap raster is placed on, so it can be turned off on its own.</summary>
+    public string BasemapCadLayerName
+    {
+        get => _basemapCadLayerName;
+        set => SetProperty(ref _basemapCadLayerName, value);
+    }
+
+    /// <summary>
+    /// Long edge of the basemap image in pixels. More pixels means a sharper backdrop and a larger file;
+    /// a service will not return more than 4096 on one request and says nothing when it clamps.
+    /// </summary>
+    public int BasemapImagePixels
+    {
+        get => _basemapImagePixels;
+        set => SetProperty(ref _basemapImagePixels, Math.Clamp(value, 256, BasemapImageService.MaxImagePixels));
+    }
+
+    /// <summary>The service the export will actually ask, once the custom URL is taken into account.</summary>
+    private string ResolveBasemapServiceUrl() =>
+        string.IsNullOrWhiteSpace(CustomBasemapUrl) ? SelectedExportBasemap.ServiceUrl : CustomBasemapUrl.Trim();
+
+    /// <summary>
     /// Writes the selected layers into the open drawing.
     ///
     /// The extent and the selections come from the earlier pages, so this only reports what is missing
@@ -49,6 +131,7 @@ public sealed partial class ExporterViewModel
             var request = new CadExportRequest
             {
                 StripMapLayerName = StripMapCadLayerName,
+                ExtentLayerName = ExtentCadLayerName,
                 TemplatePath = HasTemplate ? TemplatePath : null,
                 StripMapLabelHeight = 10.0
             };
@@ -77,6 +160,8 @@ public sealed partial class ExporterViewModel
             }
 
             AddStripMapSheetsToRequest(request, outWkid);
+            AddExtentOutlinesToRequest(request, outWkid);
+            await AddBasemapToRequestAsync(request, outWkid);
 
             Status = $"Writing {totalFeatures} feature(s) into the drawing...";
             var result = _services.CadExportWriter.Write(request);
@@ -87,6 +172,135 @@ public sealed partial class ExporterViewModel
         {
             Status = "Export to CAD failed: " + ex.GetType().Name + ": " + ex.Message;
         }
+    }
+
+    /// <summary>
+    /// Adds the export extent rectangle, and the padding buffer around the proposed main where there is
+    /// one, as boundaries for the drawing.
+    ///
+    /// Both are geometry the user set rather than data that was fetched, so they go on their own layer.
+    /// The buffer is the more useful of the two on a proposed main job: it is the shape the padding
+    /// actually produced, which a rectangle around it does not show.
+    /// </summary>
+    private void AddExtentOutlinesToRequest(CadExportRequest request, int outWkid)
+    {
+        if (!IncludeExtentInExport || _resolvedExtent == null) { return; }
+
+        try
+        {
+            var corners = ProjectExtentCorners(_resolvedExtent, outWkid);
+            var rectangle = new ExportOutline { Label = "Export extent" };
+            rectangle.Vertices.Add(new ExportVertex(corners.MinX, corners.MinY));
+            rectangle.Vertices.Add(new ExportVertex(corners.MaxX, corners.MinY));
+            rectangle.Vertices.Add(new ExportVertex(corners.MaxX, corners.MaxY));
+            rectangle.Vertices.Add(new ExportVertex(corners.MinX, corners.MaxY));
+            request.ExtentOutlines.Add(rectangle);
+        }
+        catch (Exception ex)
+        {
+            Status = "The export extent boundary could not be drawn: " + ex.Message;
+        }
+
+        if (ProposedMainBufferOutline == null || ProposedMainBufferOutline.IsEmpty) { return; }
+
+        try
+        {
+            var target = SpatialReference.Create(outWkid);
+            if (GeometryEngine.Project(ProposedMainBufferOutline, target) is not Polygon projected || projected.IsEmpty)
+            {
+                return;
+            }
+
+            // Every ring, not just the outer one: a buffer around a main that doubles back on itself
+            // can enclose a hole, and dropping it would draw the boundary as solid where it is not.
+            foreach (var ring in ReadAllRings(projected))
+            {
+                if (ring.Count < 3) { continue; }
+                var outline = new ExportOutline { Label = "Padding buffer" };
+                outline.Vertices.AddRange(ring);
+                request.ExtentOutlines.Add(outline);
+            }
+        }
+        catch (Exception ex)
+        {
+            Status = "The padding buffer boundary could not be drawn: " + ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// Downloads the chosen basemap over the export extent and adds it to the request.
+    ///
+    /// The extent is requested in the output spatial reference for both the bounding box and the image,
+    /// so the pixels are already in drawing coordinates. That is what lets the raster be placed on the
+    /// extent it was asked for with no transform, and it is why the basemap lands accurately while the
+    /// strip map frames go through a projection.
+    /// </summary>
+    private async Task AddBasemapToRequestAsync(CadExportRequest request, int outWkid)
+    {
+        if (!IncludeBasemapInExport || _resolvedExtent == null) { return; }
+
+        var serviceUrl = ResolveBasemapServiceUrl();
+        if (string.IsNullOrWhiteSpace(serviceUrl))
+        {
+            Status = "No basemap was chosen, so none was included. Pick one, or clear the include tick.";
+            return;
+        }
+
+        try
+        {
+            Status = "Fetching the basemap image...";
+
+            // Beside the profile, which is where this plug-in already keeps what it writes. The drawing
+            // will reference this file by path, so it has to live somewhere lasting rather than in temp.
+            var directory = Path.Combine(
+                Path.GetDirectoryName(ProfilePath) ?? Path.GetTempPath(), "basemaps");
+
+            var image = await _services.BasemapImageService.DownloadAsync(
+                serviceUrl, _resolvedExtent, outWkid, BasemapImagePixels, directory, CancellationToken.None);
+
+            // The extent is in its own WKID, which may not be the drawing's. The image was requested in
+            // the output WKID, so the corners have to be too, or the raster would be placed at the
+            // extent's coordinates rather than the drawing's.
+            var corners = ProjectExtentCorners(_resolvedExtent, outWkid);
+
+            request.Basemap = new BasemapImagePlacement
+            {
+                ImagePath = image.ImagePath,
+                LayerName = BasemapCadLayerName,
+                OriginX = corners.MinX,
+                OriginY = corners.MinY,
+                Width = corners.MaxX - corners.MinX,
+                Height = corners.MaxY - corners.MinY
+            };
+        }
+        catch (Exception ex)
+        {
+            // The features are the export. A basemap that will not come down should not stop them.
+            Status = "The basemap could not be fetched, so the export continued without it: " + ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// The export extent's corners in the output spatial reference. Returned unchanged when the extent
+    /// is already in it, which is the common case and avoids a needless projection.
+    /// </summary>
+    private static (double MinX, double MinY, double MaxX, double MaxY) ProjectExtentCorners(
+        ExportExtent extent, int outWkid)
+    {
+        if (extent.Wkid == outWkid)
+        {
+            return (Math.Min(extent.XMin, extent.XMax), Math.Min(extent.YMin, extent.YMax),
+                    Math.Max(extent.XMin, extent.XMax), Math.Max(extent.YMin, extent.YMax));
+        }
+
+        var source = new Envelope(extent.XMin, extent.YMin, extent.XMax, extent.YMax, SpatialReference.Create(extent.Wkid));
+        if (GeometryEngine.Project(source, SpatialReference.Create(outWkid)) is not Envelope projected)
+        {
+            throw new InvalidOperationException(
+                "The export extent could not be projected from WKID " + extent.Wkid + " to WKID " + outWkid + ".");
+        }
+
+        return (projected.XMin, projected.YMin, projected.XMax, projected.YMax);
     }
 
     /// <summary>
@@ -150,17 +364,26 @@ public sealed partial class ExporterViewModel
     /// </summary>
     private static List<ExportVertex> ReadRingVertices(Polygon polygon)
     {
-        var vertices = new List<ExportVertex>();
+        // A sheet frame is one rectangle, so the outer ring is the whole of it.
+        var rings = ReadAllRings(polygon);
+        return rings.Count == 0 ? new List<ExportVertex>() : rings[0];
+    }
+
+    private static List<List<ExportVertex>> ReadAllRings(Polygon polygon)
+    {
+        var result = new List<List<ExportVertex>>();
 
         using var document = JsonDocument.Parse(polygon.ToJson());
         if (!document.RootElement.TryGetProperty("rings", out var rings) || rings.ValueKind != JsonValueKind.Array)
         {
-            return vertices;
+            return result;
         }
 
         foreach (var ring in rings.EnumerateArray())
         {
             if (ring.ValueKind != JsonValueKind.Array) { continue; }
+
+            var vertices = new List<ExportVertex>();
             foreach (var point in ring.EnumerateArray())
             {
                 if (point.ValueKind != JsonValueKind.Array) { continue; }
@@ -172,28 +395,36 @@ public sealed partial class ExporterViewModel
                 }
             }
 
-            // Only the outer ring is wanted: a sheet frame is one rectangle.
-            break;
+            // The JSON repeats the first point to close the ring, which the writer does with Closed.
+            if (vertices.Count > 3
+                && Math.Abs(vertices[0].X - vertices[^1].X) < 1e-9
+                && Math.Abs(vertices[0].Y - vertices[^1].Y) < 1e-9)
+            {
+                vertices.RemoveAt(vertices.Count - 1);
+            }
+
+            if (vertices.Count >= 3) { result.Add(vertices); }
         }
 
-        // The JSON repeats the first point to close the ring, which the writer does with Closed.
-        if (vertices.Count > 3
-            && Math.Abs(vertices[0].X - vertices[^1].X) < 1e-9
-            && Math.Abs(vertices[0].Y - vertices[^1].Y) < 1e-9)
-        {
-            vertices.RemoveAt(vertices.Count - 1);
-        }
-
-        return vertices;
+        return result;
     }
 
     private static string DescribeExportResult(CadExportResult result, int totalFeatures, int outWkid)
     {
-        var message = $"Exported {totalFeatures} feature(s) as {result.EntitiesWritten} entit(ies) in WKID {outWkid}.";
+        var message = $"Exported {totalFeatures} feature(s) as {result.EntitiesWritten} entit(ies), "
+            + $"in {SpatialReferenceNames.Describe(outWkid)}.";
 
         if (result.StripMapSheetsWritten > 0)
         {
             message += $" Strip map index: {result.StripMapSheetsWritten} sheet(s).";
+        }
+        if (result.ExtentOutlinesWritten > 0)
+        {
+            message += $" Extent and buffer: {result.ExtentOutlinesWritten} outline(s).";
+        }
+        if (result.BasemapPlaced)
+        {
+            message += " Basemap placed behind the features.";
         }
         if (result.CadLayersCreated.Count > 0)
         {

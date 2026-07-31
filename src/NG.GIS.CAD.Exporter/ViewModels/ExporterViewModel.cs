@@ -141,7 +141,17 @@ public sealed partial class ExporterViewModel : ObservableObject
     public double ManualXMax { get => _manualXMax; set => SetProperty(ref _manualXMax, value); }
     public double ManualYMax { get => _manualYMax; set => SetProperty(ref _manualYMax, value); }
     public int ExtentWkid { get => _extentWkid; set => SetProperty(ref _extentWkid, value); }
-    public string ResolvedExtentText => _resolvedExtent == null ? "No extent set." : $"{_resolvedExtent.Mode}: {_resolvedExtent.XMin:0.###}, {_resolvedExtent.YMin:0.###}, {_resolvedExtent.XMax:0.###}, {_resolvedExtent.YMax:0.###}, WKID {_resolvedExtent.Wkid}";
+    public string ResolvedExtentText => _resolvedExtent == null
+        ? "No extent set."
+        : $"{_resolvedExtent.Mode}: {_resolvedExtent.XMin:0.###}, {_resolvedExtent.YMin:0.###}, {_resolvedExtent.XMax:0.###}, {_resolvedExtent.YMax:0.###}"
+          + $"\nCoordinates in {SpatialReferenceNames.Describe(_resolvedExtent.Wkid)}";
+
+    /// <summary>
+    /// The system the drawing's coordinates come out in. Shown by name, because the WKID alone says
+    /// nothing to most people and this is the setting that decides where the features land.
+    /// </summary>
+    public string OutputSpatialReferenceText =>
+        SpatialReferenceNames.Describe(_profile.DefaultOutputSpatialReferenceWkid);
     public LayerSelectionViewModel? SelectedLayer { get => _selectedLayer; set => SetProperty(ref _selectedLayer, value); }
     public CadTransformRuleViewModel? SelectedTransform { get => _selectedTransform; set => SetProperty(ref _selectedTransform, value); }
     private Task NextAsync() { if (PageIndex < 4) { PageIndex++; } return Task.CompletedTask; }

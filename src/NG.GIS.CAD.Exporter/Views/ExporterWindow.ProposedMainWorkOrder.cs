@@ -154,9 +154,23 @@ public partial class ExporterWindow
             if (unionGeometry != null && !unionGeometry.IsEmpty)
             {
                 var buffer = GeometryEngine.Buffer(unionGeometry, paddingFeet * 0.3048);
+                RememberProposedMainBuffer(buffer);
                 var bufferSymbol = new SimpleFillSymbol(SimpleFillSymbolStyle.Solid, System.Drawing.Color.FromArgb(45, ClampByte(s.R), ClampByte(s.G), ClampByte(s.B)), new SimpleLineSymbol(lineStyle, lineColor, 2));
                 _workOrderOverlay.Graphics.Add(new Graphic(buffer, bufferSymbol));
             }
+        }
+    }
+
+    /// <summary>
+    /// Hands the padding buffer to the view model, so the export can draw the same shape rather than a
+    /// recomputed one. Cleared when there is no buffer, so an export after the padding is set to zero
+    /// does not still write the old boundary.
+    /// </summary>
+    private void RememberProposedMainBuffer(Geometry? buffer)
+    {
+        if (DataContext is ViewModels.ExporterViewModel vm)
+        {
+            vm.ProposedMainBufferOutline = buffer != null && !buffer.IsEmpty ? buffer : null;
         }
     }
 
@@ -246,15 +260,28 @@ public partial class ExporterWindow
         }
         if (parsed.Count == 0) { return geometries; }
         var toleranceSquared = 0.3048 * 0.3048;
+
+        // Every move is worked out against the geometry as it arrived and applied afterwards. Writing
+        // each one as it was found made the result depend on which path happened to be walked first,
+        // and let one snap feed the next.
+        var moves = new List<PendingSnap>();
+
+        // Endpoints something else is already moving to. They stay put: if two ends are each other's
+        // nearest and both move, they swap places and the lines cross.
+        var pinned = new HashSet<(EditablePath Path, int Index)>();
+
         foreach (var source in parsed)
         {
             foreach (var path in source.Paths)
             {
                 if (path.Points.Count < 2) { continue; }
-                snapCount += TrySnapEndpoint(path, 0, parsed, toleranceSquared);
-                snapCount += TrySnapEndpoint(path, path.Points.Count - 1, parsed, toleranceSquared);
+                TryPlanEndpointSnap(path, 0, parsed, toleranceSquared, moves, pinned);
+                TryPlanEndpointSnap(path, path.Points.Count - 1, parsed, toleranceSquared, moves, pinned);
             }
         }
+
+        foreach (var move in moves) { move.Path.Points[move.Index] = move.Target; }
+        snapCount = moves.Count;
         if (snapCount == 0) { return geometries; }
 
         // Rebuilt by source index, and falling back to the original for anything that did not parse
@@ -273,42 +300,140 @@ public partial class ExporterWindow
         return snapped;
     }
 
-    private static int TrySnapEndpoint(EditablePath sourcePath, int endpointIndex, List<EditablePolylineGeometry> allGeometries, double toleranceSquared)
+    private readonly record struct PendingSnap(EditablePath Path, int Index, EditablePoint Target);
+
+    /// <summary>
+    /// Works out where one endpoint should move to, if anywhere, without moving it.
+    ///
+    /// A vertex is looked for before an edge. Two mains that should join do so end to end, and the other
+    /// main's vertex is where it actually stops; the nearest point on its edge can be a long way along
+    /// it, so snapping there closes the gap by overlapping the two lines rather than meeting them.
+    /// </summary>
+    private static void TryPlanEndpointSnap(
+        EditablePath sourcePath, int endpointIndex, List<EditablePolylineGeometry> allGeometries,
+        double toleranceSquared, List<PendingSnap> moves, HashSet<(EditablePath, int)> pinned)
+    {
+        if (pinned.Contains((sourcePath, endpointIndex))) { return; }
+
+        var endpoint = sourcePath.Points[endpointIndex];
+        EditablePoint target;
+
+        if (TryFindNearestVertex(sourcePath, endpointIndex, allGeometries, toleranceSquared, out target, out var targetOwner))
+        {
+            // Whatever this end is going to meet stays where it is, so the two cannot trade places.
+            pinned.Add(targetOwner);
+        }
+        else if (!TryFindNearestEdgePoint(sourcePath, endpointIndex, allGeometries, toleranceSquared, out target))
+        {
+            return;
+        }
+
+        if (DistanceSquared(endpoint, target) <= 0.000000000001) { return; }
+        if (WouldDoubleBackOnItself(sourcePath, endpointIndex, target)) { return; }
+
+        pinned.Add((sourcePath, endpointIndex));
+        moves.Add(new PendingSnap(sourcePath, endpointIndex, target));
+    }
+
+    /// <summary>
+    /// The nearest vertex of another path. Never anything on this path.
+    ///
+    /// Its own far end is excluded too. A main whose two ends pass within a foot of each other is a
+    /// U-turn far more often than it is a loop, and joining them turns an open main into a closed one,
+    /// which changes what it says. A main that really is a loop should be drawn closed.
+    /// </summary>
+    private static bool TryFindNearestVertex(
+        EditablePath sourcePath, int endpointIndex, List<EditablePolylineGeometry> allGeometries,
+        double toleranceSquared, out EditablePoint target, out (EditablePath, int) owner)
     {
         var endpoint = sourcePath.Points[endpointIndex];
-        var best = endpoint;
         var bestDistanceSquared = toleranceSquared;
         var found = false;
+        target = endpoint;
+        owner = (sourcePath, endpointIndex);
+
         foreach (var candidateGeometry in allGeometries)
         {
             foreach (var candidatePath in candidateGeometry.Paths)
             {
                 if (candidatePath.Points.Count < 2) { continue; }
-                for (var i = 0; i < candidatePath.Points.Count - 1; i++)
+                if (ReferenceEquals(candidatePath, sourcePath)) { continue; }
+
+                for (var i = 0; i < candidatePath.Points.Count; i++)
                 {
-                    if (ReferenceEquals(candidatePath, sourcePath) && SegmentContainsEndpoint(sourcePath, i, endpointIndex)) { continue; }
-                    var projected = ClosestPointOnSegment(endpoint, candidatePath.Points[i], candidatePath.Points[i + 1]);
-                    var distanceSquared = DistanceSquared(endpoint, projected);
-                    if (distanceSquared <= bestDistanceSquared)
-                    {
-                        bestDistanceSquared = distanceSquared;
-                        best = projected;
-                        found = true;
-                    }
+                    var distanceSquared = DistanceSquared(endpoint, candidatePath.Points[i]);
+                    if (distanceSquared > bestDistanceSquared) { continue; }
+
+                    bestDistanceSquared = distanceSquared;
+                    target = candidatePath.Points[i];
+                    owner = (candidatePath, i);
+                    found = true;
                 }
             }
         }
-        if (!found) { return 0; }
-        if (DistanceSquared(endpoint, best) <= 0.000000000001) { return 0; }
-        sourcePath.Points[endpointIndex] = best;
-        return 1;
+
+        return found;
     }
 
-    private static bool SegmentContainsEndpoint(EditablePath path, int segmentIndex, int endpointIndex)
+    /// <summary>
+    /// The nearest point on another path's edge, for an end that stops partway along another main
+    /// rather than at its end. Never this path's own edges.
+    ///
+    /// That exclusion is the fix for the zigzag: the old code excluded only the one segment touching the
+    /// endpoint, so on a main that turned back near itself the end could snap onto a later segment of
+    /// the same line and be pulled past its own neighbour, doubling the line back over itself.
+    /// </summary>
+    private static bool TryFindNearestEdgePoint(
+        EditablePath sourcePath, int endpointIndex, List<EditablePolylineGeometry> allGeometries,
+        double toleranceSquared, out EditablePoint target)
     {
-        if (endpointIndex == 0 && segmentIndex == 0) { return true; }
-        if (endpointIndex == path.Points.Count - 1 && segmentIndex == path.Points.Count - 2) { return true; }
-        return false;
+        var endpoint = sourcePath.Points[endpointIndex];
+        var bestDistanceSquared = toleranceSquared;
+        var found = false;
+        target = endpoint;
+
+        foreach (var candidateGeometry in allGeometries)
+        {
+            foreach (var candidatePath in candidateGeometry.Paths)
+            {
+                if (candidatePath.Points.Count < 2) { continue; }
+                if (ReferenceEquals(candidatePath, sourcePath)) { continue; }
+
+                for (var i = 0; i < candidatePath.Points.Count - 1; i++)
+                {
+                    var projected = ClosestPointOnSegment(endpoint, candidatePath.Points[i], candidatePath.Points[i + 1]);
+                    var distanceSquared = DistanceSquared(endpoint, projected);
+                    if (distanceSquared > bestDistanceSquared) { continue; }
+
+                    bestDistanceSquared = distanceSquared;
+                    target = projected;
+                    found = true;
+                }
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Whether moving the end to <paramref name="target"/> would turn its own first segment around.
+    ///
+    /// That means the end has been pulled past the vertex next to it, which is exactly what draws as a
+    /// zigzag. A backstop as much as a rule: with the source path's own edges excluded above this
+    /// should not arise, but a snap that reverses a segment is never what was wanted.
+    /// </summary>
+    private static bool WouldDoubleBackOnItself(EditablePath path, int endpointIndex, EditablePoint target)
+    {
+        var neighbourIndex = endpointIndex == 0 ? 1 : endpointIndex - 1;
+        var endpoint = path.Points[endpointIndex];
+        var neighbour = path.Points[neighbourIndex];
+
+        var beforeX = neighbour.X - endpoint.X;
+        var beforeY = neighbour.Y - endpoint.Y;
+        var afterX = neighbour.X - target.X;
+        var afterY = neighbour.Y - target.Y;
+
+        return beforeX * afterX + beforeY * afterY <= 0;
     }
 
     private static EditablePoint ClosestPointOnSegment(EditablePoint point, EditablePoint start, EditablePoint end)

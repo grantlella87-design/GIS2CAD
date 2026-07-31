@@ -76,6 +76,52 @@ public sealed class CadExportRequest
 
     /// <summary>Template to pull missing blocks and line types from, when one was chosen on page 1.</summary>
     public string? TemplatePath { get; init; }
+
+    /// <summary>
+    /// The basemap image to place under the features, or null for none. Set once the image has been
+    /// downloaded, so the writer only ever deals with a file already on disk.
+    /// </summary>
+    public BasemapImagePlacement? Basemap { get; set; }
+
+    /// <summary>
+    /// The export extent, and the padding buffer around the proposed main where there is one. Their own
+    /// layer, because they describe what was asked for rather than anything found in the ground, and
+    /// because being able to switch off the boundary you worked to is the point of having it separate.
+    /// </summary>
+    public List<ExportOutline> ExtentOutlines { get; } = new();
+
+    public string ExtentLayerName { get; init; } = "GIS_EXPORT_EXTENT";
+}
+
+/// <summary>A boundary drawn as a polyline, with a name saying which boundary it is.</summary>
+public sealed class ExportOutline
+{
+    public string Label { get; init; } = string.Empty;
+    public List<ExportVertex> Vertices { get; } = new();
+}
+
+/// <summary>
+/// A basemap image and the ground it covers, in drawing coordinates.
+///
+/// The corners are what georeference it: AutoCAD places a raster from an origin and two vectors giving
+/// the full width and height of the image, so the extent the image was requested for is exactly the
+/// extent it has to be placed at.
+/// </summary>
+public sealed class BasemapImagePlacement
+{
+    public required string ImagePath { get; init; }
+    public required string LayerName { get; init; }
+
+    /// <summary>Lower left corner of the image, in drawing units.</summary>
+    public double OriginX { get; init; }
+    public double OriginY { get; init; }
+
+    /// <summary>Ground size the image spans, in drawing units.</summary>
+    public double Width { get; init; }
+    public double Height { get; init; }
+
+    /// <summary>Name the image is filed under in the drawing's image dictionary.</summary>
+    public string DefinitionName { get; init; } = "NGGIS_BASEMAP";
 }
 
 /// <summary>What the writer did, so the review page can report it rather than claim success.</summary>
@@ -83,6 +129,8 @@ public sealed class CadExportResult
 {
     public int EntitiesWritten { get; set; }
     public int StripMapSheetsWritten { get; set; }
+    public int ExtentOutlinesWritten { get; set; }
+    public bool BasemapPlaced { get; set; }
     public List<string> CadLayersCreated { get; } = new();
 
     /// <summary>
