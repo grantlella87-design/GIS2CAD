@@ -271,34 +271,28 @@ public partial class ExporterWindow
         sb.AppendLine("}");
         return sb.ToString();
     }
-    private TextBox? FindManualProposedPipelineTextBox()
-    {
-        var allTextBoxes = GetVisualChildren<TextBox>(this).ToList();
-        var preferred = allTextBoxes.FirstOrDefault(tb =>
-            (tb.Name.IndexOf("manual", StringComparison.OrdinalIgnoreCase) >= 0 && tb.Name.IndexOf("pipeline", StringComparison.OrdinalIgnoreCase) >= 0) ||
-            tb.Text.IndexOf("GeometryEditor", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            tb.Text.IndexOf("geometryType", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            tb.Text.IndexOf("capturedLocalTime", StringComparison.OrdinalIgnoreCase) >= 0);
-        return preferred ?? allTextBoxes.OrderByDescending(tb => tb.ActualHeight * tb.ActualWidth).FirstOrDefault();
-    }
+    /// <summary>
+    /// The readout this mode writes its summary into.
+    ///
+    /// Named outright. This used to hunt the visual tree: a name holding both "manual" and "pipeline",
+    /// then any box whose text already looked like one of these summaries, and failing both, the largest
+    /// text box on the window. The real box is called ProposedPipelineTextBox, which has no "manual" in
+    /// it, so the name test never matched and a fresh one has no summary text to match either. Every
+    /// call fell through to the size test and wrote this JSON into whatever box happened to be biggest
+    /// and visible, which was the readout belonging to whichever mode was on screen at the time.
+    /// </summary>
+    private TextBox? FindManualProposedPipelineTextBox() => ProposedPipelineTextBox;
+
+    /// <summary>
+    /// Reports what this mode just did, through the view model's status like everything else.
+    ///
+    /// This also used to walk the tree, for anything named "status". The only two matches in this window
+    /// are the template and SharePoint status lines on page 1, so drawing a segment on page 2 overwrote
+    /// the message telling the user which template they had picked.
+    /// </summary>
     private void SetManualProposedPipelineStatus(string message)
     {
-        foreach (var statusCandidate in GetVisualChildren<TextBlock>(this))
-        {
-            if (statusCandidate.Name.IndexOf("status", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                statusCandidate.Text = message;
-                return;
-            }
-        }
-        foreach (var statusCandidate in GetVisualChildren<TextBox>(this))
-        {
-            if (statusCandidate.Name.IndexOf("status", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                statusCandidate.Text = message;
-                return;
-            }
-        }
+        if (DataContext is ViewModels.ExporterViewModel vm) { vm.Status = message; }
     }
     private void SetLegacySingleManualPipelineGeometryToLastSegment() { SetLegacySingleManualPipelineGeometryToCombinedSegments(); }
     private void SetLegacySingleManualPipelineGeometry(RuntimeGeometry? geometry)
@@ -331,26 +325,9 @@ public partial class ExporterWindow
         }
         return null;
     }
-    private static IEnumerable<T> GetVisualChildren<T>(DependencyObject parent) where T : DependencyObject
-    {
-        if (parent == null)
-        {
-            yield break;
-        }
-        var count = VisualTreeHelper.GetChildrenCount(parent);
-        for (var i = 0; i < count; i++)
-        {
-            var child = VisualTreeHelper.GetChild(parent, i);
-            if (child is T typedChild)
-            {
-                yield return typedChild;
-            }
-            foreach (var nested in GetVisualChildren<T>(child))
-            {
-                yield return nested;
-            }
-        }
-    }
+    // GetVisualChildren was removed with the two callers above. Sweeping the window for a control that
+    // looks about right is what put this mode's text into other modes' boxes, and leaving the sweep in
+    // place would leave the next such call one line away.
     private void StartProposedPipeline_Click(object sender, RoutedEventArgs e)
     {
         StartManualProposedMainSegment_Click(sender, e);
