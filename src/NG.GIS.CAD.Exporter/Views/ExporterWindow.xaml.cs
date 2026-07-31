@@ -16,6 +16,7 @@ using Esri.ArcGISRuntime.Tasks.Geocoding;
 using Esri.ArcGISRuntime.UI;
 using Esri.ArcGISRuntime.UI.Controls;
 using Esri.ArcGISRuntime.UI.Editing;
+using NG.GIS.CAD.Exporter.Models;
 using NG.GIS.CAD.Exporter.ViewModels;
 using NG.GIS.CAD.Exporter.Auth;
 namespace NG.GIS.CAD.Exporter.Views;
@@ -63,6 +64,11 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
         {
             UpdatePageVisibility();
             AttachViewModelEvents();
+
+            // The radio that starts checked raises Checked during InitializeComponent, before there is
+            // a view model to tell, so the opening method is published here instead. Without it the view
+            // model would only learn the method once the user changed it.
+            PublishExportMethodToViewModel();
             ApplyDisplayModeToExtentPage();
 
             // The map is deliberately not started here. DataContext is assigned in the object
@@ -144,10 +150,92 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
     }
     private void ExportDisplayMode_Checked(object sender, RoutedEventArgs e)
     {
+        var previous = _displayMode;
+
         if (ReferenceEquals(sender, WorkOrderDrivenExportRadio)) { _displayMode = ExportDisplayMode.WorkOrder; }
         else if (ReferenceEquals(sender, VisibleMapExportRadio)) { _displayMode = ExportDisplayMode.VisibleMap; }
         else if (ReferenceEquals(sender, ManualProposedPipelineRadio)) { _displayMode = ExportDisplayMode.ManualProposedPipeline; }
+
+        // Only on a real change. This also fires as the window loads, for the radio that starts checked,
+        // and clearing there would be clearing nothing while looking like a decision.
+        if (_displayMode != previous) { ClearProposedMainForMethodChange(); }
+
+        PublishExportMethodToViewModel();
         ApplyDisplayModeToExtentPage();
+    }
+
+    /// <summary>
+    /// Clears the proposed main drawn on page 2 when the export method changes on page 1.
+    ///
+    /// A main drawn or imported under one method does not carry over to another: the methods differ in
+    /// what the export is scoped to, so a line left on the map from the previous one would still be
+    /// feeding the buffer while belonging to a question no longer being asked. Leaving it also reads as
+    /// though it had been kept deliberately.
+    ///
+    /// The buffer, the committed extent and the strip map index go with it. All three were derived from
+    /// the main being cleared or from the method being left, so keeping any of them would leave the
+    /// export working to something nobody asked for under the new method. An extent in particular
+    /// carries the mode it was resolved from, so a stale one looks settled while describing the wrong
+    /// area, which is worse than page 2 saying there is no extent yet.
+    /// </summary>
+    private void ClearProposedMainForMethodChange()
+    {
+        TryStopGeometryEditor();
+
+        _manualProposedPipelineSegmentGeometries.Clear();
+        _manualProposedPipelineEndpointSnapCount = 0;
+        _manualProposedPipelineSegmentOverlay?.Graphics.Clear();
+        SetLegacySingleManualPipelineGeometry(null);
+
+        // The imported or hand edited work order main lives on its own overlay, and is just as much a
+        // line drawn under the old method as the hand drawn segments are.
+        _workOrderOverlay?.Graphics.Clear();
+        _editableImportedProposedMainGeometry = null;
+        _editableImportedProposedMainWorkOrderId = null;
+        _isEditingImportedProposedMain = false;
+        _lastProposedMainEndpointSnapCount = 0;
+
+        // The index is a run of sheets along the main just cleared, so it has nothing left to describe.
+        // Left behind it would still be written into the drawing, which is the trap the viewport method
+        // already had to be guarded against.
+        _stripMapSheets = Array.Empty<Services.StripMapSheet>();
+        _stripMapOverlay?.Graphics.Clear();
+
+        RememberProposedMainBuffer(null);
+
+        if (DataContext is ExporterViewModel vm)
+        {
+            vm.ClearResolvedExtent();
+            vm.StripMapSheets = _stripMapSheets;
+            vm.StripMapSummary = "Export method changed, so the proposed main, the extent and any strip "
+                                 + "map sheets were cleared.";
+        }
+
+        if (IsLoaded) { UpdateManualProposedPipelineSegmentSummary(); }
+    }
+
+    /// <summary>
+    /// Tells the view model which method is selected.
+    ///
+    /// The radios on page 1 set only this window's display mode, and nothing ever set the view model's,
+    /// so it sat on its default whatever was picked. Everything keyed to the method read that default:
+    /// the export was scoped as a corridor job even for a viewport export, and the review page described
+    /// the scope as a buffer regardless.
+    ///
+    /// The hand drawn segments map to <see cref="ExportMethod.DrawPipelineRoute"/> because that is what
+    /// they are, a pipeline route the user drew, and it scopes to the buffer as the work order does.
+    /// </summary>
+    private void PublishExportMethodToViewModel()
+    {
+        if (DataContext is not ExporterViewModel vm) { return; }
+
+        vm.SelectedMethod = _displayMode switch
+        {
+            ExportDisplayMode.WorkOrder => ExportMethod.WorkOrder,
+            ExportDisplayMode.ManualProposedPipeline => ExportMethod.DrawPipelineRoute,
+            ExportDisplayMode.VisibleMap => ExportMethod.CurrentDrawingView,
+            _ => vm.SelectedMethod
+        };
     }
     private void ApplyDisplayModeToExtentPage()
     {

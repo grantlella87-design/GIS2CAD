@@ -280,8 +280,22 @@
                     </Expander>
 
                     <!-- Row 6: strip map index. Collapsed by default and Auto sized, so it takes no
-                         room until it is opened and none of the splitters above it are disturbed. -->
+                         room until it is opened and none of the splitters above it are disturbed.
+
+                         Hidden entirely for the visible map viewport method: the index lays a run of
+                         sheets along a proposed main, and that method has no proposed main to lay them
+                         along. The row is Auto sized, so collapsing it leaves no gap behind. -->
                     <Expander Grid.Row="6" Header="Strip map index" Margin="0,2,0,0">
+                        <Expander.Style>
+                            <Style TargetType="Expander">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsCurrentDrawingViewMethod}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Expander.Style>
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="320">
                             <StackPanel Margin="4,6,4,4">
                                 <TextBlock Text="Lays a run of sheets along the proposed main, each covering what one viewport shows at the plot scale."
@@ -527,7 +541,7 @@
                     <TextBlock Text="Strip map index layer" FontWeight="SemiBold" Margin="0,6,0,4"/>
                     <TextBox Text="{Binding StripMapCadLayerName, UpdateSourceTrigger=PropertyChanged}" Width="320" HorizontalAlignment="Left"
                              ToolTip="The CAD layer the strip map sheet frames and their numbers are drawn on. Kept separate from the GIS layers, because the index describes the sheet set rather than anything in the ground."/>
-                    <TextBlock Text="Sheet frames go on this layer only, so they can be turned off or plotted on their own. Nothing is written here unless a strip map index has been built on page 2."
+                    <TextBlock Text="Sheet frames go on this layer only, so they can be turned off or plotted on their own. Nothing is written here unless a strip map index has been built on page 2, and nothing is written for a visible map viewport export, which has no proposed main to lay sheets along."
                                TextWrapping="Wrap" Foreground="#777777" FontSize="11" Margin="0,4,0,0"/>
 
                     <Separator Margin="0,16,0,12"/>
@@ -540,7 +554,7 @@
                         <TextBlock Text="Export boundary CAD layer" Margin="0,0,0,4"/>
                         <TextBox Text="{Binding BoundaryCadLayerName, UpdateSourceTrigger=PropertyChanged}" Width="320" HorizontalAlignment="Left"
                                  ToolTip="The boundary goes on this layer alone, so the area you worked to can be switched off when the drawing is issued."/>
-                        <TextBlock Text="Which shape scopes the export follows the method chosen on page 1: a work order or a drawn pipeline is scoped to the padding buffer around the main, and the current drawing view or a typed extent to the bounding box. Where a buffer is called for but the padding is zero, the box is used and the status line says so."
+                        <TextBlock Text="Which shape scopes the export follows the method chosen on page 1: a work order or a drawn pipeline is scoped to the padding buffer around the main, and the current drawing view or a typed extent to the bounding box. Everything intersecting that shape is imported. On a corridor job the extent rectangle is never drawn, only the buffer; where a buffer is called for but the padding is zero, the box is used to fetch, nothing is drawn, and the status line says so."
                                    TextWrapping="Wrap" Foreground="#777777" FontSize="11" Margin="0,4,0,0"/>
                     </StackPanel>
 
