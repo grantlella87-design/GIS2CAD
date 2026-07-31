@@ -113,14 +113,9 @@ public sealed class CadGeoMapService
         using var documentLock = document.LockDocument();
         var database = document.Database;
 
-        // PostToDb takes no arguments, so it has to find the database for itself, and what it finds is
-        // the working database rather than the one the block table record belongs to. From a modeless
-        // window there is nothing to make those the same, and when they are not the attach fails with
-        // eNoDatabase. Locking the document does not set it either: the lock says the drawing may be
-        // written to, not which drawing "the" drawing is.
-        //
-        // So it is pointed at this document for the length of the attach and put back afterwards, the
-        // same shape as the system variables this codebase already sets and restores around a read.
+        // The working database is pointed at this document for the duration. PostToDb takes no arguments
+        // and has to find a database for itself, and from a modeless window there is nothing making the
+        // working one the document's.
         var previousWorkingDatabase = HostApplicationServices.WorkingDatabase;
         try
         {
@@ -132,21 +127,40 @@ public sealed class CadGeoMapService
             var modelSpaceId = SymbolUtilityServices.GetBlockModelSpaceId(database);
 
             using var geoData = new GeoLocationData();
+
+            // Attached before it is configured, which is the opposite of the obvious order and is the
+            // point. Most of what a geographic location holds is written through the database it belongs
+            // to, so setting those on an object that has not been attached yet has no database to write
+            // to, which is what eNoDatabase was saying. The block table record id is the exception: it is
+            // what PostToDb reads to know where it is going, so it has to come first.
             geoData.BlockTableRecordId = modelSpaceId;
-            geoData.CoordinateSystem = ResolveCoordinateSystem(wkText, outWkid);
-
-            // Without this the location is left as CoordinateTypeUnknown, which is what a location that
-            // has not really been set looks like, and AutoCAD treats it accordingly. A state plane
-            // projection is a grid system, so that is what it is declared as.
-            geoData.TypeOfCoordinates = TypeOfCoordinates.CoordinateTypeGrid;
-
-            // The same point twice. The drawing is in the system just named, so the point on the ground
-            // and the point in the drawing are the same numbers, and the transformation is an identity.
-            geoData.DesignPoint = new Point3d(anchorX, anchorY, 0.0);
-            geoData.ReferencePoint = new Point3d(anchorX, anchorY, 0.0);
-
             geoData.PostToDb();
-            geoData.UpdateTransformationMatrix();
+
+            try
+            {
+                geoData.CoordinateSystem = ResolveCoordinateSystem(wkText, outWkid);
+
+                // Without this the location stays CoordinateTypeUnknown, which is what a location that
+                // has not really been set looks like, and AutoCAD treats it accordingly. A state plane
+                // projection is a grid system, so that is what it is declared as.
+                geoData.TypeOfCoordinates = TypeOfCoordinates.CoordinateTypeGrid;
+
+                // The same point twice. The drawing is in the system just named, so the point on the
+                // ground and the point in the drawing are the same numbers, and the transform is an
+                // identity.
+                geoData.DesignPoint = new Point3d(anchorX, anchorY, 0.0);
+                geoData.ReferencePoint = new Point3d(anchorX, anchorY, 0.0);
+
+                geoData.UpdateTransformationMatrix();
+            }
+            catch
+            {
+                // Attaching first means a failure now leaves a location on the drawing that says almost
+                // nothing. Worse, it would answer yes to "does this drawing have a location", so every
+                // export after it would skip setting one and never recover. Taken back off instead.
+                try { geoData.EraseFromDb(); } catch { }
+                throw;
+            }
         }
         finally
         {
