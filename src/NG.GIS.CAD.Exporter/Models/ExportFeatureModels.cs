@@ -187,6 +187,9 @@ public sealed class CadExportResult
     public int EntitiesWritten { get; set; }
     public int StripMapSheetsWritten { get; set; }
     public int BoundaryOutlinesWritten { get; set; }
+
+    /// <summary>Polygon fills written. Counted apart from entities so the report can say they happened.</summary>
+    public int HatchesWritten { get; set; }
     public bool BasemapPlaced { get; set; }
     public List<string> CadLayersCreated { get; } = new();
 

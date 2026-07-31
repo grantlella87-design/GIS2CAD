@@ -192,6 +192,9 @@ public sealed class CadExportWriter
             blockId = ResolveBlock(database, transaction, layer.Transform.BlockName, templateDatabase, result);
         }
 
+        var isPolygon = layer.GeometryType.Contains("Polygon", StringComparison.OrdinalIgnoreCase);
+        var hatchPolygons = isPolygon && layer.Transform.HatchPolygons;
+
         foreach (var feature in layer.Features)
         {
             foreach (var part in feature.Parts)
@@ -211,6 +214,14 @@ public sealed class CadExportWriter
                 modelSpace.AppendEntity(entity);
                 transaction.AddNewlyCreatedDBObject(entity, true);
                 result.EntitiesWritten++;
+
+                // A hatch needs a boundary that is already in the drawing, so this follows the outline
+                // rather than replacing it. A ring with fewer than three vertices encloses nothing and
+                // would give the hatch no area to fill.
+                if (hatchPolygons && part.Count >= 3)
+                {
+                    WritePolygonHatch(entity, cadLayerName, layer.Transform, transaction, modelSpace, result);
+                }
             }
         }
     }
@@ -250,6 +261,70 @@ public sealed class CadExportWriter
         }
 
         return polyline;
+    }
+
+    /// <summary>
+    /// Fills a polygon outline with a hatch.
+    ///
+    /// The boundary has to be in the drawing before a hatch can point at it, and the hatch itself has to
+    /// be in the drawing before its loop can be appended, which is why the order here looks fussier than
+    /// it reads: append, pattern, loop, evaluate.
+    ///
+    /// Associative, so the fill follows the boundary if the outline is later stretched or its vertices
+    /// moved. A fill that stayed behind when its boundary moved would be worse than no fill, because it
+    /// would still look like an answer.
+    ///
+    /// A hatch that will not evaluate is reported and skipped. The outline is already written and is the
+    /// part that carries the geometry, so a failure here costs presentation rather than data.
+    /// </summary>
+    private static void WritePolygonHatch(
+        Entity boundary, string cadLayerName, CadTransformRule rule,
+        Transaction transaction, BlockTableRecord modelSpace, CadExportResult result)
+    {
+        try
+        {
+            var hatch = new Hatch();
+            hatch.Layer = cadLayerName;
+
+            modelSpace.AppendEntity(hatch);
+            transaction.AddNewlyCreatedDBObject(hatch, true);
+
+            var pattern = string.IsNullOrWhiteSpace(rule.HatchPattern) ? "SOLID" : rule.HatchPattern.Trim();
+            hatch.SetHatchPattern(HatchPatternType.PreDefined, pattern);
+
+            // SOLID has nothing to space, and giving it a scale is the kind of setting that is quietly
+            // ignored until someone changes the pattern and cannot see why the spacing is wrong.
+            if (!pattern.Equals("SOLID", StringComparison.OrdinalIgnoreCase) && rule.HatchScale > 0)
+            {
+                hatch.PatternScale = rule.HatchScale;
+                hatch.SetHatchPattern(HatchPatternType.PreDefined, pattern);
+            }
+
+            hatch.Associative = true;
+            hatch.AppendLoop(HatchLoopTypes.Outermost, new ObjectIdCollection { boundary.ObjectId });
+            hatch.EvaluateHatch(true);
+
+            // After evaluating, so the fill is drawn with the transparency rather than evaluated and then
+            // changed, and only when asked for: zero here means opaque, which is AutoCAD's own reading.
+            var transparency = Math.Clamp(rule.HatchTransparencyPercent, 0, 90);
+            if (transparency > 0)
+            {
+                // AutoCAD stores transparency as an alpha, 255 being opaque, so a percentage has to be
+                // turned around before it means the same thing.
+                var alpha = (byte)Math.Round(255.0 * (100 - transparency) / 100.0);
+                hatch.Transparency = new Autodesk.AutoCAD.Colors.Transparency(alpha);
+            }
+
+            ApplyEntityColor(hatch, rule);
+            result.EntitiesWritten++;
+            result.HatchesWritten++;
+        }
+        catch (Exception ex)
+        {
+            var note = "A polygon on layer " + cadLayerName + " was outlined but could not be hatched: "
+                       + ex.Message;
+            if (!result.Warnings.Contains(note)) { result.Warnings.Add(note); }
+        }
     }
 
     /// <summary>

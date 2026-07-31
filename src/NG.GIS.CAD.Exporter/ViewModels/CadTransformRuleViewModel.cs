@@ -68,6 +68,67 @@ public sealed class CadTransformRuleViewModel : ObservableObject
             RaisePropertyChanged();
         }
     }
+
+    /// <summary>
+    /// Whether this layer is areas. Hatching only means anything for those, so the settings for it are
+    /// shown for a polygon layer and nowhere else.
+    /// </summary>
+    public bool IsPolygon =>
+        Rule.GeometryType.Contains("Polygon", StringComparison.OrdinalIgnoreCase);
+
+    public bool HatchPolygons
+    {
+        get => Rule.HatchPolygons;
+        set
+        {
+            Rule.HatchPolygons = value;
+            RaisePropertyChanged();
+        }
+    }
+
+    public string HatchPattern
+    {
+        get => Rule.HatchPattern;
+        set
+        {
+            Rule.HatchPattern = value;
+            RaisePropertyChanged();
+            RaisePropertyChanged(nameof(HatchScaleApplies));
+        }
+    }
+
+    /// <summary>
+    /// Whether the spacing box is worth offering. SOLID has nothing to space, so a value typed against
+    /// it would be taken and ignored, which reads as the setting not working.
+    /// </summary>
+    public bool HatchScaleApplies =>
+        !string.Equals(Rule.HatchPattern?.Trim(), "SOLID", StringComparison.OrdinalIgnoreCase);
+
+    public double HatchScale
+    {
+        get => Rule.HatchScale;
+        set
+        {
+            Rule.HatchScale = value;
+            RaisePropertyChanged();
+        }
+    }
+
+    public int HatchTransparencyPercent
+    {
+        get => Rule.HatchTransparencyPercent;
+        set
+        {
+            Rule.HatchTransparencyPercent = Math.Clamp(value, 0, 90);
+            RaisePropertyChanged();
+        }
+    }
+
+    /// <summary>The patterns offered, being the ones that ship with AutoCAD and read on a plan.</summary>
+    public IReadOnlyList<string> HatchPatterns { get; } = new[]
+    {
+        "SOLID", "ANSI31", "ANSI32", "ANSI37", "EARTH", "GRAVEL", "HONEY", "NET", "STEEL"
+    };
     public string ColorMode
     {
         get => Rule.ColorMode;

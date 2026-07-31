@@ -651,6 +651,10 @@ public sealed partial class ExporterViewModel
             var name = boundary?.Kind == ExportBoundaryKind.Buffer ? "padding buffer" : "extent bounding box";
             message += $" Scoped to the {name}, drawn as {result.BoundaryOutlinesWritten} outline(s).";
         }
+        if (result.HatchesWritten > 0)
+        {
+            message += $" Polygon fills: {result.HatchesWritten}.";
+        }
         if (result.BasemapPlaced)
         {
             message += " Basemap placed behind the features.";
