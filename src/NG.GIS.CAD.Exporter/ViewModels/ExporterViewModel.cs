@@ -665,7 +665,7 @@ public sealed partial class ExporterViewModel : ObservableObject
             var path = await _services.ExportPlanStore.SaveLatestAsync(plan, CancellationToken.None);
             var scope = boundary?.Kind == ExportBoundaryKind.Buffer ? "padding buffer" : "extent bounding box";
             Status = $"Export plan saved: {path}. Counted against the {scope}."
-                     + (string.IsNullOrEmpty(_boundaryNote) ? string.Empty : " " + _boundaryNote);
+                     + (string.IsNullOrEmpty(_exportNote) ? string.Empty : " " + _exportNote);
         }
         catch (Exception ex) { Status = "Export plan failed: " + ex.Message; }
     }

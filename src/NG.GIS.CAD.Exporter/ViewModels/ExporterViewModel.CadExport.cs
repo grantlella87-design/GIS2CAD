@@ -32,15 +32,17 @@ public sealed partial class ExporterViewModel
     private string _boundaryCadLayerName = "GIS_EXPORT_BOUNDARY";
 
     /// <summary>
-    /// Set when the boundary that was used is not the one the method calls for, and read once the export
-    /// has finished. Held rather than announced because the status line is rewritten several times on the
-    /// way through, and a warning that scrolls past unread is no warning at all.
+    /// Anything the export did differently from what the settings imply, read once it has finished: a
+    /// boundary that is not the one the method calls for, or an index that was left out.
+    ///
+    /// Held rather than announced because the status line is rewritten several times on the way through,
+    /// and a warning that scrolls past unread is no warning at all.
     /// </summary>
-    private string _boundaryNote = string.Empty;
+    private string _exportNote = string.Empty;
 
     /// <summary>Adds to the note rather than replacing it, so a second reason is not lost to the first.</summary>
-    private void AddBoundaryNote(string note) =>
-        _boundaryNote = string.IsNullOrEmpty(_boundaryNote) ? note : _boundaryNote + " " + note;
+    private void AddExportNote(string note) =>
+        _exportNote = string.IsNullOrEmpty(_exportNote) ? note : _exportNote + " " + note;
 
     /// <summary>
     /// Whether the boundary that scoped the import is drawn in the drawing. On by default: it is one
@@ -76,9 +78,9 @@ public sealed partial class ExporterViewModel
 
     /// <summary>What the review page says about the boundary, so the scope is stated before the write.</summary>
     public string BoundaryDescription => BoundaryKind == ExportBoundaryKind.Buffer
-        ? $"Features are taken from the {PaddingFeet:0.#} ft buffer around the proposed main, and that "
-          + "buffer is what gets drawn."
-        : "Features are taken from the extent bounding box, and that box is what gets drawn.";
+        ? $"Everything intersecting the {PaddingFeet:0.#} ft buffer around the proposed main is imported, "
+          + "and that buffer is the only boundary drawn. The extent rectangle around it is not written."
+        : "Everything intersecting the extent bounding box is imported, and that box is what gets drawn.";
 
     private bool _includeBasemapInExport;
     private BasemapChoice _selectedExportBasemap = BasemapImageService.DefaultChoices[0];
@@ -206,7 +208,7 @@ public sealed partial class ExporterViewModel
             var result = _services.CadExportWriter.Write(request);
 
             var message = DescribeExportResult(result, totalFeatures, outWkid, boundary);
-            Status = string.IsNullOrEmpty(_boundaryNote) ? message : message + " " + _boundaryNote;
+            Status = string.IsNullOrEmpty(_exportNote) ? message : message + " " + _exportNote;
         }
         catch (Exception ex)
         {
@@ -227,7 +229,7 @@ public sealed partial class ExporterViewModel
     /// </summary>
     private ExportBoundary? BuildExportBoundary(int outWkid)
     {
-        _boundaryNote = string.Empty;
+        _exportNote = string.Empty;
         if (_resolvedExtent == null) { return null; }
 
         if (BoundaryKind == ExportBoundaryKind.Buffer)
@@ -241,9 +243,11 @@ public sealed partial class ExporterViewModel
             //
             // Kept for the end rather than put on the status line now, because everything that follows
             // overwrites the status and the one line the user reads is the one left when it finishes.
-            AddBoundaryNote("This method scopes to the padding buffer, but none was available, so the "
-                            + "extent bounding box was used and more ground came in than the corridor. "
-                            + "Set a padding distance on page 2 to scope to the corridor instead.");
+            AddExportNote("This method scopes to the padding buffer, but none was available, so the "
+                            + "extent bounding box was used to fetch and more ground came in than the "
+                            + "corridor. No boundary was drawn, because a rectangle is not the shape you "
+                            + "asked to work to. Set a padding distance on page 2 to scope to the "
+                            + "corridor instead.");
         }
 
         return BuildExtentBoxBoundary(outWkid);
@@ -297,7 +301,7 @@ public sealed partial class ExporterViewModel
         }
         catch (Exception ex)
         {
-            AddBoundaryNote("The padding buffer could not be prepared, so the extent bounding box was "
+            AddExportNote("The padding buffer could not be prepared, so the extent bounding box was "
                             + "used instead: " + ex.Message);
             return null;
         }
@@ -355,7 +359,7 @@ public sealed partial class ExporterViewModel
         }
         catch (Exception ex)
         {
-            AddBoundaryNote("The export extent could not be projected into drawing coordinates, so no "
+            AddExportNote("The export extent could not be projected into drawing coordinates, so no "
                             + "boundary was drawn: " + ex.Message);
             return null;
         }
@@ -381,6 +385,15 @@ public sealed partial class ExporterViewModel
             }
             return;
         }
+
+        // A corridor job never draws a rectangle. The buffer is the boundary that means anything there,
+        // and the extent around it is an artefact of how the area was worked out rather than something
+        // the user asked for, so it does not belong in the drawing.
+        //
+        // This reaches here only when the buffer could not be built and the box was used to fetch. The
+        // scope is then wider than the drawn boundary would suggest, which is exactly why no boundary is
+        // drawn rather than a misleading one: the status line reports the fallback instead.
+        if (BoundaryKind == ExportBoundaryKind.Buffer) { return; }
 
         var rectangle = new ExportOutline { Label = boundary.Label };
         rectangle.Vertices.Add(new ExportVertex(boundary.XMin, boundary.YMin));
@@ -491,6 +504,18 @@ public sealed partial class ExporterViewModel
     private void AddStripMapSheetsToRequest(CadExportRequest request, int outWkid)
     {
         if (StripMapSheets.Count == 0) { return; }
+
+        // The viewport method hides the strip map pane, because an index is a run of sheets along a
+        // proposed main and that method has no main to run along. Hiding the pane is not enough on its
+        // own: an index built under another method would otherwise still be written, out of sight of the
+        // page that would have explained it.
+        if (SelectedMethod == ExportMethod.CurrentDrawingView)
+        {
+            AddExportNote("A strip map index was built under another method and was not written, "
+                            + "because the visible map viewport export has no proposed main to lay "
+                            + "sheets along.");
+            return;
+        }
 
         SpatialReference target;
         try
