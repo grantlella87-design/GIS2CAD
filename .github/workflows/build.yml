@@ -1,0 +1,49 @@
+# Compiles the plug-in on Windows.
+#
+# The project is WPF and WinForms on net8.0-windows, which cannot be built on Linux at all: the Windows
+# Desktop targeting pack is Windows only. A Windows runner is the only way this gets compiled without a
+# developer machine, and until it did, changes were being reviewed and merged having never seen a
+# compiler.
+#
+# AutoCAD is not installed here. The csproj takes its three AutoCAD assemblies from Autodesk's NuGet
+# packages when CI is set, which GitHub Actions sets for every step.
+name: Build
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # Keyed on the project file, which is what pins every package version here.
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore NG.GIS.CAD.Exporter.sln
+
+      # Warnings are shown but do not fail the build. The point of this workflow is to catch what does
+      # not compile; turning the existing warnings into errors on day one would fail every run and teach
+      # everyone to ignore it.
+      - name: Build
+        run: dotnet build NG.GIS.CAD.Exporter.sln --configuration Release --no-restore
