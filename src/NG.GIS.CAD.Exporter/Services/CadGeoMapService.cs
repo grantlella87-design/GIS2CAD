@@ -151,16 +151,22 @@ public sealed class CadGeoMapService
                 catch (Exception ex) { failed.Add(part + " (" + ex.Message + ")"); }
             }
 
-            Attempt("coordinate system", () => geoData.CoordinateSystem = ResolveCoordinateSystem(wkText, outWkid));
+            // The coordinate system is offered every way of naming it in turn, stopping at the first that
+            // is accepted. One string was refused with eNotImplementedYet, which reads as the setter not
+            // existing but is also what some of these APIs answer for input they cannot use. Offering a
+            // different form is the only way to tell those apart, and each refusal is recorded with the
+            // form that drew it so the answer is in the message rather than in another guess.
+            var coordinateSystemFailed = true;
+            foreach (var candidate in CoordinateSystemCandidates(wkText, outWkid))
+            {
+                var before = failed.Count;
+                Attempt("coordinate system as " + DescribeCandidate(candidate), () => geoData.CoordinateSystem = candidate);
+                if (failed.Count == before) { coordinateSystemFailed = false; break; }
+            }
 
-            // The coordinate system is the one part with nothing to fall back on. Without it the location
-            // names no projection, so it says nothing and would still answer yes to whether the drawing
-            // has one, leaving every later export to skip setting a real one.
-            //
-            // The rest are still attempted even when it fails, rather than bailing out here. Knowing
-            // which of them this release also refuses is the point of taking them one at a time, and
-            // that is worth more than the moment saved by stopping early.
-            var coordinateSystemFailed = failed.Count > 0;
+            // The rest are set even when every form of the coordinate system was refused, rather than
+            // giving up here. They were all accepted last time, and confirming that stays true is what
+            // says the refusal is about this one setter rather than about the location as a whole.
 
             // Without this the location stays CoordinateTypeUnknown, which is what a location that has
             // not really been set looks like. A state plane projection is a grid system.
@@ -203,33 +209,73 @@ public sealed class CadGeoMapService
     }
 
     /// <summary>
-    /// What to hand AutoCAD as the coordinate system.
-    ///
-    /// AutoCAD keeps its own library of coordinate systems, each with an ID of its own, and that ID is
-    /// what a geographic location is normally set from. It will take a full definition instead, which is
-    /// what the well known text is, but going through the library first means the drawing ends up naming
-    /// the same system AutoCAD would have named had someone picked it from the dialog.
-    ///
-    /// Tried by well known text and then by EPSG code, since the library indexes both, and falling back
-    /// to the well known text itself when neither is recognised. Every step is a way of saying the same
-    /// projection, so a fallback narrows nothing.
+    /// Names a candidate for the status line without printing a whole well known text at the user, which
+    /// runs to hundreds of characters and would bury the part worth reading.
     /// </summary>
-    private static string ResolveCoordinateSystem(string wkText, int outWkid)
+    private static string DescribeCandidate(string candidate) =>
+        candidate.Length <= 24 ? "\"" + candidate + "\"" : "its full definition";
+
+    /// <summary>
+    /// Every way of naming this projection that is worth offering AutoCAD, best first.
+    ///
+    /// The setter answered eNotImplementedYet to one string, which reads as the method not existing but
+    /// is also what some of these APIs return for input they cannot use. Those are worth telling apart,
+    /// and the only way to tell them apart is to offer a different string and see whether the answer
+    /// changes. If every form is refused identically then the setter really is missing, and no amount of
+    /// rephrasing will help.
+    ///
+    /// Best first means AutoCAD's own library ID, since that is what a geographic location set from the
+    /// dialog would hold. The library is asked by definition, then by EPSG code, then by walking it for
+    /// a system carrying that code, which is the one route that does not depend on the library parsing
+    /// anything. The definition itself is last, as the form that needs no library at all.
+    /// </summary>
+    private static IReadOnlyList<string> CoordinateSystemCandidates(string wkText, int outWkid)
     {
-        foreach (var candidate in new[] { wkText, "EPSG:" + outWkid.ToString(CultureInfo.InvariantCulture) })
+        var candidates = new List<string>();
+
+        void Add(string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value) && !candidates.Contains(value)) { candidates.Add(value); }
+        }
+
+        var epsg = "EPSG:" + outWkid.ToString(CultureInfo.InvariantCulture);
+
+        foreach (var lookup in new[] { wkText, epsg })
         {
             try
             {
-                using var system = GeoCoordinateSystem.Create(candidate);
-                if (!string.IsNullOrWhiteSpace(system?.ID)) { return system.ID; }
+                using var system = GeoCoordinateSystem.Create(lookup);
+                Add(system?.ID);
             }
             catch
             {
-                // Not a form this library recognises. The next candidate, or the raw definition below.
+                // Not a form this library parses. The next lookup, or the walk below.
             }
         }
 
-        return wkText;
+        // Walking the library asks it nothing except what it already holds, so it still finds the system
+        // when the parsing routes have failed. Only worth the walk when they have.
+        if (candidates.Count == 0)
+        {
+            try
+            {
+                foreach (var system in GeoCoordinateSystem.CreateAll())
+                {
+                    using (system)
+                    {
+                        if (system.EPSGcode == outWkid) { Add(system.ID); break; }
+                    }
+                }
+            }
+            catch
+            {
+                // No library to walk, or it refused. The definition below still stands.
+            }
+        }
+
+        Add(epsg);
+        Add(wkText);
+        return candidates;
     }
 
     /// <summary>
