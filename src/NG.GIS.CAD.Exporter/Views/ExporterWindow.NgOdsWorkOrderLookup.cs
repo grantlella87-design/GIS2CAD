@@ -58,8 +58,13 @@ public partial class ExporterWindow
         var token = _ngOdsWorkOrderLookupCts.Token;
         try
         {
-            if (WorkOrderSelectionComboBox != null) { WorkOrderSelectionComboBox.IsEnabled = false; }
-            if (WorkOrderNameComboBox != null) { WorkOrderNameComboBox.IsEnabled = false; }
+            // The boxes stay usable while this runs. They used to be disabled for the duration, which
+            // meant a user who already knew the work order number had to watch a list of thousands load
+            // before they could type six digits into it. The list is a convenience for finding a number
+            // that is not known; it is not a precondition for entering one.
+            //
+            // Nothing here depends on them being locked. The text is read when it is needed rather than
+            // held, and the load only ever adds rows to filter against.
             if (!EnsureNgOdsConnection(forcePrompt: false)) { return; }
 
             // A prefetch started at command entry is usually already running, and may already be
@@ -110,6 +115,18 @@ public partial class ExporterWindow
             if (token.IsCancellationRequested) { return; }
             _ngOdsWorkOrders = items.ToList();
             _ngOdsLoadFailed = false;
+
+            // Anything typed while this was loading is now worth filtering by. Showing the first rows of
+            // the whole list instead would throw away what the user had already told us and leave them
+            // to retype it, which is the same wait they were just spared.
+            var typedNumber = WorkOrderSelectionComboBox?.Text?.Trim();
+            var typedName = WorkOrderNameComboBox?.Text?.Trim();
+            if (!string.IsNullOrWhiteSpace(typedNumber) || !string.IsNullOrWhiteSpace(typedName))
+            {
+                ApplyNgOdsLocalFilter(typedNumber, typedName, "typed while loading");
+                return;
+            }
+
             BindNgOdsDropdowns(_ngOdsWorkOrders.Take(NgOdsDropdownDisplayLimit).ToList(), null, null);
             var shown = Math.Min(NgOdsDropdownDisplayLimit, _ngOdsWorkOrders.Count);
             SetNgOdsStatus($"Loaded {_ngOdsWorkOrders.Count:N0} work orders from NG_ODS. Showing first {shown:N0}; type to filter locally.");
@@ -119,11 +136,6 @@ public partial class ExporterWindow
             _ngOdsLoadFailed = true;
             SetNgOdsStatus("NG_ODS work order load failed: " + NgOdsConnection.SummarizeError(FlattenNgOdsException(ex))
                 + " Open a work order dropdown to try again.");
-        }
-        finally
-        {
-            if (WorkOrderSelectionComboBox != null) { WorkOrderSelectionComboBox.IsEnabled = true; }
-            if (WorkOrderNameComboBox != null) { WorkOrderNameComboBox.IsEnabled = true; }
         }
     }
 
