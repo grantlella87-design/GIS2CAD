@@ -136,30 +136,57 @@ public sealed class CadGeoMapService
             geoData.BlockTableRecordId = modelSpaceId;
             geoData.PostToDb();
 
-            try
+            // Each part on its own, so a failure names the part rather than the whole. Not all of these
+            // managed setters are implemented in every release -- one of them answers eNotImplementedYet
+            // -- and a single try around the lot reports that without saying which, which is the
+            // difference between knowing what to do next and guessing again.
+            //
+            // They are also independent. A setter that is missing does not stop the others from landing,
+            // and a location carrying most of what it should is worth more than none at all.
+            var failed = new List<string>();
+
+            void Attempt(string part, Action set)
             {
-                geoData.CoordinateSystem = ResolveCoordinateSystem(wkText, outWkid);
-
-                // Without this the location stays CoordinateTypeUnknown, which is what a location that
-                // has not really been set looks like, and AutoCAD treats it accordingly. A state plane
-                // projection is a grid system, so that is what it is declared as.
-                geoData.TypeOfCoordinates = TypeOfCoordinates.CoordinateTypeGrid;
-
-                // The same point twice. The drawing is in the system just named, so the point on the
-                // ground and the point in the drawing are the same numbers, and the transform is an
-                // identity.
-                geoData.DesignPoint = new Point3d(anchorX, anchorY, 0.0);
-                geoData.ReferencePoint = new Point3d(anchorX, anchorY, 0.0);
-
-                geoData.UpdateTransformationMatrix();
+                try { set(); }
+                catch (Exception ex) { failed.Add(part + " (" + ex.Message + ")"); }
             }
-            catch
+
+            Attempt("coordinate system", () => geoData.CoordinateSystem = ResolveCoordinateSystem(wkText, outWkid));
+
+            // The coordinate system is the one part with nothing to fall back on. Without it the location
+            // names no projection, so it says nothing and would still answer yes to whether the drawing
+            // has one, leaving every later export to skip setting a real one.
+            //
+            // The rest are still attempted even when it fails, rather than bailing out here. Knowing
+            // which of them this release also refuses is the point of taking them one at a time, and
+            // that is worth more than the moment saved by stopping early.
+            var coordinateSystemFailed = failed.Count > 0;
+
+            // Without this the location stays CoordinateTypeUnknown, which is what a location that has
+            // not really been set looks like. A state plane projection is a grid system.
+            Attempt("coordinate type", () => geoData.TypeOfCoordinates = TypeOfCoordinates.CoordinateTypeGrid);
+
+            // The same point twice. The drawing is in the system just named, so the point on the ground
+            // and the point in the drawing are the same numbers, and the transform is an identity.
+            Attempt("design point", () => geoData.DesignPoint = new Point3d(anchorX, anchorY, 0.0));
+            Attempt("reference point", () => geoData.ReferencePoint = new Point3d(anchorX, anchorY, 0.0));
+            Attempt("transformation matrix", () => geoData.UpdateTransformationMatrix());
+
+            if (coordinateSystemFailed)
             {
-                // Attaching first means a failure now leaves a location on the drawing that says almost
-                // nothing. Worse, it would answer yes to "does this drawing have a location", so every
-                // export after it would skip setting one and never recover. Taken back off instead.
+                // Taken back off, so the next export tries again rather than finding a location that
+                // exists and describes nothing.
                 try { geoData.EraseFromDb(); } catch { }
-                throw;
+                throw new InvalidOperationException(
+                    "this release refused the coordinate system, so the location would have named no "
+                    + "projection. What was tried, and what each said: " + string.Join("; ", failed));
+            }
+
+            if (failed.Count > 0)
+            {
+                return "Geographic location set to " + SpatialReferenceNames.Describe(outWkid)
+                       + ", though this release did not accept all of it: " + string.Join("; ", failed)
+                       + ". The map may still place correctly; if it does not, that list is why.";
             }
         }
         finally
