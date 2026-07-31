@@ -82,7 +82,7 @@ public sealed partial class ExporterViewModel
           + "and that buffer is the only boundary drawn. The extent rectangle around it is not written."
         : "Everything intersecting the extent bounding box is imported, and that box is what gets drawn.";
 
-    private bool _includeBasemapInExport = true;
+    private bool _includeBasemapInExport;
     private BasemapChoice _selectedExportBasemap = BasemapImageService.DefaultChoice;
     private string _basemapCadLayerName = "GIS_BASEMAP";
     private int _basemapImagePixels = 2048;
@@ -94,14 +94,17 @@ public sealed partial class ExporterViewModel
     /// <summary>
     /// Whether a basemap image goes into the drawing.
     ///
-    /// On by default. Exported features land on blank paper otherwise, and nothing in the drawing shows
-    /// whether they came down in the right place: a projection or extent that was wrong by a street
-    /// looks exactly like one that was right. A backdrop is what makes the placement checkable, and it
-    /// is worth having by default for the same reason a survey is checked against a known point.
+    /// Off by default. Seeing where the export landed is what AutoCAD's own geographic map is for, and
+    /// that is switched on after every export without writing anything: it costs the drawing nothing
+    /// and can be turned off again from AutoCAD.
     ///
-    /// It does write a real raster beside the profile that the drawing then references by path, so the
-    /// drawing gains a dependency on a file that can be moved. That is the cost of being able to see
-    /// where the export landed, and the tick turns it off for a drawing being issued.
+    /// This is the other kind of basemap, a real raster written beside the profile that the drawing
+    /// then references by path, so the drawing gains a dependency on a file that can be moved or
+    /// deleted. That is worth having when the backdrop must travel with the drawing to someone who
+    /// cannot fetch a map themselves, which is a deliberate choice rather than a default.
+    ///
+    /// When it is turned on, <see cref="SelectedExportBasemap"/> already names a real service, so the
+    /// tick alone is enough and does not silently produce nothing.
     /// </summary>
     public bool IncludeBasemapInExport
     {
@@ -215,8 +218,13 @@ public sealed partial class ExporterViewModel
             Status = $"Writing {totalFeatures} feature(s) into the drawing...";
             var result = _services.CadExportWriter.Write(request);
 
+            // Only once the write has succeeded. Turning the map on after a failed export would put a
+            // backdrop under nothing and read as though something had landed.
+            var geoMap = _services.CadGeoMapService.TurnOn();
+
             var message = DescribeExportResult(result, totalFeatures, outWkid, boundary);
             Status = string.IsNullOrEmpty(_exportNote) ? message : message + " " + _exportNote;
+            Status += " " + geoMap;
         }
         catch (Exception ex)
         {
