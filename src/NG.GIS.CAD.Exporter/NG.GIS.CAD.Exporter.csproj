@@ -22,7 +22,34 @@
     <Using Remove="System.Drawing" />
   </ItemGroup>
 
-  <ItemGroup>
+  <!-- A build machine has no AutoCAD installed, so there is nothing at AcadReferencePath to reference.
+       The same three assemblies are published by Autodesk on NuGet, and CI takes them from there.
+
+       A developer machine is left exactly as it was: this switches on the CI environment variable that
+       GitHub Actions sets, so a local build still reads the installed AutoCAD and owes nothing to NuGet.
+       Set UseAutoCadNuGet explicitly to force either way.
+
+       Pinned to 25.0.0 because that is the last version published as net8.0; 26.0.0 ships net10.0
+       assemblies, which a net8.0 project cannot consume. The target framework is not free to move up
+       either, since Esri.ArcGISRuntime.WPF 300.0.0 is itself net8.0-windows10.0.19041. -->
+  <PropertyGroup>
+    <UseAutoCadNuGet Condition="'$(UseAutoCadNuGet)' == '' and '$(CI)' == 'true'">true</UseAutoCadNuGet>
+    <UseAutoCadNuGet Condition="'$(UseAutoCadNuGet)' == ''">false</UseAutoCadNuGet>
+    <AutoCadNuGetVersion Condition="'$(AutoCadNuGetVersion)' == ''">25.0.0</AutoCadNuGetVersion>
+  </PropertyGroup>
+
+  <!-- AutoCAD.NET 25.0.0 declares its dependency on AutoCAD.NET.Core as exactly [25.0.0-V058], a version
+       Autodesk never published: only 25.0.0 is on NuGet. No version satisfies the constraint, so NuGet
+       resolves the nearest and reports NU1608 every restore.
+
+       Suppressed rather than worked around because there is nothing to move to, and only on the NuGet
+       path, so a developer build is not silenced for a problem it does not have. A warning nobody can act
+       on is the kind that teaches people to stop reading them, which is the opposite of why CI is here. -->
+  <PropertyGroup Condition="'$(UseAutoCadNuGet)' == 'true'">
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(UseAutoCadNuGet)' != 'true'">
     <Reference Include="AcMgd">
       <HintPath>$(AcadReferencePath)\AcMgd.dll</HintPath>
       <Private>false</Private>
@@ -35,6 +62,15 @@
       <HintPath>$(AcadReferencePath)\AcDbMgd.dll</HintPath>
       <Private>false</Private>
     </Reference>
+  </ItemGroup>
+
+  <!-- ExcludeAssets="runtime" is the Private=false above in package form: AutoCAD supplies these at run
+       time, and a plug-in that shipped its own copies beside the DLL would be loading a second set into
+       a process that already has them. -->
+  <ItemGroup Condition="'$(UseAutoCadNuGet)' == 'true'">
+    <PackageReference Include="AutoCAD.NET" Version="$(AutoCadNuGetVersion)" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET.Core" Version="$(AutoCadNuGetVersion)" ExcludeAssets="runtime" />
+    <PackageReference Include="AutoCAD.NET.Model" Version="$(AutoCadNuGetVersion)" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup>
