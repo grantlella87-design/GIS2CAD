@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Esri.ArcGISRuntime.Geometry;
 using NG.GIS.CAD.Exporter.Models;
@@ -27,24 +28,57 @@ public sealed partial class ExporterViewModel
     /// </summary>
     public Geometry? ProposedMainBufferOutline { get; set; }
 
-    private bool _includeExtentInExport = true;
-    private string _extentCadLayerName = "GIS_EXPORT_EXTENT";
+    private bool _includeBoundaryInExport = true;
+    private string _boundaryCadLayerName = "GIS_EXPORT_BOUNDARY";
 
     /// <summary>
-    /// Whether the export extent and the padding buffer are drawn in the drawing. On by default: it is
-    /// two polylines on a layer of their own, and knowing where the exported area stops is worth having.
+    /// Set when the boundary that was used is not the one the method calls for, and read once the export
+    /// has finished. Held rather than announced because the status line is rewritten several times on the
+    /// way through, and a warning that scrolls past unread is no warning at all.
     /// </summary>
-    public bool IncludeExtentInExport
+    private string _boundaryNote = string.Empty;
+
+    /// <summary>Adds to the note rather than replacing it, so a second reason is not lost to the first.</summary>
+    private void AddBoundaryNote(string note) =>
+        _boundaryNote = string.IsNullOrEmpty(_boundaryNote) ? note : _boundaryNote + " " + note;
+
+    /// <summary>
+    /// Whether the boundary that scoped the import is drawn in the drawing. On by default: it is one
+    /// polyline on a layer of its own, and knowing where the exported area stops is worth having.
+    /// </summary>
+    public bool IncludeBoundaryInExport
     {
-        get => _includeExtentInExport;
-        set => SetProperty(ref _includeExtentInExport, value);
+        get => _includeBoundaryInExport;
+        set => SetProperty(ref _includeBoundaryInExport, value);
     }
 
-    public string ExtentCadLayerName
+    public string BoundaryCadLayerName
     {
-        get => _extentCadLayerName;
-        set => SetProperty(ref _extentCadLayerName, value);
+        get => _boundaryCadLayerName;
+        set => SetProperty(ref _boundaryCadLayerName, value);
     }
+
+    /// <summary>
+    /// Which shape scopes the import, decided by the method chosen on page 1 rather than by a setting.
+    ///
+    /// A work order or a drawn pipeline is a corridor: the padding buffer around the main is what was
+    /// actually asked about, and a rectangle around a main running diagonally would pull in a great deal
+    /// of ground nobody wanted. The current drawing view is a rectangle to begin with — it is literally
+    /// what is on screen — and a typed extent is one by definition, so buffering either would invent a
+    /// shape the user never drew.
+    /// </summary>
+    public ExportBoundaryKind BoundaryKind => SelectedMethod switch
+    {
+        ExportMethod.WorkOrder => ExportBoundaryKind.Buffer,
+        ExportMethod.DrawPipelineRoute => ExportBoundaryKind.Buffer,
+        _ => ExportBoundaryKind.ExtentBox
+    };
+
+    /// <summary>What the review page says about the boundary, so the scope is stated before the write.</summary>
+    public string BoundaryDescription => BoundaryKind == ExportBoundaryKind.Buffer
+        ? $"Features are taken from the {PaddingFeet:0.#} ft buffer around the proposed main, and that "
+          + "buffer is what gets drawn."
+        : "Features are taken from the extent bounding box, and that box is what gets drawn.";
 
     private bool _includeBasemapInExport;
     private BasemapChoice _selectedExportBasemap = BasemapImageService.DefaultChoices[0];
@@ -131,10 +165,15 @@ public sealed partial class ExporterViewModel
             var request = new CadExportRequest
             {
                 StripMapLayerName = StripMapCadLayerName,
-                ExtentLayerName = ExtentCadLayerName,
+                BoundaryLayerName = BoundaryCadLayerName,
                 TemplatePath = HasTemplate ? TemplatePath : null,
                 StripMapLabelHeight = 10.0
             };
+
+            // Worked out once, before anything is fetched, and then used for both the queries and the
+            // outline written into the drawing. That is the whole point: the layer the drawing ends up
+            // with is the shape that decided what came in, not a second shape drawn to look like it.
+            var boundary = BuildExportBoundary(outWkid);
 
             Status = $"Fetching features for {selected.Count} layer(s)...";
             var totalFeatures = 0;
@@ -146,7 +185,7 @@ public sealed partial class ExporterViewModel
 
                 var fields = layer.Fields.Where(f => f.Selected).Select(f => f.Name).ToList();
                 var features = await _services.ArcGisRestClient.QueryFeaturesAsync(
-                    layer.Url, _resolvedExtent, fields, outWkid, CancellationToken.None);
+                    layer.Url, _resolvedExtent, fields, outWkid, CancellationToken.None, boundary);
 
                 var layerFeatures = new ExportLayerFeatures
                 {
@@ -160,13 +199,14 @@ public sealed partial class ExporterViewModel
             }
 
             AddStripMapSheetsToRequest(request, outWkid);
-            AddExtentOutlinesToRequest(request, outWkid);
-            await AddBasemapToRequestAsync(request, outWkid);
+            AddBoundaryOutlineToRequest(request, boundary);
+            await AddBasemapToRequestAsync(request, outWkid, boundary);
 
             Status = $"Writing {totalFeatures} feature(s) into the drawing...";
             var result = _services.CadExportWriter.Write(request);
 
-            Status = DescribeExportResult(result, totalFeatures, outWkid);
+            var message = DescribeExportResult(result, totalFeatures, outWkid, boundary);
+            Status = string.IsNullOrEmpty(_boundaryNote) ? message : message + " " + _boundaryNote;
         }
         catch (Exception ex)
         {
@@ -175,67 +215,194 @@ public sealed partial class ExporterViewModel
     }
 
     /// <summary>
-    /// Adds the export extent rectangle, and the padding buffer around the proposed main where there is
-    /// one, as boundaries for the drawing.
+    /// Works out the one shape that scopes this export, in the output spatial reference.
     ///
-    /// Both are geometry the user set rather than data that was fetched, so they go on their own layer.
-    /// The buffer is the more useful of the two on a proposed main job: it is the shape the padding
-    /// actually produced, which a rectangle around it does not show.
+    /// Built in drawing coordinates rather than the extent's own so a single object can serve both the
+    /// query and the outline written into the drawing. The service is told which spatial reference the
+    /// query geometry is in, so handing it drawing coordinates costs nothing and removes the chance of
+    /// the drawn boundary and the queried one being different shapes.
+    ///
+    /// Returns null when no boundary could be worked out, which leaves the query on the plain extent it
+    /// has always used. That is the old behaviour, so a failure here narrows nothing.
     /// </summary>
-    private void AddExtentOutlinesToRequest(CadExportRequest request, int outWkid)
+    private ExportBoundary? BuildExportBoundary(int outWkid)
     {
-        if (!IncludeExtentInExport || _resolvedExtent == null) { return; }
+        _boundaryNote = string.Empty;
+        if (_resolvedExtent == null) { return null; }
 
-        try
+        if (BoundaryKind == ExportBoundaryKind.Buffer)
         {
-            var corners = ProjectExtentCorners(_resolvedExtent, outWkid);
-            var rectangle = new ExportOutline { Label = "Export extent" };
-            rectangle.Vertices.Add(new ExportVertex(corners.MinX, corners.MinY));
-            rectangle.Vertices.Add(new ExportVertex(corners.MaxX, corners.MinY));
-            rectangle.Vertices.Add(new ExportVertex(corners.MaxX, corners.MaxY));
-            rectangle.Vertices.Add(new ExportVertex(corners.MinX, corners.MaxY));
-            request.ExtentOutlines.Add(rectangle);
-        }
-        catch (Exception ex)
-        {
-            Status = "The export extent boundary could not be drawn: " + ex.Message;
+            var buffer = BuildBufferBoundary(outWkid);
+            if (buffer != null) { return buffer; }
+
+            // No buffer to be had: no padding was set, or no main was imported or drawn. The box is then
+            // the only honest answer, and saying so matters because it is a wider scope than was asked
+            // for rather than a narrower one.
+            //
+            // Kept for the end rather than put on the status line now, because everything that follows
+            // overwrites the status and the one line the user reads is the one left when it finishes.
+            AddBoundaryNote("This method scopes to the padding buffer, but none was available, so the "
+                            + "extent bounding box was used and more ground came in than the corridor. "
+                            + "Set a padding distance on page 2 to scope to the corridor instead.");
         }
 
-        if (ProposedMainBufferOutline == null || ProposedMainBufferOutline.IsEmpty) { return; }
+        return BuildExtentBoxBoundary(outWkid);
+    }
 
+    /// <summary>
+    /// The padding buffer, from the map where one was drawn and from the picked route otherwise.
+    ///
+    /// The map's buffer is preferred and handed over rather than recomputed, so the shape in the drawing
+    /// is the shape that was on screen. The route is the fallback for the AutoCAD picking method, which
+    /// draws its line in the drawing rather than on the map and so never produces one.
+    /// </summary>
+    private ExportBoundary? BuildBufferBoundary(int outWkid)
+    {
         try
         {
             var target = SpatialReference.Create(outWkid);
-            if (GeometryEngine.Project(ProposedMainBufferOutline, target) is not Polygon projected || projected.IsEmpty)
+            var source = ProposedMainBufferOutline;
+
+            if (source == null || source.IsEmpty)
             {
-                return;
+                source = BuildRouteBuffer();
+                if (source == null) { return null; }
             }
 
-            // Every ring, not just the outer one: a buffer around a main that doubles back on itself
-            // can enclose a hole, and dropping it would draw the boundary as solid where it is not.
+            if (GeometryEngine.Project(source, target) is not Polygon projected || projected.IsEmpty)
+            {
+                return null;
+            }
+
+            var boundary = new ExportBoundary
+            {
+                Kind = ExportBoundaryKind.Buffer,
+                Wkid = outWkid,
+                Label = "Padding buffer",
+                XMin = projected.Extent.XMin,
+                YMin = projected.Extent.YMin,
+                XMax = projected.Extent.XMax,
+                YMax = projected.Extent.YMax
+            };
+
+            // Every ring, not just the outer one: a buffer around a main that doubles back on itself can
+            // enclose a hole, and dropping it would both draw the boundary as solid where it is not and
+            // pull in the features standing in the hole.
             foreach (var ring in ReadAllRings(projected))
             {
-                if (ring.Count < 3) { continue; }
-                var outline = new ExportOutline { Label = "Padding buffer" };
-                outline.Vertices.AddRange(ring);
-                request.ExtentOutlines.Add(outline);
+                if (ring.Count >= 3) { boundary.Rings.Add(ring); }
             }
+
+            return boundary.Rings.Count > 0 ? boundary : null;
         }
         catch (Exception ex)
         {
-            Status = "The padding buffer boundary could not be drawn: " + ex.Message;
+            AddBoundaryNote("The padding buffer could not be prepared, so the extent bounding box was "
+                            + "used instead: " + ex.Message);
+            return null;
         }
     }
 
     /// <summary>
-    /// Downloads the chosen basemap over the export extent and adds it to the request.
+    /// Buffers the route picked in AutoCAD, for the method that draws its line in the drawing.
     ///
-    /// The extent is requested in the output spatial reference for both the bounding box and the image,
-    /// so the pixels are already in drawing coordinates. That is what lets the raster be placed on the
+    /// The padding is applied in the extent's own units, which is what the extent itself already does
+    /// when it pads its bounds, so this introduces no assumption that was not there before.
+    ///
+    /// Built as JSON and handed to <c>Geometry.FromJson</c>, which is how the rest of this codebase puts
+    /// ArcGIS geometry together.
+    /// </summary>
+    private Geometry? BuildRouteBuffer()
+    {
+        if (_resolvedExtent == null || _resolvedExtent.RouteVertices.Count < 2) { return null; }
+        if (_resolvedExtent.PaddingFeet <= 0) { return null; }
+
+        var builder = new StringBuilder();
+        builder.Append("{\"paths\":[[");
+        for (var i = 0; i < _resolvedExtent.RouteVertices.Count; i++)
+        {
+            var vertex = _resolvedExtent.RouteVertices[i];
+            if (i > 0) { builder.Append(','); }
+            builder.Append('[').Append(vertex.X.ToString("R", CultureInfo.InvariantCulture))
+                   .Append(',').Append(vertex.Y.ToString("R", CultureInfo.InvariantCulture)).Append(']');
+        }
+        builder.Append("]],\"spatialReference\":{\"wkid\":")
+               .Append(_resolvedExtent.Wkid.ToString(CultureInfo.InvariantCulture))
+               .Append("}}");
+
+        if (Geometry.FromJson(builder.ToString()) is not Polyline route || route.IsEmpty) { return null; }
+        return GeometryEngine.Buffer(route, _resolvedExtent.PaddingFeet);
+    }
+
+    /// <summary>The extent as a rectangle, in drawing coordinates.</summary>
+    private ExportBoundary? BuildExtentBoxBoundary(int outWkid)
+    {
+        if (_resolvedExtent == null) { return null; }
+
+        try
+        {
+            var corners = ProjectExtentCorners(_resolvedExtent, outWkid);
+            return new ExportBoundary
+            {
+                Kind = ExportBoundaryKind.ExtentBox,
+                Wkid = outWkid,
+                Label = "Export extent",
+                XMin = corners.MinX,
+                YMin = corners.MinY,
+                XMax = corners.MaxX,
+                YMax = corners.MaxY
+            };
+        }
+        catch (Exception ex)
+        {
+            AddBoundaryNote("The export extent could not be projected into drawing coordinates, so no "
+                            + "boundary was drawn: " + ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Draws the boundary that scoped the import, as a closed polyline on a layer of its own.
+    ///
+    /// It says what was asked for rather than what was found, so it belongs apart from the data: a
+    /// drawing that is being issued usually wants the boundary off, and one being checked wants it on.
+    /// </summary>
+    private void AddBoundaryOutlineToRequest(CadExportRequest request, ExportBoundary? boundary)
+    {
+        if (!IncludeBoundaryInExport || boundary == null) { return; }
+
+        if (boundary.HasRings)
+        {
+            foreach (var ring in boundary.Rings)
+            {
+                var outline = new ExportOutline { Label = boundary.Label };
+                outline.Vertices.AddRange(ring);
+                request.BoundaryOutlines.Add(outline);
+            }
+            return;
+        }
+
+        var rectangle = new ExportOutline { Label = boundary.Label };
+        rectangle.Vertices.Add(new ExportVertex(boundary.XMin, boundary.YMin));
+        rectangle.Vertices.Add(new ExportVertex(boundary.XMax, boundary.YMin));
+        rectangle.Vertices.Add(new ExportVertex(boundary.XMax, boundary.YMax));
+        rectangle.Vertices.Add(new ExportVertex(boundary.XMin, boundary.YMax));
+        request.BoundaryOutlines.Add(rectangle);
+    }
+
+    /// <summary>
+    /// Downloads the chosen basemap over the exported area and adds it to the request.
+    ///
+    /// The area is requested in the output spatial reference for both the bounding box and the image, so
+    /// the pixels are already in drawing coordinates. That is what lets the raster be placed on the
     /// extent it was asked for with no transform, and it is why the basemap lands accurately while the
     /// strip map frames go through a projection.
+    ///
+    /// It covers the boundary's bounds rather than the extent's. A raster can only ever be a rectangle,
+    /// but on a corridor job the buffer's bounds are far tighter than the extent's, so the backdrop is
+    /// spent on the ground the export actually covers rather than on the corners around it.
     /// </summary>
-    private async Task AddBasemapToRequestAsync(CadExportRequest request, int outWkid)
+    private async Task AddBasemapToRequestAsync(CadExportRequest request, int outWkid, ExportBoundary? boundary)
     {
         if (!IncludeBasemapInExport || _resolvedExtent == null) { return; }
 
@@ -255,13 +422,24 @@ public sealed partial class ExporterViewModel
             var directory = Path.Combine(
                 Path.GetDirectoryName(ProfilePath) ?? Path.GetTempPath(), "basemaps");
 
-            var image = await _services.BasemapImageService.DownloadAsync(
-                serviceUrl, _resolvedExtent, outWkid, BasemapImagePixels, directory, CancellationToken.None);
+            // The boundary is already in drawing coordinates, so the image and its placement come from
+            // one set of numbers. Falling back to the extent keeps this working if no boundary was built.
+            var corners = boundary != null
+                ? (MinX: boundary.XMin, MinY: boundary.YMin, MaxX: boundary.XMax, MaxY: boundary.YMax)
+                : ProjectExtentCorners(_resolvedExtent, outWkid);
 
-            // The extent is in its own WKID, which may not be the drawing's. The image was requested in
-            // the output WKID, so the corners have to be too, or the raster would be placed at the
-            // extent's coordinates rather than the drawing's.
-            var corners = ProjectExtentCorners(_resolvedExtent, outWkid);
+            var imageExtent = new ExportExtent
+            {
+                Mode = _resolvedExtent.Mode,
+                XMin = corners.MinX,
+                YMin = corners.MinY,
+                XMax = corners.MaxX,
+                YMax = corners.MaxY,
+                Wkid = boundary?.Wkid ?? outWkid
+            };
+
+            var image = await _services.BasemapImageService.DownloadAsync(
+                serviceUrl, imageExtent, outWkid, BasemapImagePixels, directory, CancellationToken.None);
 
             request.Basemap = new BasemapImagePlacement
             {
@@ -409,7 +587,8 @@ public sealed partial class ExporterViewModel
         return result;
     }
 
-    private static string DescribeExportResult(CadExportResult result, int totalFeatures, int outWkid)
+    private static string DescribeExportResult(
+        CadExportResult result, int totalFeatures, int outWkid, ExportBoundary? boundary)
     {
         var message = $"Exported {totalFeatures} feature(s) as {result.EntitiesWritten} entit(ies), "
             + $"in {SpatialReferenceNames.Describe(outWkid)}.";
@@ -418,9 +597,11 @@ public sealed partial class ExporterViewModel
         {
             message += $" Strip map index: {result.StripMapSheetsWritten} sheet(s).";
         }
-        if (result.ExtentOutlinesWritten > 0)
+        if (result.BoundaryOutlinesWritten > 0)
         {
-            message += $" Extent and buffer: {result.ExtentOutlinesWritten} outline(s).";
+            // Named rather than counted, because which shape scoped the import is the useful fact.
+            var name = boundary?.Kind == ExportBoundaryKind.Buffer ? "padding buffer" : "extent bounding box";
+            message += $" Scoped to the {name}, drawn as {result.BoundaryOutlinesWritten} outline(s).";
         }
         if (result.BasemapPlaced)
         {
