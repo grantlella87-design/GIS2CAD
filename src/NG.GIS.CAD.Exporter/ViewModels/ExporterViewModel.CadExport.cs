@@ -220,7 +220,14 @@ public sealed partial class ExporterViewModel
 
             // Only once the write has succeeded. Turning the map on after a failed export would put a
             // backdrop under nothing and read as though something had landed.
-            var geoMap = _services.CadGeoMapService.TurnOn();
+            //
+            // Anchored at the centre of what was exported, in drawing coordinates. Any point in the
+            // drawing would do, since the drawing is already in the output system and the location is
+            // an identity, but the middle of the work is the one that stays sensible if that ever
+            // stops being true.
+            var anchorX = boundary != null ? (boundary.XMin + boundary.XMax) / 2.0 : 0.0;
+            var anchorY = boundary != null ? (boundary.YMin + boundary.YMax) / 2.0 : 0.0;
+            var geoMap = _services.CadGeoMapService.TurnOn(outWkid, anchorX, anchorY);
 
             var message = DescribeExportResult(result, totalFeatures, outWkid, boundary);
             Status = string.IsNullOrEmpty(_exportNote) ? message : message + " " + _exportNote;
