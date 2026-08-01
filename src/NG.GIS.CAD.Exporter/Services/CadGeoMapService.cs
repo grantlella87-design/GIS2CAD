@@ -19,24 +19,23 @@ namespace NG.GIS.CAD.Exporter.Services;
 public sealed class CadGeoMapService
 {
     /// <summary>
-    /// The map types worth asking GEOMAPMODE for, best first, as imagery in each generation of AutoCAD.
+    /// Keywords to offer the GEOMAP command for an imagery map, best first.
     ///
-    /// The values are AutoCAD's own, read out of the GeomapType enum in AcDbMgd rather than assumed:
-    /// NoMap 0, Aerial 1, Road 2, Hybrid 3, EsriImagery 4, EsriOpenStreetMap 5, EsriStreets 6,
-    /// EsriLightGray 7, EsriDarkGray 8. They are written as numbers because that enum is a nested type
-    /// and GEOMAPMODE takes an integer anyway.
+    /// GEOMAPMODE is not how this is done. It is documented read-only, which is what eInvalidInput was
+    /// saying all along: the refusal was about writing the variable at all, not about the value, which is
+    /// why every map type was refused identically. The command is the only way in.
     ///
-    /// Aerial is the Bing era imagery and is what eInvalidInput was about: the service behind it is gone
-    /// and the mode with it, so a release that has moved to Esri refuses the value outright. EsriImagery
-    /// is the same thing on the map service that replaced it, and is what a current release wants.
-    ///
-    /// Both are offered, newest first, so this works on a release either side of that change without
-    /// having to ask which one is running.
+    /// Aerial and Hybrid first, as the two options GEOMAP has documented since geographic maps arrived
+    /// and the two that show imagery. The Esri spellings follow, in case a release that has moved to
+    /// Esri's service renamed the option with it -- those are guesses, which is why each is tried on its
+    /// own and a refusal is recorded rather than assumed fatal.
     /// </summary>
-    private static readonly (string Name, short Mode)[] ImageryMapTypes =
+    private static readonly (string Name, string Keyword)[] ImageryKeywords =
     {
-        ("Esri imagery", 4),
-        ("aerial", 1)
+        ("aerial", "_Aerial"),
+        ("hybrid", "_Hybrid"),
+        ("Esri imagery", "_esriImagery"),
+        ("Esri imagery", "_EsriImagery")
     };
 
     /// <summary>
@@ -77,7 +76,7 @@ public sealed class CadGeoMapService
     /// </summary>
     /// <param name="anchorX">A point in drawing coordinates to anchor the location to, X.</param>
     /// <param name="anchorY">The same point, Y. The centre of what was exported is a good choice.</param>
-    public string TurnOn(int outWkid, double anchorX, double anchorY)
+    public async Task<string> TurnOnAsync(int outWkid, double anchorX, double anchorY)
     {
         var document = Application.DocumentManager.MdiActiveDocument;
         if (document == null)
@@ -104,71 +103,56 @@ public sealed class CadGeoMapService
                     + "drawing sits on the earth without one.").TrimStart();
         }
 
-        // Each map type, newest first, and each as a short and then an int. Which of the two a system
-        // variable accepts is not something the managed API tells you and the wrong one throws, the same
-        // reason this codebase already offers both when it sets PROXYNOTICE and XREFNOTIFY.
         var refusals = new List<string>();
-        foreach (var (name, mode) in ImageryMapTypes)
+
+        foreach (var (name, keyword) in ImageryKeywords)
         {
-            foreach (object value in new object[] { mode, (int)mode })
+            try
             {
-                try
+                // Run in a command context rather than sent to the command line. A keyword this release
+                // does not know comes back as an exception here, where the same keyword typed at the
+                // prompt would leave AutoCAD waiting on an answer nobody is there to give.
+                await Application.DocumentManager.ExecuteInCommandContextAsync(_ =>
                 {
-                    CoreApplication.SetSystemVariable("GEOMAPMODE", value);
+                    document.Editor.Command("._GEOMAP", keyword);
+                    return Task.CompletedTask;
+                }, null);
+
+                if (IsMapOn())
+                {
                     return ("Geographic map turned on (" + name + "). " + locationNote).TrimEnd();
                 }
-                catch (Exception ex)
-                {
-                    // Recorded once per map type rather than once per width, since the width is a detail
-                    // of how it is offered and repeating it would say the same thing twice.
-                    var note = name + " (" + ex.Message + ")";
-                    if (!refusals.Contains(note)) { refusals.Add(note); }
-                }
+
+                refusals.Add(keyword + " (accepted, but the map stayed off)");
+            }
+            catch (Exception ex)
+            {
+                refusals.Add(keyword + " (" + ex.Message + ")");
             }
         }
 
-        // Every map type refused with the same error, so the map type is not what is being objected to.
-        // What is left to tell apart is whether GEOMAPMODE can be written at all from here, and writing
-        // it back its own current value answers that without changing anything: if that is accepted the
-        // variable is writable and it is the map itself being refused, which is the online service and
-        // not something this code can supply.
-        return ("The geographic map could not be turned on, so the export is there without it. "
-                + DescribeMapRefusal(refusals) + " " + locationNote).TrimEnd();
+        return ("The geographic map could not be turned on, so the export is there without it. What was "
+                + "tried, and what each said: " + string.Join("; ", refusals)
+                + ". GEOMAP needs an Autodesk sign-in as well as a geographic location, so if the "
+                + "drawing has one and this still refuses, signing in to AutoCAD is the thing to check. "
+                + locationNote).TrimEnd();
     }
 
     /// <summary>
-    /// Works out what a refused GEOMAPMODE means, and says which of the two it is.
+    /// Whether a map is showing. GEOMAPMODE is read-only, so it cannot turn the map on, but it still
+    /// reports what the map is doing, which is how the command's result is checked.
     /// </summary>
-    private static string DescribeMapRefusal(List<string> refusals)
+    private static bool IsMapOn()
     {
-        var tried = "What was tried, and what each said: " + string.Join("; ", refusals) + ".";
-
-        object? current = null;
-        try { current = CoreApplication.GetSystemVariable("GEOMAPMODE"); }
-        catch
-        {
-            return tried + " GEOMAPMODE could not even be read, so the geographic map is not available "
-                   + "in this drawing at all.";
-        }
-
-        var writable = false;
         try
         {
-            CoreApplication.SetSystemVariable("GEOMAPMODE", current!);
-            writable = true;
+            var mode = CoreApplication.GetSystemVariable("GEOMAPMODE");
+            return mode != null && Convert.ToInt32(mode, CultureInfo.InvariantCulture) != 0;
         }
         catch
         {
-            // Left as it was: not writable.
+            return false;
         }
-
-        return writable
-            ? tried + " GEOMAPMODE reads " + current + " and accepts being written back, so the setting "
-              + "itself is fine and it is the map that is being refused. That is the online map service, "
-              + "which needs an Autodesk sign-in: sign in to AutoCAD and export again, or run GEOMAP by "
-              + "hand once to confirm the same refusal."
-            : tried + " GEOMAPMODE reads " + current + " and will not be written at all from here, so "
-              + "the map has to be turned on with the GEOMAP command rather than by this export.";
     }
 
     /// <summary>

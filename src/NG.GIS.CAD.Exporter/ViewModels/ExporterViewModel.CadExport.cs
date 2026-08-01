@@ -251,7 +251,7 @@ public sealed partial class ExporterViewModel
             // stops being true.
             var anchorX = boundary != null ? (boundary.XMin + boundary.XMax) / 2.0 : 0.0;
             var anchorY = boundary != null ? (boundary.YMin + boundary.YMax) / 2.0 : 0.0;
-            var geoMap = _services.CadGeoMapService.TurnOn(outWkid, anchorX, anchorY);
+            var geoMap = await _services.CadGeoMapService.TurnOnAsync(outWkid, anchorX, anchorY);
 
             var message = DescribeExportResult(result, totalFeatures, outWkid, boundary);
             Status = string.IsNullOrEmpty(_exportNote) ? message : message + " " + _exportNote;
