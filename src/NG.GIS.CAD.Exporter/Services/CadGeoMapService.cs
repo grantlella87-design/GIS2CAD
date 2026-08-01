@@ -127,11 +127,48 @@ public sealed class CadGeoMapService
             }
         }
 
-        // Every type refused. Most likely no Autodesk sign-in, which is what the online map service
-        // needs, and which no choice of map type gets around. The export itself has already been
-        // written by this point, so this is worth reporting and no more.
-        return ("The geographic map could not be turned on, so the export is there without it. What was "
-                + "tried, and what each said: " + string.Join("; ", refusals) + ". " + locationNote).TrimEnd();
+        // Every map type refused with the same error, so the map type is not what is being objected to.
+        // What is left to tell apart is whether GEOMAPMODE can be written at all from here, and writing
+        // it back its own current value answers that without changing anything: if that is accepted the
+        // variable is writable and it is the map itself being refused, which is the online service and
+        // not something this code can supply.
+        return ("The geographic map could not be turned on, so the export is there without it. "
+                + DescribeMapRefusal(refusals) + " " + locationNote).TrimEnd();
+    }
+
+    /// <summary>
+    /// Works out what a refused GEOMAPMODE means, and says which of the two it is.
+    /// </summary>
+    private static string DescribeMapRefusal(List<string> refusals)
+    {
+        var tried = "What was tried, and what each said: " + string.Join("; ", refusals) + ".";
+
+        object? current = null;
+        try { current = CoreApplication.GetSystemVariable("GEOMAPMODE"); }
+        catch
+        {
+            return tried + " GEOMAPMODE could not even be read, so the geographic map is not available "
+                   + "in this drawing at all.";
+        }
+
+        var writable = false;
+        try
+        {
+            CoreApplication.SetSystemVariable("GEOMAPMODE", current!);
+            writable = true;
+        }
+        catch
+        {
+            // Left as it was: not writable.
+        }
+
+        return writable
+            ? tried + " GEOMAPMODE reads " + current + " and accepts being written back, so the setting "
+              + "itself is fine and it is the map that is being refused. That is the online map service, "
+              + "which needs an Autodesk sign-in: sign in to AutoCAD and export again, or run GEOMAP by "
+              + "hand once to confirm the same refusal."
+            : tried + " GEOMAPMODE reads " + current + " and will not be written at all from here, so "
+              + "the map has to be turned on with the GEOMAP command rather than by this export.";
     }
 
     /// <summary>
