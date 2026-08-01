@@ -215,6 +215,13 @@ public sealed class CadExportWriter
                 transaction.AddNewlyCreatedDBObject(entity, true);
                 result.EntitiesWritten++;
 
+                // After the entity is in the drawing, because extended data is stored against a
+                // database object and there is nothing to store it against until then.
+                if (request.AttachAttributes)
+                {
+                    AttachFeatureAttributes(entity, feature, request.AttributeAppName, database, transaction, result);
+                }
+
                 // A hatch needs a boundary that is already in the drawing, so this follows the outline
                 // rather than replacing it. A ring with fewer than three vertices encloses nothing and
                 // would give the hatch no area to fill.
@@ -300,8 +307,35 @@ public sealed class CadExportWriter
                 hatch.SetHatchPattern(HatchPatternType.PreDefined, pattern);
             }
 
-            hatch.Associative = true;
-            hatch.AppendLoop(HatchLoopTypes.Outermost, new ObjectIdCollection { boundary.ObjectId });
+            var inset = rule.HatchInsetDistance > 0 && boundary is Curve curve
+                ? BuildInsetLoop(curve, rule.HatchInsetDistance)
+                : null;
+
+            if (inset != null)
+            {
+                // The inset ring is handed over as bare points rather than drawn. It is a boundary for
+                // the fill, not something the user asked to have in their drawing, and adding it would
+                // leave a second outline inside every polygon.
+                //
+                // Which also means the hatch cannot be associative: there is no entity to associate to.
+                // A fill inset from a boundary that then moves has to be re-exported either way.
+                hatch.Associative = false;
+                hatch.AppendLoop(HatchLoopTypes.Polyline, inset, new DoubleCollection(new double[inset.Count]));
+            }
+            else
+            {
+                if (rule.HatchInsetDistance > 0)
+                {
+                    var note = "A polygon on layer " + cadLayerName + " was filled to its boundary rather "
+                               + "than inset, because an inset of " + rule.HatchInsetDistance
+                               + " leaves it nothing to fill.";
+                    if (!result.Warnings.Contains(note)) { result.Warnings.Add(note); }
+                }
+
+                hatch.Associative = true;
+                hatch.AppendLoop(HatchLoopTypes.Outermost, new ObjectIdCollection { boundary.ObjectId });
+            }
+
             hatch.EvaluateHatch(true);
 
             // After evaluating, so the fill is drawn with the transparency rather than evaluated and then
@@ -325,6 +359,162 @@ public sealed class CadExportWriter
                        + ex.Message;
             if (!result.Warnings.Contains(note)) { result.Warnings.Add(note); }
         }
+    }
+
+    /// <summary>
+    /// Attaches a feature's GIS attributes to the entity drawn for it, as extended data.
+    ///
+    /// This is what makes an exported line answer questions. A polyline on its own says where something
+    /// runs; carrying its diameter, material and work order it says what it is, which is most of why the
+    /// fields on page 3 are worth choosing. AutoCAD shows it under Properties and any tool reading the
+    /// drawing can pick it up, so nothing has to come back to the GIS to identify a line.
+    ///
+    /// Written as name and value pairs so the drawing is readable without a schema. That doubles the
+    /// strings stored, which is worth it against the alternative of a positional list that means nothing
+    /// once the field selection changes.
+    ///
+    /// Extended data caps a string at 255 characters and an application's data at about 16kB per entity.
+    /// Values are cut to fit rather than dropped, because a shortened value still identifies a feature
+    /// and a refused write would lose the lot.
+    /// </summary>
+    private static void AttachFeatureAttributes(
+        Entity entity, ExportFeature feature, string appName,
+        Database database, Transaction transaction, CadExportResult result)
+    {
+        if (feature.Attributes.Count == 0) { return; }
+
+        var application = string.IsNullOrWhiteSpace(appName) ? "NGGIS" : SanitizeSymbolName(appName);
+
+        try
+        {
+            EnsureRegisteredApplication(database, transaction, application);
+
+            var buffer = new ResultBuffer();
+            buffer.Add(new TypedValue((int)DxfCode.ExtendedDataRegAppName, application));
+
+            var used = 0;
+            foreach (var pair in feature.Attributes)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Value)) { continue; }
+
+                var name = Truncate(pair.Key, 255);
+                var value = Truncate(pair.Value, 255);
+
+                // Two strings and their overhead against the per application budget. Stopping short
+                // keeps the entity writable rather than having AutoCAD refuse the whole buffer.
+                used += name.Length + value.Length + 8;
+                if (used > 15000) { break; }
+
+                buffer.Add(new TypedValue((int)DxfCode.ExtendedDataAsciiString, name));
+                buffer.Add(new TypedValue((int)DxfCode.ExtendedDataAsciiString, value));
+            }
+
+            entity.XData = buffer;
+            result.EntitiesWithAttributes++;
+        }
+        catch (Exception ex)
+        {
+            var note = "Attributes could not be attached to one or more entities: " + ex.Message;
+            if (!result.Warnings.Contains(note)) { result.Warnings.Add(note); }
+        }
+    }
+
+    /// <summary>
+    /// Makes sure the application name exists in the drawing, since extended data filed under a name the
+    /// drawing does not know is refused.
+    /// </summary>
+    private static void EnsureRegisteredApplication(Database database, Transaction transaction, string application)
+    {
+        var table = (RegAppTable)transaction.GetObject(database.RegAppTableId, OpenMode.ForRead);
+        if (table.Has(application)) { return; }
+
+        table.UpgradeOpen();
+        var record = new RegAppTableRecord { Name = application };
+        table.Add(record);
+        transaction.AddNewlyCreatedDBObject(record, true);
+    }
+
+    private static string Truncate(string value, int limit) =>
+        value.Length <= limit ? value : value[..limit];
+
+    /// <summary>
+    /// The polygon offset inwards, as bare points for a hatch loop, or null when there is nothing left.
+    ///
+    /// AutoCAD offsets a closed curve to one side or the other depending on which way its vertices run,
+    /// and GIS rings come in both windings, so a sign cannot be assumed. Both are offered and the smaller
+    /// result is the inward one, which is true whichever way the ring was wound.
+    ///
+    /// An offset can also come back as several curves, when a shape narrow enough to close up on itself
+    /// breaks into pieces. The largest of those is taken: it is the body of the polygon, and the slivers
+    /// are the corners that folded away.
+    ///
+    /// Null when the offset collapses entirely, which is an inset wider than the polygon is. The caller
+    /// fills to the boundary instead and says why, rather than drawing a shape the inset did not ask for.
+    /// </summary>
+    private static Point2dCollection? BuildInsetLoop(Curve boundary, double distance)
+    {
+        var originalArea = SafeArea(boundary);
+        if (originalArea <= 0) { return null; }
+
+        Polyline? best = null;
+        var bestArea = 0.0;
+
+        foreach (var signed in new[] { -distance, distance })
+        {
+            DBObjectCollection? offsets = null;
+            try { offsets = boundary.GetOffsetCurves(signed); }
+            catch { continue; }
+
+            using (offsets)
+            {
+                foreach (DBObject candidate in offsets)
+                {
+                    if (candidate is not Polyline polyline) { candidate.Dispose(); continue; }
+
+                    var area = SafeArea(polyline);
+
+                    // Smaller than what it came from is what makes it the inward one; larger is the
+                    // outward offset, which would put the fill outside the polygon it belongs to.
+                    if (area > 0 && area < originalArea && area > bestArea)
+                    {
+                        best?.Dispose();
+                        best = polyline;
+                        bestArea = area;
+                        continue;
+                    }
+
+                    polyline.Dispose();
+                }
+            }
+        }
+
+        if (best == null) { return null; }
+
+        using (best)
+        {
+            if (best.NumberOfVertices < 3) { return null; }
+
+            var points = new Point2dCollection();
+            for (var i = 0; i < best.NumberOfVertices; i++)
+            {
+                points.Add(best.GetPoint2dAt(i));
+            }
+
+            // Closed explicitly, because a hatch loop given as points is a list rather than a shape and
+            // has no Closed of its own to read.
+            if (points[0] != points[^1]) { points.Add(points[0]); }
+            return points;
+        }
+    }
+
+    /// <summary>
+    /// A curve's enclosed area, or zero when it will not give one. An open or self crossing curve throws
+    /// rather than answering, and for choosing between offsets that is the same as having no area.
+    /// </summary>
+    private static double SafeArea(Curve curve)
+    {
+        try { return Math.Abs(curve.Area); }
+        catch { return 0.0; }
     }
 
     /// <summary>

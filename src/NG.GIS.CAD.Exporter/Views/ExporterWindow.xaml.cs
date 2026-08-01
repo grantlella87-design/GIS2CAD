@@ -297,7 +297,21 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
                 return;
             }
             var envelope = new Envelope(resolvedExtent.XMin, resolvedExtent.YMin, resolvedExtent.XMax, resolvedExtent.YMax, SpatialReferences.WebMercator);
-            DrawWorkOrderBufferGraphic(envelope, resolvedExtent.PaddingFeet);
+
+            // The imported main is redrawn where there is one, rather than the rectangle around it.
+            // Coming back to this page from page 3 used to land here and paint the extent over the main
+            // and its buffer, and the auto import that would have put them back gives up when the work
+            // order has not changed, so the user was left pressing Refresh to see what was already there.
+            //
+            // Redrawn from the geometry already in hand, so returning to the page costs no query.
+            if (_editableImportedProposedMainGeometry != null && !_editableImportedProposedMainGeometry.IsEmpty)
+            {
+                DrawEditedImportedProposedMainGeometry(_editableImportedProposedMainGeometry);
+            }
+            else
+            {
+                DrawWorkOrderBufferGraphic(envelope, resolvedExtent.PaddingFeet);
+            }
             var zoomEnvelope = ExpandEnvelopeByFeet(envelope, 200);
             if (_mapView != null) { await _mapView.SetViewpointGeometryAsync(zoomEnvelope, 20); }
             var captured = new

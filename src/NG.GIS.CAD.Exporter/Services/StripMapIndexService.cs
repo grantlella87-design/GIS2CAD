@@ -6,7 +6,12 @@ namespace NG.GIS.CAD.Exporter.Services;
 /// <summary>One sheet of the strip map index: a rectangle covering a stretch of the proposed main.</summary>
 public sealed class StripMapSheet
 {
-    public int Number { get; init; }
+    /// <summary>
+    /// Sheet number. Settable because sheets are numbered as they are laid out and then renumbered once
+    /// the redundant ones have been dropped, so the set that survives reads 1, 2, 3 rather than carrying
+    /// the gaps left by what was removed.
+    /// </summary>
+    public int Number { get; set; }
 
     /// <summary>Sheet centre, in the route's own spatial reference.</summary>
     public double CenterX { get; init; }
@@ -76,6 +81,11 @@ public static class StripMapIndexService
         var paths = ParsePaths(route, out var spatialReferenceJson);
         if (paths.Count == 0) { return Array.Empty<StripMapSheet>(); }
 
+        // Numbering starts on the longest run and works north to south. The longest run is the main line
+        // of the job, so sheet 1 is where the work mostly is rather than wherever the service happened to
+        // return a stub first, and north first is how a set of drawings is normally read.
+        paths = OrderPathsForNumbering(paths);
+
         var stretch = MapUnitsPerGroundMetre(paths);
         var alongMapUnits = alongRouteGroundMetres * stretch;
         var acrossMapUnits = acrossRouteGroundMetres * stretch;
@@ -131,6 +141,142 @@ public static class StripMapIndexService
             routeStartFeet += length * groundFeetPerMapUnit;
         }
 
+        // A stub running off the main line is often already inside the sheets covering the line it comes
+        // off, so it earns a drawing that shows nothing the set does not already have. Those are dropped,
+        // and what is left renumbered, because the point of the index is the fewest sheets that still
+        // cover the whole job.
+        return RemoveRedundantSheets(sheets, route);
+    }
+
+    /// <summary>
+    /// Puts the paths in the order they should be numbered, and turns each one so numbering runs the way
+    /// a drawing set is read.
+    ///
+    /// Longest first, because the longest run is the main line of the job. Sheet 1 should be where the
+    /// work mostly is rather than wherever the service happened to return a stub first, and a reader
+    /// looking for the start of a job looks for the main line.
+    ///
+    /// Then each path runs north to south. A path whose end is further north than its start is turned
+    /// around, so numbering begins at the northern end. North wins on any real difference; only when the
+    /// two ends are within a whisker of the same latitude, which is a route running due east or west,
+    /// does west to east decide it instead. That is the usual reading order for a run with no north in
+    /// it, and it keeps a nearly flat route from flipping direction on rounding noise.
+    /// </summary>
+    private static List<List<RoutePoint>> OrderPathsForNumbering(List<List<RoutePoint>> paths)
+    {
+        var ordered = new List<(List<RoutePoint> Path, double Length)>();
+
+        foreach (var path in paths)
+        {
+            if (path.Count < 2) { continue; }
+
+            var oriented = ShouldReverseForNumbering(path) ? Reversed(path) : path;
+            ordered.Add((oriented, PathLength(oriented)));
+        }
+
+        // Longest first, and the length is the tie break for nothing else, so two paths of the same
+        // length keep the order they arrived in rather than swapping about between runs.
+        return ordered
+            .OrderByDescending(p => p.Length)
+            .Select(p => p.Path)
+            .ToList();
+    }
+
+    private static bool ShouldReverseForNumbering(List<RoutePoint> path)
+    {
+        var start = path[0];
+        var end = path[^1];
+
+        // A whisker in Web Mercator metres. Anything smaller than this is a route running flat enough
+        // east to west that its latitude difference says nothing about which end is the north one.
+        const double NorthTolerance = 1.0;
+
+        if (Math.Abs(end.Y - start.Y) > NorthTolerance) { return end.Y > start.Y; }
+        return end.X < start.X;
+    }
+
+    private static List<RoutePoint> Reversed(List<RoutePoint> path)
+    {
+        var copy = new List<RoutePoint>(path);
+        copy.Reverse();
+        return copy;
+    }
+
+    private static double PathLength(List<RoutePoint> path)
+    {
+        var total = 0.0;
+        for (var i = 1; i < path.Count; i++)
+        {
+            total += Math.Sqrt(
+                Math.Pow(path[i].X - path[i - 1].X, 2) + Math.Pow(path[i].Y - path[i - 1].Y, 2));
+        }
+        return total;
+    }
+
+    /// <summary>
+    /// Drops sheets that show no length of route the sheets before them do not already show, and
+    /// renumbers what is left.
+    ///
+    /// A short stub coming off a main line is the case this exists for. The sheets covering the main line
+    /// usually reach across the stub as they pass it, so the stub's own sheet is a whole drawing showing
+    /// pipe that is already on another one. Sheets are kept in numbering order, which is why the longest
+    /// path is numbered first: the main line claims its coverage before anything hanging off it can.
+    ///
+    /// The test is length of route rather than area of paper. Two sheets can overlap heavily and both
+    /// still be needed, because what matters is the pipe each one shows.
+    ///
+    /// Anything that cannot be measured is kept. Dropping a sheet because a geometry operation failed
+    /// would leave a hole in the set, and a redundant drawing costs a sheet of paper where a missing one
+    /// costs a length of main nobody looked at.
+    /// </summary>
+    private static IReadOnlyList<StripMapSheet> RemoveRedundantSheets(List<StripMapSheet> sheets, Geometry route)
+    {
+        if (sheets.Count < 2) { return Renumber(sheets); }
+
+        var kept = new List<StripMapSheet>();
+        Geometry? covered = null;
+
+        foreach (var sheet in sheets)
+        {
+            try
+            {
+                var onSheet = GeometryEngine.Intersection(route, sheet.Outline);
+                if (onSheet == null || onSheet.IsEmpty)
+                {
+                    // Covers no route at all. That is not a drawing of anything.
+                    continue;
+                }
+
+                if (covered != null)
+                {
+                    var addition = GeometryEngine.Difference(onSheet, covered);
+                    var added = addition == null || addition.IsEmpty ? 0.0 : GeometryEngine.Length(addition);
+                    var total = GeometryEngine.Length(onSheet);
+
+                    // A twentieth of what the sheet shows. A sheet earning less than that is repeating
+                    // its neighbours rather than carrying anything, and the threshold is a fraction of
+                    // the sheet rather than a fixed distance so it means the same at any scale.
+                    if (total > 0 && added / total < 0.05) { continue; }
+                }
+
+                kept.Add(sheet);
+                covered = covered == null
+                    ? sheet.Outline
+                    : GeometryEngine.Union(covered, sheet.Outline);
+            }
+            catch
+            {
+                // Kept rather than judged, for the reason in the summary.
+                kept.Add(sheet);
+            }
+        }
+
+        return Renumber(kept.Count > 0 ? kept : sheets);
+    }
+
+    private static IReadOnlyList<StripMapSheet> Renumber(List<StripMapSheet> sheets)
+    {
+        for (var i = 0; i < sheets.Count; i++) { sheets[i].Number = i + 1; }
         return sheets;
     }
 

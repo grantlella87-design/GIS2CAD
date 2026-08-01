@@ -237,9 +237,23 @@
                                                 <TextBlock Text="{Binding Url}" Foreground="#777777" FontSize="11" TextTrimming="CharacterEllipsis"/>
                                                 <TextBlock Text="{Binding Status}" Foreground="#777777" FontSize="11" TextWrapping="Wrap"/>
                                             </StackPanel>
+                                            <!-- Hidden for the layers the map brought with it. They are not
+                                                 this profile's to remove, and the tick already does what
+                                                 removing one was meant to do. -->
                                             <Button Grid.Column="1" Content="Remove" Padding="8,2" VerticalAlignment="Top"
                                                     Command="{Binding DataContext.RemoveMapDataSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CommandParameter="{Binding}"/>
+                                                    CommandParameter="{Binding}">
+                                                <Button.Style>
+                                                    <Style TargetType="Button">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsFromMap}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
@@ -541,6 +555,15 @@
                                              ToolTip="Multiplies the pattern's line spacing. Too small on a large area draws as a solid block and takes a long time; too large draws nothing visible."/>
                                 </StackPanel>
 
+                                <!-- Outside the pattern block: an inset means the same for a solid fill
+                                     as for a line pattern. -->
+                                <TextBlock Text="Inset from boundary (drawing units)" Margin="0,0,0,4"/>
+                                <TextBox Width="180" HorizontalAlignment="Left"
+                                         Text="{Binding SelectedTransform.HatchInsetDistance, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4"
+                                         ToolTip="Fills a smaller polygon offset inwards from the boundary, the same as OFFSET on a closed polyline. Zero fills right up to the outline."/>
+                                <TextBlock Text="The fill stops short of the outline, so the boundary reads as a line in its own right instead of being buried under the edge of its own hatch. An inset wider than the polygon can absorb leaves nothing to fill, and is reported rather than drawn. An inset fill does not follow later edits to the boundary, since there is no drawn boundary to follow."
+                                           TextWrapping="Wrap" Foreground="#777777" FontSize="11" Margin="0,0,0,6"/>
+
                                 <TextBlock Text="Transparency %" Margin="0,0,0,4"/>
                                 <TextBox Width="180" HorizontalAlignment="Left"
                                          Text="{Binding SelectedTransform.HatchTransparencyPercent, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,4"
@@ -575,6 +598,19 @@
                              ToolTip="The CAD layer the strip map sheet frames and their numbers are drawn on. Kept separate from the GIS layers, because the index describes the sheet set rather than anything in the ground."/>
                     <TextBlock Text="Sheet frames go on this layer only, so they can be turned off or plotted on their own. Nothing is written here unless a strip map index has been built on page 2, and nothing is written for a visible map viewport export, which has no proposed main to lay sheets along."
                                TextWrapping="Wrap" Foreground="#777777" FontSize="11" Margin="0,4,0,0"/>
+
+                    <Separator Margin="0,16,0,12"/>
+
+                    <CheckBox Content="Attach the selected attributes to each entity" IsChecked="{Binding AttachAttributesToEntities}"
+                              FontWeight="SemiBold" Margin="0,0,0,6"
+                              ToolTip="Writes the fields ticked on page 3 onto each entity as extended data, so a line in the drawing carries what the GIS knew about it."/>
+                    <StackPanel Margin="20,0,0,0" IsEnabled="{Binding AttachAttributesToEntities}">
+                        <TextBlock Text="Filed under" Margin="0,0,0,4"/>
+                        <TextBox Text="{Binding AttributeAppName, UpdateSourceTrigger=PropertyChanged}" Width="180" HorizontalAlignment="Left"
+                                 ToolTip="The application name the data is stored against, so it can be found again and so another tool writing to the same entity does not overwrite it."/>
+                        <TextBlock Text="A polyline on its own says where something runs; carrying its diameter, material and work order it says what it is. AutoCAD shows this under Properties, and any tool reading the drawing can pick it up, so nothing has to go back to the GIS to identify a line. Values longer than 255 characters are shortened to fit what extended data allows."
+                                   TextWrapping="Wrap" Foreground="#777777" FontSize="11" Margin="0,4,0,0"/>
+                    </StackPanel>
 
                     <Separator Margin="0,16,0,12"/>
 
