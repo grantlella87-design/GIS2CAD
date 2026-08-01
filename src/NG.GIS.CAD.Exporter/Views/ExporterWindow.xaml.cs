@@ -36,7 +36,6 @@ public partial class ExporterWindow : Window
     private GeometryEditor? _geometryEditor;
     private GraphicsOverlay? _proposedPipelineOverlay;
     private GraphicsOverlay? _workOrderOverlay;
-    private Geometry? _proposedPipelineGeometry;
     public ExporterWindow()
     {
         // NGGIS_ARCGIS_RUNTIME_BOOTSTRAP
@@ -195,7 +194,6 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
         _editingManualProposedPipelineSegmentIndex = -1;
         _pickingManualProposedPipelineSegment = false;
         _manualProposedPipelineSegmentOverlay?.Graphics.Clear();
-        SetLegacySingleManualPipelineGeometry(null);
 
         // The imported or hand edited work order main lives on its own overlay, and is just as much a
         // line drawn under the old method as the hand drawn segments are.

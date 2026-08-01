@@ -160,7 +160,6 @@ public partial class ExporterWindow
         // The snap count described a set that no longer exists, so it is worked out again over what is
         // left rather than left standing as a number about something else.
         ApplyEndpointSnapsToManualProposedPipelineSegments();
-        SetLegacySingleManualPipelineGeometryToCombinedSegments();
         RefreshManualProposedPipelineSegmentOverlay();
         UpdateManualProposedPipelineSegmentSummary();
 
@@ -174,7 +173,6 @@ public partial class ExporterWindow
         StopAndStoreCurrentManualProposedPipelineSegment();
         RefreshManualProposedPipelineSegmentOverlay();
         UpdateManualProposedPipelineSegmentSummary();
-        SetLegacySingleManualPipelineGeometryToCombinedSegments();
         var segmentSummary = _manualProposedPipelineSegmentGeometries.Count == 1
             ? "Manual proposed pipeline finished with 1 segment."
             : $"Manual proposed pipeline finished with {_manualProposedPipelineSegmentGeometries.Count} segments.";
@@ -192,7 +190,6 @@ public partial class ExporterWindow
         // the export stays scoped to a boundary around a main that is no longer drawn.
         RememberProposedMainBuffer(null);
         RefreshManualProposedPipelineSegmentOverlay();
-        SetLegacySingleManualPipelineGeometry(null);
         UpdateManualProposedPipelineSegmentSummary();
         SetManualProposedPipelineStatus("Manual proposed pipeline segments cleared.");
     }
@@ -268,7 +265,6 @@ public partial class ExporterWindow
         }
 
         ApplyEndpointSnapsToManualProposedPipelineSegments();
-        SetLegacySingleManualPipelineGeometryToCombinedSegments();
         return true;
     }
 
@@ -482,15 +478,6 @@ public partial class ExporterWindow
     {
         if (DataContext is ViewModels.ExporterViewModel vm) { vm.Status = message; }
     }
-    private void SetLegacySingleManualPipelineGeometryToLastSegment() { SetLegacySingleManualPipelineGeometryToCombinedSegments(); }
-    private void SetLegacySingleManualPipelineGeometry(RuntimeGeometry? geometry)
-    {
-        var field = GetType().GetField("_proposedPipelineGeometry", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        if (field != null && (geometry == null || field.FieldType.IsAssignableFrom(geometry.GetType())))
-        {
-            field.SetValue(this, geometry);
-        }
-    }
     private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
     {
         if (parent == null)
@@ -531,10 +518,6 @@ public partial class ExporterWindow
     private void ClearProposedPipeline_Click(object sender, RoutedEventArgs e)
     {
         ClearManualProposedMainSegments_Click(sender, e);
-    }
-    private void SetLegacySingleManualPipelineGeometryToCombinedSegments()
-    {
-        SetLegacySingleManualPipelineGeometry(BuildManualProposedPipelineMultipartGeometry());
     }
     private RuntimeGeometry? BuildManualProposedPipelineMultipartGeometry()
     {
