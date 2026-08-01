@@ -13,7 +13,7 @@ namespace NG.GIS.CAD.Exporter.ViewModels;
 /// Held as functions rather than as the layer itself, so the view model can list and toggle what the map
 /// is showing without taking a reference to the map or the runtime's layer types.
 /// </summary>
-public sealed record BaseMapLayerHandle(string Name, Func<bool> GetVisible, Action<bool> SetVisible);
+public sealed record BaseMapLayerHandle(string Name, Func<bool> GetVisible, Action<bool> SetVisible, Action Remove);
 
 public sealed class MapDataSourceViewModel : ObservableObject
 {
@@ -37,11 +37,14 @@ public sealed class MapDataSourceViewModel : ObservableObject
         _baseLayer = baseLayer;
         Source = new MapDataSource { Name = baseLayer.Name, Url = string.Empty, Enabled = baseLayer.GetVisible() };
         _enabled = Source.Enabled;
-        _status = "From the map. Untick to hide it for this session.";
+        _status = "From the map. Untick to hide it, or Remove to take it off.";
     }
 
-    /// <summary>Whether this entry came with the map, so the panel can say so and not offer to remove it.</summary>
+    /// <summary>Whether this entry came with the map rather than from the profile.</summary>
     public bool IsFromMap => _baseLayer != null;
+
+    /// <summary>Takes a map layer off the map. Nothing to do for a profile source.</summary>
+    public void RemoveFromMap() => _baseLayer?.Remove();
 
     public MapDataSource Source { get; }
 

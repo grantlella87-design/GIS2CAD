@@ -98,7 +98,8 @@ public partial class ExporterWindow
             .Select(layer => new ViewModels.BaseMapLayerHandle(
                 string.IsNullOrWhiteSpace(layer.Name) ? "Unnamed layer" : layer.Name,
                 () => layer.IsVisible,
-                visible => layer.IsVisible = visible))
+                visible => layer.IsVisible = visible,
+                () => map.OperationalLayers.Remove(layer)))
             .ToList());
     }
 
