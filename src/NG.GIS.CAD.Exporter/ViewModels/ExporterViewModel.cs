@@ -541,13 +541,16 @@ public sealed partial class ExporterViewModel : ObservableObject
     {
         if (parameter is not MapDataSourceViewModel sourceVm) { return; }
 
-        // A layer the map brought with it is not the profile's to remove. Taking it off the list would
-        // only hide the entry until the map loaded again, so the tick is offered instead, which does
-        // what removing it was meant to do and says what it did.
+        // A layer the map brought with it comes off the map itself. There is nothing in the profile to
+        // delete, so it returns when the map next loads: this removes it from the session rather than
+        // for good, and says so rather than looking permanent.
         if (sourceVm.IsFromMap)
         {
-            Status = sourceVm.Name + " comes with the map rather than from this profile, so it cannot be "
-                     + "removed here. Untick it to stop it drawing.";
+            sourceVm.RemoveFromMap();
+            MapDataSources.Remove(sourceVm);
+            _baseMapLayers = _baseMapLayers.Where(l => l.Name != sourceVm.Name).ToList();
+            Status = "Removed " + sourceVm.Name + " from the map. It came with the web map rather than "
+                     + "from this profile, so it returns next time the map loads.";
             return;
         }
 
