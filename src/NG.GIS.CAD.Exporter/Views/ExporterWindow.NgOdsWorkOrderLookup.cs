@@ -241,9 +241,14 @@ public partial class ExporterWindow
         ApplyNgOdsWorkOrderSelection(item, "name");
     }
 
+    /// <summary>
+    /// Picks up a work order number that was typed rather than chosen from the list, once the user has
+    /// finished typing it. Cached by number, so leaving the box without having changed anything reports
+    /// the answer already held instead of asking again.
+    /// </summary>
     private void NgOdsWorkOrderCombo_LostFocus(object sender, RoutedEventArgs e)
     {
-        if (WorkOrderDrivenExportRadio != null) { WorkOrderDrivenExportRadio.IsChecked = true; }
+        _ = CrossReferenceProposedMainForWorkOrderAsync(GetSelectedNgOdsWorkOrderNumberForProposedMain(), force: false);
     }
 
     private void ApplyNgOdsWorkOrderSelection(NgOdsWorkOrderItem item, string selectedFrom)
@@ -261,13 +266,17 @@ public partial class ExporterWindow
                 WorkOrderNameComboBox.SelectedItem = item;
                 WorkOrderNameComboBox.Text = item.WorkOrderName;
             }
-            if (WorkOrderDrivenExportRadio != null) { WorkOrderDrivenExportRadio.IsChecked = true; }
-            SetNgOdsStatus($"Selected {item.WorkOrderNumber} from NG_ODS by {selectedFrom}. Work Order driven export selected.");
+            SetNgOdsStatus($"Selected {item.WorkOrderNumber} from NG_ODS by {selectedFrom}. Checking GIS for an existing proposed main...");
         }
         finally
         {
             _syncingNgOdsWorkOrderSelection = false;
         }
+
+        // Outside the sync guard, because that flag is about the two combo boxes echoing each other and
+        // this is neither of them. The method is no longer forced to Work Order driven here: which of
+        // the two fits depends on whether GIS already holds the route, so the lookup sets it.
+        _ = CrossReferenceProposedMainForWorkOrderAsync(item.WorkOrderNumber, force: false);
     }
 
     private void SetNgOdsStatus(string message)
