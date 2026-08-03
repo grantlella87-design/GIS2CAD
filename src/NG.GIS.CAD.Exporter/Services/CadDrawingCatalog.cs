@@ -267,37 +267,84 @@ public sealed class CadDrawingCatalog
     {
         var viewports = new List<CadViewport>();
         var layouts = (DBDictionary)transaction.GetObject(database.LayoutDictionaryId, OpenMode.ForRead);
+        var modelSpaceId = SymbolUtilityServices.GetBlockModelSpaceId(database);
 
         foreach (DBDictionaryEntry entry in layouts)
         {
             if (transaction.GetObject(entry.Value, OpenMode.ForRead) is not Layout layout) { continue; }
-            var isMillimetres = layout.PlotPaperUnits == PlotPaperUnit.Millimeters;
 
-            foreach (ObjectId id in layout.GetViewports())
-            {
-                if (transaction.GetObject(id, OpenMode.ForRead) is not Viewport viewport) { continue; }
+            // Model space is in this dictionary too, and has no paper to size a sheet from. It used to
+            // be filtered by viewport number instead, which stopped working the moment the numbers did.
+            if (layout.BlockTableRecordId == modelSpaceId) { continue; }
 
-                // Number 1 is the paper space viewport itself: the whole sheet, not a window onto the
-                // model. Sizing a strip map from it would measure the paper rather than the drawing
-                // area. Model space is in this dictionary too and has nothing above number 1.
-                if (viewport.Number <= 1) { continue; }
-                if (viewport.Width <= 0 || viewport.Height <= 0) { continue; }
-
-                viewports.Add(new CadViewport
-                {
-                    LayoutName = layout.LayoutName,
-                    Number = viewport.Number,
-                    Width = viewport.Width,
-                    Height = viewport.Height,
-                    IsMillimetres = isMillimetres
-                });
-            }
+            viewports.AddRange(ReadLayoutViewports(transaction, layout));
         }
 
         return viewports
             .OrderBy(v => v.LayoutName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(v => v.Number)
             .ToList();
+    }
+
+    /// <summary>
+    /// The usable viewports on one layout, read from the layout's own paper space rather than from
+    /// <c>Layout.GetViewports</c>.
+    ///
+    /// That method is why the list was empty for a template. It hands back an array the layout keeps of
+    /// its viewports, and that array is filled in when the layout is activated and regenerated. The
+    /// drawing that is open in AutoCAD has been through that, so reading it worked there and the list
+    /// populated from the open drawing as expected. A template opened into a side database has not been
+    /// through it and never will be -- nothing activates a layout in a database that is never shown --
+    /// so the array came back empty and so did the dropdown, for a template that plainly had viewports
+    /// in it.
+    ///
+    /// Walking the paper space block instead reads the viewport entities themselves, which are in the
+    /// file whether or not anything has drawn them.
+    /// </summary>
+    private static List<CadViewport> ReadLayoutViewports(Transaction transaction, Layout layout)
+    {
+        var paperSpace = (BlockTableRecord)transaction.GetObject(layout.BlockTableRecordId, OpenMode.ForRead);
+        var isMillimetres = layout.PlotPaperUnits == PlotPaperUnit.Millimeters;
+
+        var found = new List<Viewport>();
+        foreach (ObjectId id in paperSpace)
+        {
+            if (transaction.GetObject(id, OpenMode.ForRead) is Viewport viewport
+                && viewport.Width > 0
+                && viewport.Height > 0)
+            {
+                found.Add(viewport);
+            }
+        }
+
+        // Number 1 is the paper space viewport itself: the whole sheet, not a window onto the model.
+        // Sizing a strip map from it would measure the paper rather than the drawing area.
+        //
+        // The numbers come from the same activation that fills the array above, so in a side database
+        // they can all read 0 and the filter would then throw everything away -- trading an empty list
+        // for an empty list. When no viewport claims a number above 1, the first entity in paper space
+        // is taken as the sheet instead, which is the order AutoCAD writes them in.
+        var numbered = found.Where(v => v.Number > 1).ToList();
+        var usable = numbered.Count > 0 ? numbered : found.Skip(1).ToList();
+
+        var result = new List<CadViewport>();
+        var position = 2;
+        foreach (var viewport in usable)
+        {
+            result.Add(new CadViewport
+            {
+                LayoutName = layout.LayoutName,
+                // Its own number where it has one, otherwise its position, so two viewports on a layout
+                // are still told apart in the list and by the key the profile remembers.
+                Number = viewport.Number > 1 ? viewport.Number : position,
+                Width = viewport.Width,
+                Height = viewport.Height,
+                IsMillimetres = isMillimetres
+            });
+            position++;
+        }
+
+        return result;
     }
 
     private static List<string> ReadBlockNames(Database database, Transaction transaction)
