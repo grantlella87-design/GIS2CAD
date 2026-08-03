@@ -179,12 +179,55 @@ public partial class ExporterWindow
         if (e.Key != Key.Enter) { return; }
         if (sender is not ComboBox combo) { return; }
 
-        var chosen = ResolveTypedNgOdsWorkOrder(combo);
-        if (chosen == null) { return; }
+        try
+        {
+            var typed = ReadNgOdsComboText(combo);
 
-        combo.IsDropDownOpen = false;
-        ApplyNgOdsWorkOrderSelection(chosen, "Enter");
-        e.Handled = true;
+            // Nothing typed is not a failed match, so Enter is left to whatever else wants it.
+            if (string.IsNullOrWhiteSpace(typed)) { return; }
+
+            var chosen = ResolveTypedNgOdsWorkOrder(combo, typed);
+            if (chosen == null)
+            {
+                // Said out loud rather than ignored. Every way this can come up looks identical from
+                // the keyboard -- the list never loaded, the connection was declined, the number is
+                // not in this jurisdiction -- and a key that silently does nothing cannot be told
+                // apart from a key that is not wired up.
+                SetNgOdsStatus(_ngOdsWorkOrders.Count == 0
+                    ? "No NG_ODS work orders are loaded, so \"" + typed + "\" could not be matched. "
+                      + "Open a work order dropdown to load the list or re-enter the connection."
+                    : "No work order matches \"" + typed + "\" among the "
+                      + _ngOdsWorkOrders.Count.ToString("N0") + " loaded from NG_ODS.");
+                e.Handled = true;
+                return;
+            }
+
+            combo.IsDropDownOpen = false;
+            ApplyNgOdsWorkOrderSelection(chosen, "Enter");
+            e.Handled = true;
+        }
+        catch (Exception ex)
+        {
+            // A handler that throws is swallowed by the host and looks exactly like a key that does
+            // nothing, which is the hardest thing to report and the easiest to fix once reported.
+            SetNgOdsStatus("Enter could not take a work order: " + ex.GetType().Name + ": " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// What is actually in the box, read from the editable text box first.
+    ///
+    /// ComboBox.Text is the obvious place to read and is not reliable here: the list is rebound on
+    /// every keystroke, rebinding clears the selection, and clearing the selection empties Text. The
+    /// text box underneath holds what was typed throughout, so it is asked first and ComboBox.Text is
+    /// only the fallback.
+    /// </summary>
+    private static string ReadNgOdsComboText(ComboBox combo)
+    {
+        var editor = combo.Template?.FindName("PART_EditableTextBox", combo) as TextBox;
+        var text = editor?.Text;
+        if (string.IsNullOrWhiteSpace(text)) { text = combo.Text; }
+        return text?.Trim() ?? string.Empty;
     }
 
     /// <summary>
@@ -195,17 +238,17 @@ public partial class ExporterWindow
     /// something merely beginning the same way, and failing that the top of the filtered list -- which
     /// is the row shown directly under the caret, so Enter takes what the dropdown is offering.
     /// </summary>
-    private NgOdsWorkOrderItem? ResolveTypedNgOdsWorkOrder(ComboBox combo)
+    private NgOdsWorkOrderItem? ResolveTypedNgOdsWorkOrder(ComboBox combo, string typed)
     {
-        if (combo.IsDropDownOpen && combo.SelectedItem is NgOdsWorkOrderItem highlighted) { return highlighted; }
-
         var isNumberBox = ReferenceEquals(combo, WorkOrderSelectionComboBox);
-        var typed = combo.Text?.Trim();
-        if (string.IsNullOrWhiteSpace(typed)) { return null; }
 
+        // Typed in full beats anything highlighted. Somebody who has typed a whole number means that
+        // number, even if the list happens to be sitting on a different row.
         var exact = _ngOdsWorkOrders.FirstOrDefault(x => string.Equals(
             isNumberBox ? x.WorkOrderNumber : x.WorkOrderName, typed, StringComparison.OrdinalIgnoreCase));
         if (exact != null) { return exact; }
+
+        if (combo.IsDropDownOpen && combo.SelectedItem is NgOdsWorkOrderItem highlighted) { return highlighted; }
 
         // The same test the list is filtered by, so the first row here is the first row on screen.
         return isNumberBox
@@ -338,6 +381,13 @@ public partial class ExporterWindow
         _syncingNgOdsWorkOrderSelection = true;
         try
         {
+            // The row has to be in the list before it can be the selection. A ComboBox refuses a
+            // SelectedItem it does not hold, and refuses it silently -- which for a list that has just
+            // been filtered down to a thousand rows is a selection that looks like it simply did not
+            // happen. Enter can reach past that limit, because it matches against everything loaded.
+            EnsureNgOdsItemIsSelectable(WorkOrderSelectionComboBox, item);
+            EnsureNgOdsItemIsSelectable(WorkOrderNameComboBox, item);
+
             if (WorkOrderSelectionComboBox != null)
             {
                 WorkOrderSelectionComboBox.SelectedItem = item;
@@ -359,6 +409,22 @@ public partial class ExporterWindow
         // this is neither of them. The method is no longer forced to Work Order driven here: which of
         // the two fits depends on whether GIS already holds the route, so the lookup sets it.
         _ = CrossReferenceProposedMainForWorkOrderAsync(item.WorkOrderNumber, force: false);
+    }
+
+    /// <summary>
+    /// Puts the row at the top of a dropdown's list when it is not already in it, so it can be made
+    /// the selection. Nothing to do in the ordinary case, where the row was picked from the list it is
+    /// already in.
+    /// </summary>
+    private static void EnsureNgOdsItemIsSelectable(ComboBox? combo, NgOdsWorkOrderItem item)
+    {
+        if (combo == null) { return; }
+
+        var current = (combo.ItemsSource as IEnumerable<NgOdsWorkOrderItem>)?.ToList() ?? new List<NgOdsWorkOrderItem>();
+        if (current.Contains(item)) { return; }
+
+        current.Insert(0, item);
+        combo.ItemsSource = current;
     }
 
     private void SetNgOdsStatus(string message)
