@@ -17,7 +17,14 @@ public sealed class StripMapSheet
     public double CenterX { get; init; }
     public double CenterY { get; init; }
 
-    /// <summary>Bearing the sheet is turned to, so its long side follows the route.</summary>
+    /// <summary>
+    /// Bearing the sheet is turned to, so its long side follows the route.
+    ///
+    /// Always within a quarter turn of due east, so that up the page is never southward. A sheet may
+    /// therefore be turned half a circle from the direction its stretch of route is travelled in, which
+    /// costs nothing: the rectangle is unchanged by that turn, and it is the only way a route heading
+    /// west can be drawn without north pointing down the paper.
+    /// </summary>
     public double RotationDegrees { get; init; }
 
     /// <summary>Where along the route this sheet starts and ends, in ground feet from the start.</summary>
@@ -357,11 +364,55 @@ public static class StripMapIndexService
             Number = number,
             CenterX = centreX,
             CenterY = centreY,
-            RotationDegrees = angle * 180.0 / Math.PI,
+            RotationDegrees = NorthUpRotationDegrees(angle),
             StartStationFeet = startStationFeet,
             EndStationFeet = endStationFeet,
             Outline = outline
         };
+    }
+
+    /// <summary>
+    /// The bearing to turn the sheet to, given the direction its stretch of route runs.
+    ///
+    /// Turning a sheet to follow the route is what makes a strip map, but followed literally it turns
+    /// half the sheets upside down. A route heading west wants a bearing near 180 degrees, and a sheet
+    /// at 180 has south up the page: the north arrow points down, and the sheet number is drawn on its
+    /// head. Half of Massachusetts runs east to west, so this was not a corner case.
+    ///
+    /// The fix is a half turn, and it is free. A rectangle turned half a circle about its own centre is
+    /// the same rectangle, so the sheet covers exactly the ground it did before and the layout above is
+    /// untouched -- only the bearing reported for it changes, which is what the paper is turned by.
+    ///
+    /// What it costs is the reading direction: a westward route now runs right to left across the page,
+    /// because the two cannot both be had. Ground going left to right is what puts north up, and north
+    /// up is the one a drawing is read by.
+    /// </summary>
+    private static double NorthUpRotationDegrees(double angle)
+    {
+        // Up the page is a quarter turn anticlockwise from the sheet's long axis, so how much of it is
+        // northward is the cosine. Negative is a sheet with south up.
+        var northUpComponent = Math.Cos(angle);
+
+        // Inside the tolerance the route runs true north or true south, and north lies flat across the
+        // page rather than up or down it. Neither turn is southerly, so the tie goes to the one that
+        // runs the route's own direction to the right, which stops two such sheets facing opposite ways
+        // for no reason a reader could see.
+        const double AlongThePage = 1e-9;
+        var upsideDown = northUpComponent < -AlongThePage
+                         || (Math.Abs(northUpComponent) <= AlongThePage && Math.Sin(angle) < 0);
+
+        if (upsideDown) { angle += Math.PI; }
+
+        return NormalizeDegrees(angle * 180.0 / Math.PI);
+    }
+
+    /// <summary>Brings a bearing into (-180, 180], so a half turn does not report 359 degrees.</summary>
+    private static double NormalizeDegrees(double degrees)
+    {
+        degrees %= 360.0;
+        if (degrees > 180.0) { return degrees - 360.0; }
+        if (degrees <= -180.0) { return degrees + 360.0; }
+        return degrees;
     }
 
     /// <summary>
