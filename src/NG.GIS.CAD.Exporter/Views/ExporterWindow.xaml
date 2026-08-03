@@ -553,10 +553,32 @@
                         </StackPanel>
 
                         <!-- Point only: rotation and scale apply to a block reference. -->
-                        <TextBlock Grid.Row="7" Grid.Column="0" Text="Rotation +/- Degrees" Margin="0,0,8,8"
+                        <TextBlock Grid.Row="7" Grid.Column="0" Text="Rotation" Margin="0,0,8,8"
                                    Visibility="{Binding SelectedTransform.IsPoint, Converter={StaticResource BoolToVisibility}}"/>
-                        <TextBox Grid.Row="7" Grid.Column="1" Text="{Binding SelectedTransform.RotationOffsetDegrees, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"
-                                 Visibility="{Binding SelectedTransform.IsPoint, Converter={StaticResource BoolToVisibility}}"/>
+                        <StackPanel Grid.Row="7" Grid.Column="1" Margin="0,0,0,8"
+                                    Visibility="{Binding SelectedTransform.IsPoint, Converter={StaticResource BoolToVisibility}}">
+                            <RadioButton GroupName="RotationSource" IsChecked="{Binding SelectedTransform.UseFieldRotation}"
+                                         Content="From a GIS field" Margin="0,0,0,4"
+                                         ToolTip="Each block is turned by its own feature's value. A feature with no value falls back to the fixed degrees below."/>
+                            <StackPanel Margin="20,0,0,6" IsEnabled="{Binding SelectedTransform.UseFieldRotation}">
+                                <ComboBox ItemsSource="{Binding SelectedTransform.AvailableFields}"
+                                          Text="{Binding SelectedTransform.RotationField, UpdateSourceTrigger=PropertyChanged}"
+                                          IsEditable="True" Margin="0,0,0,4"
+                                          ToolTip="The layer's own fields. One that looks like a rotation is filled in for you; anything you choose here replaces it and is kept."/>
+                                <CheckBox Content="Invert rotation" IsChecked="{Binding SelectedTransform.InvertRotationField}"
+                                          ToolTip="For a layer that measures its angle the opposite way round from AutoCAD. Tick this when the symbols lean the wrong way; use the degrees below if they are simply facing the wrong end."/>
+                            </StackPanel>
+                            <RadioButton GroupName="RotationSource" IsChecked="{Binding SelectedTransform.UseFixedRotation}"
+                                         Content="Fixed for every block" Margin="0,0,0,4"
+                                         ToolTip="Ignores the data and places every block at the degrees below. 0 keeps them horizontal, 90 stands them up."/>
+                            <StackPanel Orientation="Horizontal" Margin="20,0,0,6">
+                                <TextBlock Text="Degrees" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBox Width="80" Text="{Binding SelectedTransform.RotationOffsetDegrees, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="The whole rotation when fixed. Added on top of the field's value otherwise, so a layer that is right about the axis but a quarter turn out can be corrected once."/>
+                                <TextBlock Text="0 = horizontal, 90 = vertical" VerticalAlignment="Center" Margin="8,0,0,0" Foreground="#777777"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding SelectedTransform.RotationSummary}" TextWrapping="Wrap" Foreground="#555555"/>
+                        </StackPanel>
 
                         <TextBlock Grid.Row="8" Grid.Column="0" Text="Block Scale" Margin="0,0,8,8"
                                    Visibility="{Binding SelectedTransform.IsPoint, Converter={StaticResource BoolToVisibility}}"/>

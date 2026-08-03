@@ -202,7 +202,7 @@ public sealed class CadExportWriter
                 if (part.Count == 0) { continue; }
 
                 var entity = isPoint
-                    ? BuildPointEntity(part[0], layer.Transform, blockId)
+                    ? BuildPointEntity(part[0], feature, layer.Transform, blockId)
                     : BuildLinearEntity(part, layer.GeometryType);
 
                 if (entity == null) { continue; }
@@ -233,7 +233,7 @@ public sealed class CadExportWriter
         }
     }
 
-    private static Entity? BuildPointEntity(ExportVertex vertex, CadTransformRule transform, ObjectId blockId)
+    private static Entity? BuildPointEntity(ExportVertex vertex, ExportFeature feature, CadTransformRule transform, ObjectId blockId)
     {
         var position = new Point3d(vertex.X, vertex.Y, 0);
 
@@ -243,11 +243,51 @@ public sealed class CadExportWriter
 
         var reference = new BlockReference(position, blockId)
         {
-            Rotation = transform.RotationOffsetDegrees * DegreesToRadians
+            Rotation = ResolveRotationDegrees(feature, transform) * DegreesToRadians
         };
         var scale = transform.ScaleValue > 0 ? transform.ScaleValue : 1.0;
         reference.ScaleFactors = new Scale3d(scale);
         return reference;
+    }
+
+    /// <summary>
+    /// The angle to place one block at, in degrees.
+    ///
+    /// The rule names a field and the feature carries its value, and until now neither was read: the
+    /// rotation field has been on the model, and pickable in the profile, while every block went in at
+    /// the fixed offset regardless. A layer that records which way its valves face was drawn with all
+    /// of them facing the same way.
+    ///
+    /// Every path ends at the fixed offset, which is what makes reading the field safe to do by
+    /// default. A rule with no field, a feature missing that attribute, and a value that is not a
+    /// number all land on the angle that would have been used anyway, so nothing is worse off than
+    /// before for having tried.
+    /// </summary>
+    private static double ResolveRotationDegrees(ExportFeature feature, CadTransformRule transform)
+    {
+        if (string.Equals(transform.RotationMode, RotationModes.Fixed, StringComparison.OrdinalIgnoreCase))
+        {
+            return transform.RotationOffsetDegrees;
+        }
+
+        if (string.IsNullOrWhiteSpace(transform.RotationField)) { return transform.RotationOffsetDegrees; }
+        if (!feature.Attributes.TryGetValue(transform.RotationField, out var raw)) { return transform.RotationOffsetDegrees; }
+        if (string.IsNullOrWhiteSpace(raw)) { return transform.RotationOffsetDegrees; }
+
+        // Invariant, because these values come off a REST service as JSON numbers and were turned into
+        // strings on the way in. Parsing them back under a comma decimal separator would read 45.5 as
+        // nothing at all and drop the feature to the default angle without saying so.
+        if (!double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var degrees))
+        {
+            return transform.RotationOffsetDegrees;
+        }
+
+        if (transform.InvertRotationField) { degrees = -degrees; }
+
+        // The offset applies on top rather than instead, so a layer whose angles are right relative to
+        // each other but a quarter turn out as a set can be corrected once for the whole layer.
+        return degrees + transform.RotationOffsetDegrees;
     }
 
     private static Entity? BuildLinearEntity(List<ExportVertex> part, string geometryType)

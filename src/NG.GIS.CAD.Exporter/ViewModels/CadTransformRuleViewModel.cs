@@ -286,6 +286,177 @@ public sealed class CadTransformRuleViewModel : ObservableObject
         {
             Rule.RotationOffsetDegrees = value;
             RaisePropertyChanged();
+            RaisePropertyChanged(nameof(RotationSummary));
+        }
+    }
+
+    // ---- Rotation source ----------------------------------------------------------------------
+
+    /// <summary>
+    /// The layer's own field names, for the rotation field to be picked from. Filled once the layer
+    /// metadata has loaded, so the list is what this layer actually has rather than typing practice.
+    /// </summary>
+    public IReadOnlyList<string> AvailableFields { get; private set; } = Array.Empty<string>();
+
+    /// <summary>Whether the field named below was guessed rather than chosen, so the page can say so.</summary>
+    public bool RotationFieldWasGuessed { get; private set; }
+
+    /// <summary>
+    /// Names worth trying for a rotation, best first.
+    ///
+    /// Ordered by how sure the name makes it. A field called ROTATION is a rotation; one called ANGLE
+    /// almost certainly is on a point layer; DIRECTION and ORIENTATION are further down because they
+    /// are also used for things that are not angles at all, like a flow direction of "upstream".
+    /// </summary>
+    private static readonly string[] RotationFieldNames =
+    {
+        "rotation", "symbolrotation", "symbol_rotation", "rotationangle", "rotation_angle",
+        "angle", "bearing", "azimuth", "heading", "orientation", "direction", "rot"
+    };
+
+    /// <summary>
+    /// Offers the layer's fields for picking, and fills in a rotation field if none has been chosen.
+    ///
+    /// The guess only ever writes into an empty box. A field already named was either chosen here or
+    /// restored from the profile, and in both cases somebody has said what they want; replacing it with
+    /// a name that merely looks likelier would be overriding a decision with a hunch.
+    /// </summary>
+    public void OfferFields(IEnumerable<string> fieldNames)
+    {
+        AvailableFields = fieldNames
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        RaisePropertyChanged(nameof(AvailableFields));
+
+        if (!string.IsNullOrWhiteSpace(Rule.RotationField)) { return; }
+
+        var guess = GuessRotationField(AvailableFields);
+        if (guess == null) { return; }
+
+        Rule.RotationField = guess;
+        RotationFieldWasGuessed = true;
+        RaisePropertyChanged(nameof(RotationField));
+        RaisePropertyChanged(nameof(RotationFieldWasGuessed));
+        RaisePropertyChanged(nameof(RotationSummary));
+    }
+
+    /// <summary>
+    /// The likeliest rotation field among these, or null when none of them reads like one.
+    ///
+    /// An exact name beats a name that merely contains one, so a layer with both ANGLE and ANGLE_UNITS
+    /// takes ANGLE rather than whichever the service happened to list first.
+    /// </summary>
+    private static string? GuessRotationField(IReadOnlyList<string> fieldNames)
+    {
+        foreach (var candidate in RotationFieldNames)
+        {
+            foreach (var field in fieldNames)
+            {
+                if (Normalize(field).Equals(candidate, StringComparison.Ordinal)) { return field; }
+            }
+        }
+
+        foreach (var candidate in RotationFieldNames)
+        {
+            foreach (var field in fieldNames)
+            {
+                if (Normalize(field).Contains(candidate, StringComparison.Ordinal)) { return field; }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Strips the punctuation field names vary in, so ROT_ANGLE and rotangle read alike.</summary>
+    private static string Normalize(string name) =>
+        new string(name.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+
+    public string RotationField
+    {
+        get => Rule.RotationField;
+        set
+        {
+            Rule.RotationField = value ?? string.Empty;
+
+            // Whatever it is now, it is the user's rather than the guess it may have started as.
+            RotationFieldWasGuessed = false;
+            RaisePropertyChanged();
+            RaisePropertyChanged(nameof(RotationFieldWasGuessed));
+            RaisePropertyChanged(nameof(RotationSummary));
+        }
+    }
+
+    public bool UseFieldRotation
+    {
+        get => !string.Equals(Rule.RotationMode, RotationModes.Fixed, StringComparison.OrdinalIgnoreCase);
+        set
+        {
+            if (!value) { return; }
+            Rule.RotationMode = RotationModes.FromField;
+            RaisePropertyChanged();
+            RaisePropertyChanged(nameof(UseFixedRotation));
+            RaisePropertyChanged(nameof(RotationSummary));
+        }
+    }
+
+    public bool UseFixedRotation
+    {
+        get => !UseFieldRotation;
+        set
+        {
+            if (!value) { return; }
+            Rule.RotationMode = RotationModes.Fixed;
+            RaisePropertyChanged();
+            RaisePropertyChanged(nameof(UseFieldRotation));
+            RaisePropertyChanged(nameof(RotationSummary));
+        }
+    }
+
+    public bool InvertRotationField
+    {
+        get => Rule.InvertRotationField;
+        set
+        {
+            Rule.InvertRotationField = value;
+            RaisePropertyChanged();
+            RaisePropertyChanged(nameof(RotationSummary));
+        }
+    }
+
+    /// <summary>
+    /// What the rotation will actually come out as, in a sentence. Four settings interact here and the
+    /// combination that quietly does nothing -- field mode with no field named -- looks identical to
+    /// the one that works until the export is opened.
+    /// </summary>
+    public string RotationSummary
+    {
+        get
+        {
+            var offset = RotationOffsetDegrees;
+            var offsetText = Math.Abs(offset) < 0.0005
+                ? string.Empty
+                : (offset > 0 ? " plus " : " minus ") + Math.Abs(offset).ToString("0.###") + "°";
+
+            if (!UseFieldRotation)
+            {
+                var fixedAngle = offset.ToString("0.###") + "°";
+                var shape = Math.Abs(offset % 180.0) < 0.0005 ? " (horizontal)"
+                    : Math.Abs(Math.Abs(offset % 180.0) - 90.0) < 0.0005 ? " (vertical)"
+                    : string.Empty;
+                return "Every block at " + fixedAngle + shape + ", whatever the data says.";
+            }
+
+            if (string.IsNullOrWhiteSpace(RotationField))
+            {
+                return "No rotation field named, so every block sits at " + offset.ToString("0.###")
+                       + "°. Pick a field, or choose a fixed rotation to say so on purpose.";
+            }
+
+            var guessed = RotationFieldWasGuessed ? " (guessed from the layer's fields, change it if it is wrong)" : string.Empty;
+            var inverted = InvertRotationField ? ", counted the other way round" : string.Empty;
+            return "Each block turned by " + RotationField + inverted + offsetText
+                   + ". Features with no value fall back to " + offset.ToString("0.###") + "°." + guessed;
         }
     }
     public double ScaleValue

@@ -257,10 +257,18 @@ public sealed partial class ExporterViewModel : ObservableObject
                     state.Enabled = true;
                     ApplySavedSettings(state, userSettings);
 
+                    var transform = new CadTransformRuleViewModel(new CadTransformRule { LayerUrl = layer.Url, LayerName = layer.Name, GeometryType = layer.GeometryType, CadLayerName = layer.Name.Replace(" ", "_"), LineType = "ByLayer", ColorMode = "ByLayer" });
+
+                    // Every field, not only the ticked ones. Page 3 decides what travels into the
+                    // drawing as data; a rotation field is read to place the block and does not have to
+                    // be written out as well, so restricting the list to the ticked ones would hide the
+                    // very field most layers keep their angle in.
+                    transform.OfferFields(state.Fields.Select(f => f.Field.Name));
+
                     _mapBackedLayers.Add(new MapBackedLayer(
                         mapLayer,
                         new LayerSelectionViewModel(state),
-                        new CadTransformRuleViewModel(new CadTransformRule { LayerUrl = layer.Url, LayerName = layer.Name, GeometryType = layer.GeometryType, CadLayerName = layer.Name.Replace(" ", "_"), LineType = "ByLayer", ColorMode = "ByLayer" })));
+                        transform));
                 }
             }
 
