@@ -73,21 +73,31 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Grid Grid.Column="0">
-                    <!-- The mode buttons live in row 0, which no splitter is attached to, so they
-                         cannot be resized or scrolled by anything the user does below them. The
-                         splitters act on rows 1, 3 and 5 only.
+                    <!-- The mode buttons live in row 0, which nothing resizes or collapses, so they
+                         are always reachable however the sections below are arranged.
 
-                         Row 5 holds both expanders together rather than one each in its own row.
-                         Separate rows let them drift apart: each was Auto sized, so an expanded data
-                         source list grew without limit, squeezed the starred rows to their minimums
-                         and pushed the strip map index down against the bottom edge. As one block
-                         they keep their order and move together whatever either of them is doing. -->
+                         Rows 1 and 2 are sections that open and close on their own. Each is starred
+                         while open, so an open section takes the free space and two open sections
+                         share it, and Auto while closed, so a closed one is its header and nothing
+                         more. The switch is made in code rather than by a style trigger, because a
+                         style setter cannot be relied on for a row height once anything has written
+                         one directly.
+
+                         Row 3 holds the data sources and the strip map index together rather than one
+                         each in its own row. Separate rows let them drift apart: each was Auto sized,
+                         so an expanded data source list grew without limit, squeezed the starred rows
+                         to their minimums and pushed the strip map index down against the bottom
+                         edge. As one block they keep their order and move together.
+
+                         The two drag splitters are gone. They set a row height directly, which is the
+                         one thing that stops a section from being able to close again: a height a
+                         splitter has written outranks anything the collapse would set. The sections
+                         give away and take back space by opening and closing now, which is what the
+                         splitters were for. -->
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*" MinHeight="60"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*" MinHeight="80"/>
-                        <RowDefinition Height="Auto"/>
+                        <RowDefinition x:Name="ModeReadoutRow" Height="*" MinHeight="60"/>
+                        <RowDefinition x:Name="MapLayersRow" Height="*" MinHeight="80"/>
                         <RowDefinition Height="Auto" MinHeight="30"/>
                     </Grid.RowDefinitions>
 
@@ -108,7 +118,6 @@
                                 <Button Content="Finish Segments" Click="FinishManualProposedMainSegments_Click" Padding="8" Margin="4,0,4,0"/>
                                 <Button Content="Clear Segments" Click="ClearManualProposedMainSegments_Click" Padding="8" Margin="4,0,0,0"/>
                             </UniformGrid>
-                            <TextBlock Text="Work order geometry/buffer proof" FontWeight="Bold" Margin="0,10,0,6"/>
                         </StackPanel>
                         <StackPanel x:Name="ManualProposedPipelineModeHeader" Visibility="Collapsed">
                             <TextBlock Text="Manual proposed pipeline segments" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
@@ -124,14 +133,29 @@
                         <StackPanel x:Name="VisibleMapModeHeader" Visibility="Collapsed">
                             <TextBlock Text="Visible map viewport export" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
                             <Button Content="Commit Visible Map Extent" Click="SetExtentFromVisibleMap_Click" Padding="8" Margin="0,0,0,16"/>
-                            <TextBlock Text="Live MapView extent (updates after pan/zoom)" FontWeight="Bold" Margin="0,10,0,6"/>
                         </StackPanel>
                     </Grid>
 
-                    <!-- Row 1: mode readouts. Star sized, so each box is bounded by the row and
-                         scrolls its own content. The large MinHeights are gone: they forced the row
-                         taller than the pane and stopped it shrinking. -->
-                    <Grid Grid.Row="1">
+                    <!-- Row 1: the mode readout, in a section of its own. The header names whichever
+                         readout the method on page 1 is showing, since the three are the same box
+                         used three ways and a fixed caption would be wrong for two of them. -->
+                    <Expander Grid.Row="1" x:Name="ModeReadoutExpander" IsExpanded="True" Margin="0,2,0,0"
+                              VerticalContentAlignment="Stretch"
+                              Expanded="LeftPaneSection_ExpansionChanged" Collapsed="LeftPaneSection_ExpansionChanged">
+                        <Expander.Style>
+                            <Style TargetType="Expander">
+                                <Setter Property="Header" Value="Work order geometry / buffer proof"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsDrawPipelineRouteMethod}" Value="True">
+                                        <Setter Property="Header" Value="Manual proposed pipeline segments"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsCurrentDrawingViewMethod}" Value="True">
+                                        <Setter Property="Header" Value="Live map extent (updates after pan/zoom)"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Expander.Style>
+                    <Grid>
                         <Grid x:Name="WorkOrderModePanel">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="*"/>
@@ -152,11 +176,12 @@
                                      VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12"/>
                         </Grid>
                     </Grid>
-                    <GridSplitter Grid.Row="2" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                                  ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
-                                  Background="#E4E4E4" ShowsPreview="True" Cursor="SizeNS"
-                                  ToolTip="Drag to resize the panel above and the map layers below"/>
-                    <GroupBox Grid.Row="3" Header="Map layers" Margin="0,4,0,0">
+                    </Expander>
+
+                    <!-- Row 2: map layers, in a section of its own on the same terms. -->
+                    <Expander Grid.Row="2" x:Name="MapLayersExpander" Header="Map layers" IsExpanded="True" Margin="0,2,0,0"
+                              VerticalContentAlignment="Stretch"
+                              Expanded="LeftPaneSection_ExpansionChanged" Collapsed="LeftPaneSection_ExpansionChanged">
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,4,4,6">
                                 <Button Content="Expand all" Click="ExpandAllMapLayers_Click" Padding="8,2" Margin="0,0,6,0"/>
@@ -231,17 +256,14 @@
                                 </TreeView.ItemTemplate>
                             </TreeView>
                         </DockPanel>
-                    </GroupBox>
-                    <GridSplitter Grid.Row="4" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                                  ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
-                                  Background="#E4E4E4" ShowsPreview="True" Cursor="SizeNS"
-                                  ToolTip="Drag to resize the map layers above and the data sources below"/>
-                    <!-- Row 5: data sources and the strip map index, in that order, in one scroller.
+                    </Expander>
+
+                    <!-- Row 3: data sources and the strip map index, in that order, in one scroller.
                          One scroller rather than one inside each expander: nested scrollers fight over
                          the wheel, and the point of scrolling here is to get past a long data source
                          list to the strip map settings underneath it, which only an outer scroller can
                          do. Capped so the block can grow into free space but cannot take the pane. -->
-                    <ScrollViewer Grid.Row="5" VerticalScrollBarVisibility="Auto"
+                    <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled" MaxHeight="420">
                     <StackPanel>
                     <Expander Header="Data sources" Margin="0,2,0,0">
