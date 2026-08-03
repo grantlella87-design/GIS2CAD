@@ -24,6 +24,17 @@ public sealed class ExportProfile
     /// <summary>Where the SharePoint CAD template browser looks, and which app registration it signs in with.</summary>
     public SharePointTemplateSettings SharePointTemplates { get; set; } = new();
 
+    /// <summary>
+    /// The .dwt picked on page 1, so the choice survives a restart rather than being made again every
+    /// session. Kept here beside <see cref="SharePointTemplates"/>, which already describes where
+    /// templates come from; this is which one was taken.
+    ///
+    /// A path rather than the file. A template chosen from SharePoint has already been downloaded to
+    /// disk by the time it lands here, so both sources leave a real local path and neither needs the
+    /// profile to carry a copy of the drawing.
+    /// </summary>
+    public string CadTemplatePath { get; set; } = string.Empty;
+
     /// <summary>How the strip map index along the proposed main is sized and laid out.</summary>
     public StripMapIndexSettings StripMapIndex { get; set; } = new();
 

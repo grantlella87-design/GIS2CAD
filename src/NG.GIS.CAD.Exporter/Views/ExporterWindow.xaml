@@ -55,7 +55,8 @@
                     <TextBlock Text="CAD template (.dwt)" FontSize="16" FontWeight="Bold" Margin="0,18,0,8"/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                         <Button Content="Pick .dwt" Click="PickLocalDwtTemplate_Click" Width="80" Height="24" Margin="0,0,5,0"/>
-                        <TextBox x:Name="LocalDwtPathTextBox" Width="440" Height="24" IsReadOnly="True" Margin="0,0,5,0"/>
+                        <TextBox x:Name="LocalDwtPathTextBox" Width="440" Height="24" IsReadOnly="True" Margin="0,0,5,0"
+                                 Text="{Binding TemplatePath, Mode=OneWay}"/>
                         <Button Content="Open" Click="OpenLocalDwtTemplate_Click" Width="70" Height="24"/>
                     </StackPanel>
                     <TextBlock x:Name="LocalDwtStatusText" Text="Select a local or synced .dwt, or sign in below to browse SharePoint." TextWrapping="Wrap" Foreground="#555555"/>
