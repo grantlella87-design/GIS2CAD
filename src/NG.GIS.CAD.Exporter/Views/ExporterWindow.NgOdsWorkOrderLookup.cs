@@ -248,15 +248,32 @@ public partial class ExporterWindow
             isNumberBox ? x.WorkOrderNumber : x.WorkOrderName, typed, StringComparison.OrdinalIgnoreCase));
         if (exact != null) { return exact; }
 
-        if (combo.IsDropDownOpen && combo.SelectedItem is NgOdsWorkOrderItem highlighted) { return highlighted; }
+        // A highlighted row is only worth taking while it still agrees with what is typed. The row
+        // selected by the last Enter stays selected, so on a second work order this branch would hand
+        // back the first one again -- the box snapping back to the number before it, which is what
+        // "Enter stops working after the first one" looks like from the keyboard.
+        if (combo.IsDropDownOpen
+            && combo.SelectedItem is NgOdsWorkOrderItem highlighted
+            && MatchesTypedWorkOrder(highlighted, typed, isNumberBox))
+        {
+            return highlighted;
+        }
 
         // The same test the list is filtered by, so the first row here is the first row on screen.
-        return isNumberBox
-            ? _ngOdsWorkOrders.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.WorkOrderNumber)
-                && x.WorkOrderNumber.StartsWith(typed, StringComparison.OrdinalIgnoreCase))
-            : _ngOdsWorkOrders.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.WorkOrderName)
-                && x.WorkOrderName.IndexOf(typed, StringComparison.OrdinalIgnoreCase) >= 0);
+        return _ngOdsWorkOrders.FirstOrDefault(x => MatchesTypedWorkOrder(x, typed, isNumberBox));
     }
+
+    /// <summary>
+    /// Whether a row is one the typed text is asking for: a number it starts with, or a name it
+    /// appears anywhere in. The same test the dropdown is filtered by, so what Enter takes and what
+    /// the list is showing cannot disagree.
+    /// </summary>
+    private static bool MatchesTypedWorkOrder(NgOdsWorkOrderItem item, string typed, bool isNumberBox) =>
+        isNumberBox
+            ? !string.IsNullOrWhiteSpace(item.WorkOrderNumber)
+              && item.WorkOrderNumber.StartsWith(typed, StringComparison.OrdinalIgnoreCase)
+            : !string.IsNullOrWhiteSpace(item.WorkOrderName)
+              && item.WorkOrderName.IndexOf(typed, StringComparison.OrdinalIgnoreCase) >= 0;
 
     /// <summary>
     /// Single entry point for loading the work order list. At most one load ever runs: callers that
