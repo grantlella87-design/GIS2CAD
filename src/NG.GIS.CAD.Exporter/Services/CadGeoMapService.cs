@@ -200,7 +200,23 @@ public sealed class CadGeoMapService
             // to, which is what eNoDatabase was saying. The block table record id is the exception: it is
             // what PostToDb reads to know where it is going, so it has to come first.
             geoData.BlockTableRecordId = modelSpaceId;
+
+            var failed = new List<string>();
+            var candidates = CoordinateSystemCandidates(wkText, outWkid);
+
+            // Tried before attaching as well as after. The order was settled the other way round for the
+            // points, which need the database and answered eNoDatabase without it -- but the coordinate
+            // system is a name rather than something written through the database, and it is the one
+            // part still being refused after attaching. Both moments are cheap, and only one of them has
+            // to work.
+            var coordinateSystemSet = TrySetCoordinateSystem(geoData, candidates, "before attaching", failed);
+
             geoData.PostToDb();
+
+            if (!coordinateSystemSet)
+            {
+                coordinateSystemSet = TrySetCoordinateSystem(geoData, candidates, "after attaching", failed);
+            }
 
             // Each part on its own, so a failure names the part rather than the whole. Not all of these
             // managed setters are implemented in every release -- one of them answers eNotImplementedYet
@@ -209,25 +225,10 @@ public sealed class CadGeoMapService
             //
             // They are also independent. A setter that is missing does not stop the others from landing,
             // and a location carrying most of what it should is worth more than none at all.
-            var failed = new List<string>();
-
             void Attempt(string part, Action set)
             {
                 try { set(); }
                 catch (Exception ex) { failed.Add(part + " (" + ex.Message + ")"); }
-            }
-
-            // The coordinate system is offered every way of naming it in turn, stopping at the first that
-            // is accepted. One string was refused with eNotImplementedYet, which reads as the setter not
-            // existing but is also what some of these APIs answer for input they cannot use. Offering a
-            // different form is the only way to tell those apart, and each refusal is recorded with the
-            // form that drew it so the answer is in the message rather than in another guess.
-            var coordinateSystemFailed = true;
-            foreach (var candidate in CoordinateSystemCandidates(wkText, outWkid))
-            {
-                var before = failed.Count;
-                Attempt("coordinate system as " + DescribeCandidate(candidate), () => geoData.CoordinateSystem = candidate);
-                if (failed.Count == before) { coordinateSystemFailed = false; break; }
             }
 
             // The rest are set even when every form of the coordinate system was refused, rather than
@@ -260,14 +261,14 @@ public sealed class CadGeoMapService
 
             Attempt("transformation matrix", () => geoData.UpdateTransformationMatrix());
 
-            if (coordinateSystemFailed)
+            if (!coordinateSystemSet)
             {
                 // Taken back off, so the next export tries again rather than finding a location that
                 // exists and describes nothing.
                 try { geoData.EraseFromDb(); } catch { }
                 throw new InvalidOperationException(
                     "this release refused the coordinate system, so the location would have named no "
-                    + "projection. What was tried, and what each said: " + string.Join("; ", failed));
+                    + "projection. " + DescribeCoordinateSystemRefusal(failed));
             }
 
             if (failed.Count > 0)
@@ -288,6 +289,79 @@ public sealed class CadGeoMapService
         }
 
         return "Geographic location set to " + SpatialReferenceNames.Describe(outWkid) + ".";
+    }
+
+    /// <summary>
+    /// Offers each way of naming the projection in turn, stopping at the first the release accepts.
+    /// Records every refusal with the form and the moment that drew it, so a message says which of them
+    /// was being tried rather than that something failed.
+    /// </summary>
+    private static bool TrySetCoordinateSystem(
+        GeoLocationData geoData, IReadOnlyList<string> candidates, string when, List<string> failed)
+    {
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                geoData.CoordinateSystem = candidate;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                failed.Add("coordinate system as " + DescribeCandidate(candidate) + " " + when
+                           + " (" + ex.Message + ")");
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Says what a refused coordinate system means, and what can be done about it.
+    ///
+    /// Every name was refused, and refused differently: a short identifier crashes inside the native
+    /// side, a full definition comes back as not implemented. Different answers to different strings
+    /// mean the setter is reachable and it is the lookup behind it that is not, so the library of
+    /// coordinate systems is asked directly. If that will not answer either, no string was ever going to
+    /// work and the code cannot make one.
+    ///
+    /// The way out is real and is worth saying: setting a location once by hand loads that library and
+    /// leaves the drawing with a location, and a location already there is never replaced, so every
+    /// export after it goes straight to turning the map on.
+    /// </summary>
+    private static string DescribeCoordinateSystemRefusal(List<string> failed)
+    {
+        var tried = "What was tried, and what each said: " + string.Join("; ", failed) + ".";
+
+        return CoordinateSystemLibraryAnswers()
+            ? tried + " The coordinate system library does answer in this drawing, so it is the name "
+              + "rather than the library that is being refused."
+            : tried + " The coordinate system library does not answer at all here, which is why no name "
+              + "for the projection was accepted and why the errors differ by string rather than "
+              + "agreeing. Run GEOGRAPHICLOCATION once and set the location by hand: that loads the "
+              + "library and leaves the drawing with a location, and an existing location is never "
+              + "replaced, so exports after it will go straight to turning the map on.";
+    }
+
+    /// <summary>
+    /// Whether this drawing's coordinate system library can be read at all. One entry is enough: the
+    /// question is whether it is there, not what is in it.
+    /// </summary>
+    private static bool CoordinateSystemLibraryAnswers()
+    {
+        try
+        {
+            foreach (var system in GeoCoordinateSystem.CreateAll())
+            {
+                using (system) { return true; }
+            }
+        }
+        catch
+        {
+            // No library to read, which is the answer.
+        }
+
+        return false;
     }
 
     /// <summary>

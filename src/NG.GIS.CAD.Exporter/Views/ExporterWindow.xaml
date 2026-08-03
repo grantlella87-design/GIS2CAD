@@ -732,8 +732,16 @@
             <Button Content="Next" Command="{Binding NextCommand}" Width="100" Margin="0,0,8,0"/>
             <Button Content="Export / Build Plan" Command="{Binding ExportCommand}" Width="160"/>
         </DockPanel>
+        <!-- A read only TextBox rather than a TextBlock, because this is where the error messages land
+             and a TextBlock cannot be selected: every code in it had to be copied out by retyping it.
+             Styled to look like the label it replaces: no border, no box background, and the caret
+             left visible so it is obvious the text can be picked up. -->
         <Border Grid.Row="3" Margin="0,10,0,0" Padding="8" Background="#F1F1F1" BorderBrush="#D0D0D0" BorderThickness="1">
-            <TextBlock Text="{Binding Status}" TextWrapping="Wrap"/>
+            <TextBox Text="{Binding Status, Mode=OneWay}" TextWrapping="Wrap"
+                     IsReadOnly="True" IsReadOnlyCaretVisible="True"
+                     BorderThickness="0" Background="Transparent" Padding="0"
+                     MaxHeight="120" VerticalScrollBarVisibility="Auto"
+                     ToolTip="Select any part of this and press Ctrl+C to copy it."/>
         </Border>
     </Grid>
 </Window>
