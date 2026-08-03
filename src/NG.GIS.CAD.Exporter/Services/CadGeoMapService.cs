@@ -5,6 +5,9 @@ using Autodesk.AutoCAD.Geometry;
 // Aliased because Autodesk.AutoCAD.Geometry and the ArcGIS runtime both have a lot of geometry names,
 // and this file is one of the few places both are in scope at once.
 using EsriSpatialReference = Esri.ArcGISRuntime.Geometry.SpatialReference;
+using EsriSpatialReferences = Esri.ArcGISRuntime.Geometry.SpatialReferences;
+using EsriMapPoint = Esri.ArcGISRuntime.Geometry.MapPoint;
+using EsriGeometryEngine = Esri.ArcGISRuntime.Geometry.GeometryEngine;
 using CoreApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
 namespace NG.GIS.CAD.Exporter.Services;
@@ -83,15 +86,25 @@ public sealed class CadGeoMapService
             return "No drawing is open, so the geographic map was not turned on.";
         }
 
-        string locationNote;
-        try
+        // Inside a command context, which is the difference between this working and not. A reference
+        // implementation that sets the same location with the same coordinate system does it from a
+        // CommandMethod, and there the coordinate system library answers; from a modeless window it
+        // crashes the native side on a short name and reports the setter as unimplemented on a long
+        // one, which is what the differing errors were saying. GEOMAP below already runs this way.
+        string locationNote = string.Empty;
+        await Application.DocumentManager.ExecuteInCommandContextAsync(_ =>
         {
-            locationNote = EnsureGeographicLocation(document, outWkid, anchorX, anchorY);
-        }
-        catch (Exception ex)
-        {
-            locationNote = "The drawing's geographic location could not be set: " + ex.Message + ".";
-        }
+            try
+            {
+                locationNote = EnsureGeographicLocation(document, outWkid, anchorX, anchorY);
+            }
+            catch (Exception ex)
+            {
+                locationNote = "The drawing's geographic location could not be set: " + ex.Message + ".";
+            }
+
+            return Task.CompletedTask;
+        }, null);
 
         // Asked of the drawing rather than inferred from whether the attach threw. A location that was
         // already there is as good as one just set, and one that failed to attach leaves the map with
@@ -239,19 +252,37 @@ public sealed class CadGeoMapService
             // not really been set looks like. A state plane projection is a grid system.
             Attempt("coordinate type", () => geoData.TypeOfCoordinates = TypeOfCoordinates.CoordinateTypeGrid);
 
-            // The same point twice, and deliberately so. These two are what tie drawing space to the
-            // projection: the design point is in drawing coordinates and the reference point is in the
-            // coordinates of the projected system named above -- not in longitude and latitude, which is
-            // the easy thing to assume and is wrong. Autodesk's own ObjectARX sample says it outright,
-            // that the "reference point is in the coordinates of the projected coordinate system and not
-            // in geodetic", and it has to be: the coordinate system already describes projected against
-            // geodetic, so this pair has nothing left to describe except drawing against projected.
+            // The design point is in drawing coordinates and the reference point is in longitude and
+            // latitude. This is the opposite of what was here before, and the reversal is deliberate.
             //
-            // The features were written in that same projection, so both are the same numbers here and
-            // the transform between them is an identity. Converting a longitude and latitude for this
-            // would introduce an error rather than remove one.
+            // Autodesk's ObjectARX sample says the reference point is in projected coordinates and not
+            // geodetic, and that is what this followed. Against it now: a working reference for this
+            // exact release and this exact coordinate system, which assigns longitude and latitude
+            // straight to the reference point and derives the design point from it. The managed API is
+            // what is being called here, and the managed sources agree with each other, so they win
+            // over a C++ sample describing the layer underneath.
+            //
+            // The longitude and latitude are worked out from the anchor with the ArcGIS runtime rather
+            // than with TransformFromLonLatAlt, which cannot help here: it converts the other way, and
+            // it only works once the coordinate system it depends on has been accepted.
             Attempt("design point", () => geoData.DesignPoint = new Point3d(anchorX, anchorY, 0.0));
-            Attempt("reference point", () => geoData.ReferencePoint = new Point3d(anchorX, anchorY, 0.0));
+
+            var lonLat = ToLongitudeLatitude(outWkid, anchorX, anchorY);
+            if (lonLat != null)
+            {
+                Attempt("reference point", () => geoData.ReferencePoint =
+                    new Point3d(lonLat.Value.Longitude, lonLat.Value.Latitude, 0.0));
+            }
+            else
+            {
+                // No projection available to convert with, so the anchor goes in as it stands. Wrong
+                // units if the reference point really is geodetic, but a location that names the right
+                // system and places badly can be seen and corrected; refusing to set one cannot.
+                failed.Add("longitude and latitude could not be worked out from "
+                           + SpatialReferenceNames.Describe(outWkid) + ", so the reference point was "
+                           + "left in drawing coordinates");
+                Attempt("reference point", () => geoData.ReferencePoint = new Point3d(anchorX, anchorY, 0.0));
+            }
 
             // North is left alone, not overlooked. ObjectARX has setNorthDirectionVector, but the managed
             // GeoLocationData.NorthDirection is get-only, so from .NET it is not ours to set -- the same
@@ -289,6 +320,31 @@ public sealed class CadGeoMapService
         }
 
         return "Geographic location set to " + SpatialReferenceNames.Describe(outWkid) + ".";
+    }
+
+    /// <summary>
+    /// The anchor as longitude and latitude, or null when this projection cannot be converted.
+    ///
+    /// Done with the ArcGIS runtime, which is the same library the features were fetched and projected
+    /// with and is answering perfectly well, rather than with AutoCAD's own transform. AutoCAD's needs
+    /// the coordinate system to have been accepted first, which is the thing that keeps failing.
+    /// </summary>
+    private static (double Longitude, double Latitude)? ToLongitudeLatitude(int outWkid, double x, double y)
+    {
+        try
+        {
+            var reference = EsriSpatialReference.Create(outWkid);
+            if (reference == null) { return null; }
+
+            var projected = EsriGeometryEngine.Project(
+                new EsriMapPoint(x, y, reference), EsriSpatialReferences.Wgs84) as EsriMapPoint;
+
+            return projected == null ? null : (projected.X, projected.Y);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>
