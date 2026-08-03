@@ -221,6 +221,20 @@ public sealed partial class ExporterViewModel
                     .FirstOrDefault(t => string.Equals(t.LayerUrl, layer.Url, StringComparison.OrdinalIgnoreCase));
 
                 var fields = layer.Fields.Where(f => f.Selected).Select(f => f.Name).ToList();
+
+                // The rotation field is fetched whether or not it was ticked on page 3. Those ticks say
+                // which attributes travel into the drawing as data; this one is read to place the block
+                // and need not be written out at all. Asking only for the ticked ones would leave the
+                // rotation field out of the answer, and every block would quietly come back at the
+                // default angle -- the setting doing nothing, with nothing to say it had not.
+                var rotationField = transform?.Rule.RotationField;
+                if (!string.IsNullOrWhiteSpace(rotationField)
+                    && fields.Count > 0
+                    && !fields.Contains(rotationField, StringComparer.OrdinalIgnoreCase))
+                {
+                    fields.Add(rotationField);
+                }
+
                 var features = await _services.ArcGisRestClient.QueryFeaturesAsync(
                     layer.Url, _resolvedExtent, fields, outWkid, CancellationToken.None, boundary);
 
