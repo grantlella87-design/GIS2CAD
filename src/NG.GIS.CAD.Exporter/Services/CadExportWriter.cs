@@ -34,18 +34,27 @@ public sealed class CadExportWriter
         // Modeless window, so the lock is ours to take. Without it the native side throws.
         using var documentLock = document.LockDocument();
         var database = document.Database;
-        using var transaction = database.TransactionManager.StartTransaction();
-
-        var blockTable = (BlockTable)transaction.GetObject(database.BlockTableId, OpenMode.ForRead);
-        var modelSpace = (BlockTableRecord)transaction.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
 
         // Opened once and reused. A template holds the standard blocks and line types, and pulling one
         // in per feature would reopen it hundreds of times.
         using var templateDatabase = OpenTemplate(request.TemplatePath, result);
 
+        // Everything the rules name is brought across before the write transaction opens, and this
+        // ordering is the whole of it. Importing a block opens the drawing's block table for write,
+        // and the transaction below holds that same table open for read from its first line to its
+        // last. Asking for it both ways at once is refused, so every import inside the transaction
+        // failed -- silently, because the failure was caught and turned into "not in the drawing or
+        // the template". A block plainly sitting in the template reported as missing.
+        ImportTemplateSymbols(request, database, templateDatabase, result);
+
+        using var transaction = database.TransactionManager.StartTransaction();
+
+        var blockTable = (BlockTable)transaction.GetObject(database.BlockTableId, OpenMode.ForRead);
+        var modelSpace = (BlockTableRecord)transaction.GetObject(blockTable[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
+
         foreach (var layer in request.Layers)
         {
-            WriteLayer(request, layer, database, transaction, modelSpace, templateDatabase, result);
+            WriteLayer(request, layer, database, transaction, modelSpace, result);
         }
 
         if (request.StripMapSheets.Count > 0)
@@ -175,7 +184,7 @@ public sealed class CadExportWriter
 
     private void WriteLayer(
         CadExportRequest request, ExportLayerFeatures layer, Database database, Transaction transaction,
-        BlockTableRecord modelSpace, Database? templateDatabase, CadExportResult result)
+        BlockTableRecord modelSpace, CadExportResult result)
     {
         var cadLayerName = string.IsNullOrWhiteSpace(layer.Transform.CadLayerName)
             ? SanitizeSymbolName(layer.LayerName)
@@ -183,13 +192,13 @@ public sealed class CadExportWriter
 
         EnsureLayer(database, transaction, cadLayerName, BuildColor(layer.Transform), result);
 
-        var lineType = ResolveLineType(database, transaction, layer.Transform.LineType, templateDatabase, result);
+        var lineType = ResolveLineType(database, transaction, layer.Transform.LineType);
         var isPoint = layer.GeometryType.Contains("Point", StringComparison.OrdinalIgnoreCase);
         ObjectId blockId = ObjectId.Null;
 
         if (isPoint && !string.IsNullOrWhiteSpace(layer.Transform.BlockName))
         {
-            blockId = ResolveBlock(database, transaction, layer.Transform.BlockName, templateDatabase, result);
+            blockId = ResolveBlock(database, transaction, layer.Transform.BlockName);
         }
 
         var isPolygon = layer.GeometryType.Contains("Polygon", StringComparison.OrdinalIgnoreCase);
@@ -707,7 +716,7 @@ public sealed class CadExportWriter
     /// in the drawing is imported from the template when there is one.
     /// </summary>
     private static string? ResolveLineType(
-        Database database, Transaction transaction, string? lineType, Database? templateDatabase, CadExportResult result)
+        Database database, Transaction transaction, string? lineType)
     {
         if (string.IsNullOrWhiteSpace(lineType)
             || string.Equals(lineType, "ByLayer", StringComparison.OrdinalIgnoreCase))
@@ -715,18 +724,10 @@ public sealed class CadExportWriter
             return null;
         }
 
+        // A lookup and nothing more. Anything that had to be brought in from the template was brought
+        // in before this transaction opened, and told the user if it could not be.
         var table = (LinetypeTable)transaction.GetObject(database.LinetypeTableId, OpenMode.ForRead);
-        if (table.Has(lineType)) { return lineType; }
-
-        if (templateDatabase != null && TryImportSymbol(database, templateDatabase, lineType, isBlock: false))
-        {
-            return lineType;
-        }
-
-        result.Warnings.Add("Line type '" + lineType + "' is not in the drawing"
-            + (templateDatabase == null ? " and no template was set" : " or the template")
-            + ", so those features were drawn ByLayer.");
-        return null;
+        return table.Has(lineType) ? lineType : null;
     }
 
     /// <summary>
@@ -734,52 +735,158 @@ public sealed class CadExportWriter
     /// the drawing does not have it, which is the point of choosing a template on page 1.
     /// </summary>
     private static ObjectId ResolveBlock(
-        Database database, Transaction transaction, string blockName, Database? templateDatabase, CadExportResult result)
+        Database database, Transaction transaction, string blockName)
     {
+        // A lookup and nothing more, for the same reason as the line types above. Importing from here
+        // was the bug: this transaction is holding the block table open for read, and an import has to
+        // open it for write.
         var blockTable = (BlockTable)transaction.GetObject(database.BlockTableId, OpenMode.ForRead);
-        if (blockTable.Has(blockName)) { return blockTable[blockName]; }
+        return blockTable.Has(blockName) ? blockTable[blockName] : ObjectId.Null;
+    }
 
-        if (templateDatabase != null && TryImportSymbol(database, templateDatabase, blockName, isBlock: true))
+    /// <summary>
+    /// Brings every block and line type the rules name into the drawing, before anything is written.
+    ///
+    /// Runs outside the write transaction on purpose. Both routes into the drawing -- Insert for a
+    /// block, WblockCloneObjects for a line type -- have to open a symbol table for write, and the
+    /// write transaction holds the block table open for read for its whole life. The two cannot both
+    /// hold, so an import attempted from inside it never had a chance.
+    /// </summary>
+    private static void ImportTemplateSymbols(
+        CadExportRequest request, Database database, Database? templateDatabase, CadExportResult result)
+    {
+        var blocks = new List<string>();
+        var lineTypes = new List<string>();
+
+        foreach (var layer in request.Layers)
         {
-            // Re-read: the import added to the table this transaction is holding open.
-            var refreshed = (BlockTable)transaction.GetObject(database.BlockTableId, OpenMode.ForRead);
-            if (refreshed.Has(blockName)) { return refreshed[blockName]; }
+            // Only point layers are drawn as block references, so a block named on a line rule is not
+            // going to be used and is not worth importing or warning about.
+            var block = layer.Transform.BlockName;
+            if (layer.GeometryType.Contains("Point", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(block)
+                && !blocks.Contains(block, StringComparer.OrdinalIgnoreCase))
+            {
+                blocks.Add(block);
+            }
+
+            var lineType = layer.Transform.LineType;
+            if (!string.IsNullOrWhiteSpace(lineType)
+                && !string.Equals(lineType, "ByLayer", StringComparison.OrdinalIgnoreCase)
+                && !lineTypes.Contains(lineType, StringComparer.OrdinalIgnoreCase))
+            {
+                lineTypes.Add(lineType);
+            }
         }
 
-        result.Warnings.Add("Block '" + blockName + "' is not in the drawing"
-            + (templateDatabase == null ? " and no template was set" : " or the template")
-            + ", so those features were drawn as points instead.");
-        return ObjectId.Null;
+        foreach (var name in blocks) { EnsureSymbol(database, templateDatabase, name, isBlock: true, result); }
+        foreach (var name in lineTypes) { EnsureSymbol(database, templateDatabase, name, isBlock: false, result); }
+    }
+
+    /// <summary>
+    /// Makes sure one named symbol is in the drawing, importing it from the template if it is not, and
+    /// says what went wrong if it still is not afterwards.
+    /// </summary>
+    private static void EnsureSymbol(
+        Database database, Database? templateDatabase, string name, bool isBlock, CadExportResult result)
+    {
+        if (SymbolExists(database, name, isBlock)) { return; }
+
+        var what = (isBlock ? "Block '" : "Line type '") + name + "'";
+        var instead = isBlock
+            ? ", so those features were drawn as points instead."
+            : ", so those features were drawn ByLayer.";
+
+        if (templateDatabase == null)
+        {
+            result.Warnings.Add(what + " is not in the drawing and no template was set" + instead);
+            return;
+        }
+
+        var failure = TryImportSymbol(database, templateDatabase, name, isBlock);
+
+        // Asked of the drawing rather than taken from the return. An import that reports success and
+        // leaves nothing behind is the case that produced a confusing report last time.
+        if (failure == null && SymbolExists(database, name, isBlock)) { return; }
+
+        result.Warnings.Add(what + " could not be brought in from the template"
+            + (failure == null ? " (the import reported success but the drawing still does not have it)" : ": " + failure)
+            + instead);
+    }
+
+    /// <summary>
+    /// Whether the drawing already holds a symbol by this name.
+    ///
+    /// On its own short lived transaction, so the table is closed again the moment the question is
+    /// answered. Anything still holding it open is what stops the import that may follow.
+    /// </summary>
+    private static bool SymbolExists(Database database, string name, bool isBlock)
+    {
+        try
+        {
+            using var transaction = database.TransactionManager.StartOpenCloseTransaction();
+            var tableId = isBlock ? database.BlockTableId : database.LinetypeTableId;
+            var table = (SymbolTable)transaction.GetObject(tableId, OpenMode.ForRead);
+            var has = table.Has(name);
+            transaction.Commit();
+            return has;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>
     /// Copies one named block or line type across from the template. WblockCloneObjects would be the
     /// general tool, but Insert already does exactly this for a block, and a line type comes across
     /// with it as a dependency.
+    ///
+    /// Returns null when it worked, and the reason when it did not. The reason used to be thrown away,
+    /// which is how a block that was present in the template and named correctly on the rule could be
+    /// reported as simply not existing.
     /// </summary>
-    private static bool TryImportSymbol(Database database, Database templateDatabase, string name, bool isBlock)
+    private static string? TryImportSymbol(Database database, Database templateDatabase, string name, bool isBlock)
     {
+        // Cloning between databases reads the working one to resolve what it is copying. This runs from
+        // a modeless window, where nothing has made the document's database the working one, and the
+        // same omission is what answered eNoDatabase when the geographic location was being set.
+        var previousWorkingDatabase = HostApplicationServices.WorkingDatabase;
+
         try
         {
+            HostApplicationServices.WorkingDatabase = database;
+
             if (isBlock)
             {
                 database.Insert(name, name, templateDatabase, true);
-                return true;
+                return null;
             }
 
             using var templateTransaction = templateDatabase.TransactionManager.StartTransaction();
             var templateTable = (LinetypeTable)templateTransaction.GetObject(templateDatabase.LinetypeTableId, OpenMode.ForRead);
-            if (!templateTable.Has(name)) { templateTransaction.Commit(); return false; }
+            if (!templateTable.Has(name))
+            {
+                templateTransaction.Commit();
+                return "the template has no line type by that name";
+            }
 
             var ids = new ObjectIdCollection { templateTable[name] };
             var mapping = new IdMapping();
             database.WblockCloneObjects(ids, database.LinetypeTableId, mapping, DuplicateRecordCloning.Ignore, false);
             templateTransaction.Commit();
-            return true;
+            return null;
         }
-        catch
+        catch (Exception ex)
         {
-            return false;
+            return ex.GetType().Name + ": " + ex.Message;
+        }
+        finally
+        {
+            if (previousWorkingDatabase != null)
+            {
+                try { HostApplicationServices.WorkingDatabase = previousWorkingDatabase; } catch { }
+            }
         }
     }
 
