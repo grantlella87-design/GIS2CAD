@@ -16,7 +16,14 @@ namespace NG.GIS.CAD.Exporter.Views;
 /// </summary>
 public partial class ExporterWindow
 {
-    private string? _selectedDwtPath;
+    /// <summary>
+    /// The template currently chosen, read from the view model rather than held here as well.
+    ///
+    /// It used to be kept in a field beside the view model's copy, which meant the box on page 1 only
+    /// ever showed what this window had put there this session. A template restored from the profile
+    /// arrived in the view model and was invisible here, so a saved choice looked unsaved.
+    /// </summary>
+    private string? SelectedDwtPath => (DataContext as ExporterViewModel)?.TemplatePath;
 
     private void PickLocalDwtTemplate_Click(object sender, RoutedEventArgs e)
     {
@@ -27,8 +34,6 @@ public partial class ExporterWindow
         };
         if (dialog.ShowDialog() != true) { return; }
 
-        _selectedDwtPath = dialog.FileName;
-        LocalDwtPathTextBox.Text = dialog.FileName;
         SetLocalDwtStatus("Selected template: " + dialog.FileName);
         PublishTemplatePath(dialog.FileName);
     }
@@ -37,14 +42,15 @@ public partial class ExporterWindow
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(_selectedDwtPath) || !File.Exists(_selectedDwtPath))
+            var path = SelectedDwtPath;
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
             {
                 SetLocalDwtStatus("Select a .dwt template first.");
                 return;
             }
 
-            Process.Start(new ProcessStartInfo(_selectedDwtPath) { UseShellExecute = true });
-            SetLocalDwtStatus("Opened template: " + _selectedDwtPath);
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            SetLocalDwtStatus("Opened template: " + path);
         }
         catch (Exception ex)
         {
@@ -95,8 +101,6 @@ public partial class ExporterWindow
             return;
         }
 
-        _selectedDwtPath = browser.SelectedTemplatePath;
-        LocalDwtPathTextBox.Text = browser.SelectedTemplatePath;
         SetLocalDwtStatus("Selected template: " + browser.SelectedTemplatePath);
         PublishTemplatePath(browser.SelectedTemplatePath);
         SetSharePointStatus("Downloaded from SharePoint as " + (service.SignedInAs ?? "the signed-in account") + ".");
@@ -104,11 +108,18 @@ public partial class ExporterWindow
 
     /// <summary>
     /// Hands the chosen template to the view model, so page 4 can offer its blocks and line types as
-    /// an alternative to the ones in the open drawing.
+    /// an alternative to the ones in the open drawing, and writes it into the profile so the choice is
+    /// still there next session.
+    ///
+    /// The box on page 1 is bound to the view model, so it follows from this rather than being set
+    /// alongside it -- assigning its Text directly would replace that binding with a literal and the
+    /// box would stop tracking the template from then on.
     /// </summary>
     private void PublishTemplatePath(string path)
     {
-        if (DataContext is ExporterViewModel vm) { vm.TemplatePath = path; }
+        if (DataContext is not ExporterViewModel vm) { return; }
+        vm.TemplatePath = path;
+        _ = vm.SaveTemplatePathAsync();
     }
 
     private void SetSharePointStatus(string message) => SharePointStatusText.Text = message;

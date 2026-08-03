@@ -189,6 +189,7 @@ public sealed partial class ExporterViewModel : ObservableObject
             _profile = profile;
             LoadMapDataSources();
             LoadStripMapSettings();
+            RestoreTemplateFromProfile(profile);
 
             // Deliberately no success status here: the work order lookup owns the status line while
             // page 1 is on screen, and overwriting it would hide the lookup's own progress.
@@ -355,6 +356,47 @@ public sealed partial class ExporterViewModel : ObservableObject
 
     public bool HasTemplate => !string.IsNullOrWhiteSpace(TemplatePath);
 
+    /// <summary>
+    /// Puts the template named in the profile back on page 1, if it is still there to put back.
+    ///
+    /// A path that no longer resolves is dropped rather than restored. Setting it anyway would leave
+    /// page 4 reading its blocks and line types from a file that is not there, which fails quietly and
+    /// looks like a template with nothing in it. Saying so and falling back to the open drawing is the
+    /// same outcome the user would get from never having picked one, which is recoverable.
+    /// </summary>
+    private void RestoreTemplateFromProfile(ExportProfile profile)
+    {
+        var saved = profile.CadTemplatePath;
+        if (string.IsNullOrWhiteSpace(saved)) { TemplatePath = null; return; }
+
+        if (!System.IO.File.Exists(saved))
+        {
+            TemplatePath = null;
+            Status = "The saved CAD template is no longer at " + saved
+                     + ", so blocks and line types come from the open drawing. Pick a .dwt on page 1 to set it again.";
+            return;
+        }
+
+        TemplatePath = saved;
+    }
+
+    /// <summary>
+    /// Writes the chosen template into the profile, so it is still chosen next time.
+    ///
+    /// Called as soon as one is picked rather than only from Save Settings, matching how the map layer
+    /// toggles behave: picking a template is the decision, and having to remember a second gesture to
+    /// keep it is how it gets lost.
+    /// </summary>
+    public async Task SaveTemplatePathAsync()
+    {
+        try
+        {
+            _profile.CadTemplatePath = TemplatePath ?? string.Empty;
+            await _services.ProfileStore.SaveAsync(_profile, ProfilePath, CancellationToken.None);
+        }
+        catch (Exception ex) { Status = "Saving the CAD template to the profile failed: " + ex.Message; }
+    }
+
     /// <summary>Whether blocks and line types are read from the template rather than the open drawing.</summary>
     public bool UseTemplateSymbols
     {
@@ -414,6 +456,11 @@ public sealed partial class ExporterViewModel : ObservableObject
                 _mapBackedLayers.Select(b => b.Layer.State), ProfilePath, CancellationToken.None);
         }
         await SaveMapLayerVisibilityAsync();
+
+        // Written here too, not only when one is picked. The profile can be pointed at a different file
+        // between choosing a template and saving, and Save Settings is the gesture that says to put
+        // everything currently chosen into the file named right now.
+        await SaveTemplatePathAsync();
         Status = "Settings saved.";
     }
 
