@@ -19,23 +19,22 @@ namespace NG.GIS.CAD.Exporter.Services;
 public sealed class CadGeoMapService
 {
     /// <summary>
-    /// Keywords to offer the GEOMAP command for an imagery map, best first.
+    /// The GEOMAP options that show imagery, preferred first.
     ///
     /// GEOMAPMODE is not how this is done. It is documented read-only, which is what eInvalidInput was
     /// saying all along: the refusal was about writing the variable at all, not about the value, which is
     /// why every map type was refused identically. The command is the only way in.
     ///
-    /// Aerial and Hybrid first, as the two options GEOMAP has documented since geographic maps arrived
-    /// and the two that show imagery. The Esri spellings follow, in case a release that has moved to
-    /// Esri's service renamed the option with it -- those are guesses, which is why each is tried on its
-    /// own and a refusal is recorded rather than assumed fatal.
+    /// GEOMAP takes four options and only four -- Aerial, Road, Hybrid, None. There is no Esri keyword to
+    /// try, whatever service is behind the imagery: AcGeoMapType names an Esri member, but that enum is
+    /// the API's vocabulary rather than the command's. Aerial is the plain satellite view and is what is
+    /// wanted here; Hybrid is the same imagery with roads drawn over it, so it is worth falling back to
+    /// and Road, being vector only, is not.
     /// </summary>
     private static readonly (string Name, string Keyword)[] ImageryKeywords =
     {
         ("aerial", "_Aerial"),
-        ("hybrid", "_Hybrid"),
-        ("Esri imagery", "_esriImagery"),
-        ("Esri imagery", "_EsriImagery")
+        ("hybrid", "_Hybrid")
     };
 
     /// <summary>
@@ -239,10 +238,26 @@ public sealed class CadGeoMapService
             // not really been set looks like. A state plane projection is a grid system.
             Attempt("coordinate type", () => geoData.TypeOfCoordinates = TypeOfCoordinates.CoordinateTypeGrid);
 
-            // The same point twice. The drawing is in the system just named, so the point on the ground
-            // and the point in the drawing are the same numbers, and the transform is an identity.
+            // The same point twice, and deliberately so. These two are what tie drawing space to the
+            // projection: the design point is in drawing coordinates and the reference point is in the
+            // coordinates of the projected system named above -- not in longitude and latitude, which is
+            // the easy thing to assume and is wrong. Autodesk's own ObjectARX sample says it outright,
+            // that the "reference point is in the coordinates of the projected coordinate system and not
+            // in geodetic", and it has to be: the coordinate system already describes projected against
+            // geodetic, so this pair has nothing left to describe except drawing against projected.
+            //
+            // The features were written in that same projection, so both are the same numbers here and
+            // the transform between them is an identity. Converting a longitude and latitude for this
+            // would introduce an error rather than remove one.
             Attempt("design point", () => geoData.DesignPoint = new Point3d(anchorX, anchorY, 0.0));
             Attempt("reference point", () => geoData.ReferencePoint = new Point3d(anchorX, anchorY, 0.0));
+
+            // North is left alone, not overlooked. ObjectARX has setNorthDirectionVector, but the managed
+            // GeoLocationData.NorthDirection is get-only, so from .NET it is not ours to set -- the same
+            // shape of thing as GEOMAPMODE, and worth writing down so it is not tried again. The default
+            // is drawing +Y, which is what a drawing sitting in its projection rather than rotated to it
+            // wants anyway, so there is nothing to correct.
+
             Attempt("transformation matrix", () => geoData.UpdateTransformationMatrix());
 
             if (coordinateSystemFailed)

@@ -26,7 +26,12 @@
             <TextBlock Text="{Binding PageTitle}" FontSize="20" FontWeight="Bold" Width="280"/>
             <TextBox Text="{Binding ProfilePath, UpdateSourceTrigger=PropertyChanged}" MinWidth="560" Margin="0,0,8,0"/>
             <Button Content="Load Profile" Command="{Binding LoadProfileCommand}" Margin="0,0,8,0" Padding="12,4"/>
-            <Button Content="Save Settings" Command="{Binding SaveSettingsCommand}" Padding="12,4"/>
+            <!-- Capped and pulled left because this is the DockPanel's last child, which fills whatever
+                 width is left over. On a wide window that made Save Settings a button several hundred
+                 pixels across sitting next to a normal sized Load Profile. Without the left alignment a
+                 capped stretch centres itself instead, leaving the pair separated by a gap. -->
+            <Button Content="Save Settings" Command="{Binding SaveSettingsCommand}" Padding="12,4"
+                    MaxWidth="140" HorizontalAlignment="Left"/>
         </DockPanel>
         <Grid Grid.Row="1">
                                                                                     <Grid x:Name="MethodPage">
@@ -40,6 +45,10 @@
                     <ComboBox x:Name="WorkOrderSelectionComboBox" IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" DisplayMemberPath="WorkOrderNumberDisplay" Loaded="NgOdsWorkOrderCombos_Loaded" DropDownOpened="NgOdsWorkOrderNumberCombo_DropDownOpened" KeyUp="NgOdsWorkOrderNumberCombo_KeyUp" SelectionChanged="NgOdsWorkOrderNumberCombo_SelectionChanged" LostFocus="NgOdsWorkOrderCombo_LostFocus" Margin="0,0,0,8"/>
                     <TextBlock Text="Work Order Name"/>
                     <ComboBox x:Name="WorkOrderNameComboBox" IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" DisplayMemberPath="WorkOrderNameDisplay" Loaded="NgOdsWorkOrderCombos_Loaded" DropDownOpened="NgOdsWorkOrderNameCombo_DropDownOpened" KeyUp="NgOdsWorkOrderNameCombo_KeyUp" SelectionChanged="NgOdsWorkOrderNameCombo_SelectionChanged" LostFocus="NgOdsWorkOrderCombo_LostFocus" Margin="0,0,0,8"/>
+                    <Border BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="3" Padding="8,6" Margin="0,0,0,12" Background="#FAFAFA">
+                        <TextBlock x:Name="ProposedMainAvailabilityText" TextWrapping="Wrap" Foreground="#555555"
+                                   Text="Choose a work order and its proposed main will be looked up in GIS."/>
+                    </Border>
                     <TextBlock Text="Padding ft (applies to Work Order driven export and Manual proposed pipeline segments)"/>
                     <TextBox x:Name="WorkOrderPaddingTextBox" Text="{Binding PaddingFeet, UpdateSourceTrigger=PropertyChanged}" TextChanged="PaddingInput_TextChanged" Margin="0,0,0,12"/>
                     <TextBlock Text="The full NG_ODS work order query loads once when this page opens, then both dropdowns filter locally. Selecting either Work Order Number or Work Order Name updates the other dropdown from the same NG_ODS row." TextWrapping="Wrap" Foreground="#555555"/>

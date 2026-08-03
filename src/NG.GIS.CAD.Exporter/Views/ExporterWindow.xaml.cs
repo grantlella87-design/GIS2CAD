@@ -169,6 +169,7 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
 
         PublishExportMethodToViewModel();
         ApplyDisplayModeToExtentPage();
+        ReportMethodAgainstProposedMainAvailability();
     }
 
     /// <summary>

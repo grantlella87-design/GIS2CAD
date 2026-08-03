@@ -33,16 +33,62 @@ public static class ProposedMainFeatureService
     private const string QueryUrl = LayerUrl + "/query";
     private static readonly HttpClient Http = new HttpClient();
 
+    /// <summary>
+    /// How many proposed main features the layer holds for a work order, without fetching any of them.
+    ///
+    /// Asked with returnCountOnly, so the service answers with a number rather than with geometry. That
+    /// matters because this runs while the user is still choosing on page 1: the answer only has to
+    /// decide which export method fits, and pulling every segment down to count them would make choosing
+    /// a work order as slow as importing one.
+    /// </summary>
+    public static async Task<int> CountByWorkOrderAsync(string workOrderId, string accessToken, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(workOrderId)) { throw new ArgumentException("Work order number is required.", nameof(workOrderId)); }
+        if (string.IsNullOrWhiteSpace(accessToken)) { throw new InvalidOperationException("ArcGIS access token is required to query proposed mains."); }
+
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["where"] = BuildWorkOrderWhere(workOrderId),
+            ["returnCountOnly"] = "true",
+            ["token"] = accessToken
+        });
+        using var response = await Http.PostAsync(QueryUrl, content, cancellationToken).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(body);
+        if (doc.RootElement.TryGetProperty("error", out var error))
+        {
+            var message = error.TryGetProperty("message", out var msg) ? msg.GetString() : error.ToString();
+            throw new InvalidOperationException("ArcGIS proposed main count failed: " + message);
+        }
+
+        // A layer that will not answer returnCountOnly returns the features instead of a count rather
+        // than refusing, so both shapes are read. Treating a missing count as zero would report "no
+        // proposed main" for a work order that has one, which is the one wrong answer worth avoiding
+        // here: it sends the user off to draw by hand over a route GIS already knows.
+        if (doc.RootElement.TryGetProperty("count", out var count) && count.TryGetInt32(out var parsed)) { return parsed; }
+        if (doc.RootElement.TryGetProperty("features", out var features) && features.ValueKind == JsonValueKind.Array)
+        {
+            return features.GetArrayLength();
+        }
+
+        throw new InvalidOperationException("ArcGIS proposed main count returned neither a count nor features.");
+    }
+
+    /// <summary>The work order filter, with quotes escaped so a stray one cannot change the clause.</summary>
+    private static string BuildWorkOrderWhere(string workOrderId) =>
+        "workorderid = '" + workOrderId.Replace("'", "''") + "'";
+
     public static async Task<ProposedMainQueryResult> QueryByWorkOrderAsync(string workOrderId, string accessToken, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(workOrderId)) { throw new ArgumentException("Work order number is required.", nameof(workOrderId)); }
         if (string.IsNullOrWhiteSpace(accessToken)) { throw new InvalidOperationException("ArcGIS access token is required to query proposed mains."); }
         var symbol = await GetLayerSymbolAsync(accessToken, cancellationToken).ConfigureAwait(false);
-        var where = "workorderid = '" + workOrderId.Replace("'", "''") + "'";
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
-            ["where"] = where,
+            ["where"] = BuildWorkOrderWhere(workOrderId),
             ["outFields"] = "objectid,workorderid",
             ["returnGeometry"] = "true",
             ["returnTrueCurves"] = "true",
