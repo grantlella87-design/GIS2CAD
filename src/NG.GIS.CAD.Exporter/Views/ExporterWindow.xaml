@@ -75,7 +75,13 @@
                 <Grid Grid.Column="0">
                     <!-- The mode buttons live in row 0, which no splitter is attached to, so they
                          cannot be resized or scrolled by anything the user does below them. The
-                         splitters act on rows 1, 3 and 5 only. -->
+                         splitters act on rows 1, 3 and 5 only.
+
+                         Row 5 holds both expanders together rather than one each in its own row.
+                         Separate rows let them drift apart: each was Auto sized, so an expanded data
+                         source list grew without limit, squeezed the starred rows to their minimums
+                         and pushed the strip map index down against the bottom edge. As one block
+                         they keep their order and move together whatever either of them is doing. -->
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*" MinHeight="60"/>
@@ -83,7 +89,6 @@
                         <RowDefinition Height="*" MinHeight="80"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto" MinHeight="30"/>
-                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <!-- Row 0: mode headers. Fixed. -->
@@ -231,8 +236,15 @@
                                   ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
                                   Background="#E4E4E4" ShowsPreview="True" Cursor="SizeNS"
                                   ToolTip="Drag to resize the map layers above and the data sources below"/>
-                    <Expander Grid.Row="5" Header="Data sources" Margin="0,2,0,0">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <!-- Row 5: data sources and the strip map index, in that order, in one scroller.
+                         One scroller rather than one inside each expander: nested scrollers fight over
+                         the wheel, and the point of scrolling here is to get past a long data source
+                         list to the strip map settings underneath it, which only an outer scroller can
+                         do. Capped so the block can grow into free space but cannot take the pane. -->
+                    <ScrollViewer Grid.Row="5" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled" MaxHeight="420">
+                    <StackPanel>
+                    <Expander Header="Data sources" Margin="0,2,0,0">
                         <StackPanel Margin="4,6,4,4">
                             <ItemsControl ItemsSource="{Binding MapDataSources}" Margin="0,0,0,6">
                                 <ItemsControl.ItemTemplate>
@@ -287,16 +299,16 @@
                             </Grid>
                             <Button Content="Add data source" Command="{Binding AddMapDataSourceCommand}" Padding="8,2" HorizontalAlignment="Left"/>
                         </StackPanel>
-                        </ScrollViewer>
                     </Expander>
 
-                    <!-- Row 6: strip map index. Collapsed by default and Auto sized, so it takes no
-                         room until it is opened and none of the splitters above it are disturbed.
+                    <!-- Directly below data sources, and now literally so: it is the next child of the
+                         same panel rather than a separate row that the grid was free to place
+                         elsewhere. Collapsed by default, so it takes only its header until opened.
 
                          Hidden entirely for the visible map viewport method: the index lays a run of
                          sheets along a proposed main, and that method has no proposed main to lay them
-                         along. The row is Auto sized, so collapsing it leaves no gap behind. -->
-                    <Expander Grid.Row="6" Header="Strip map index" Margin="0,2,0,0">
+                         along. Collapsing a stacked child leaves no gap behind. -->
+                    <Expander Header="Strip map index" Margin="0,2,0,0">
                         <Expander.Style>
                             <Style TargetType="Expander">
                                 <Setter Property="Visibility" Value="Visible"/>
@@ -307,7 +319,6 @@
                                 </Style.Triggers>
                             </Style>
                         </Expander.Style>
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="320">
                             <StackPanel Margin="4,6,4,4">
                                 <TextBlock Text="Lays a run of sheets along the proposed main, each covering what one viewport shows at the plot scale."
                                            TextWrapping="Wrap" Foreground="#555555" Margin="0,0,0,8"/>
@@ -376,8 +387,9 @@
 
                                 <TextBlock Text="{Binding StripMapSummary}" Foreground="#555555" TextWrapping="Wrap"/>
                             </StackPanel>
-                        </ScrollViewer>
                     </Expander>
+                    </StackPanel>
+                    </ScrollViewer>
                 </Grid>
                 <Grid Grid.Column="2">
                     <Grid.RowDefinitions>
