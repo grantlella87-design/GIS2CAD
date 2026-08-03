@@ -26,7 +26,12 @@
             <TextBlock Text="{Binding PageTitle}" FontSize="20" FontWeight="Bold" Width="280"/>
             <TextBox Text="{Binding ProfilePath, UpdateSourceTrigger=PropertyChanged}" MinWidth="560" Margin="0,0,8,0"/>
             <Button Content="Load Profile" Command="{Binding LoadProfileCommand}" Margin="0,0,8,0" Padding="12,4"/>
-            <Button Content="Save Settings" Command="{Binding SaveSettingsCommand}" Padding="12,4"/>
+            <!-- Capped and pulled left because this is the DockPanel's last child, which fills whatever
+                 width is left over. On a wide window that made Save Settings a button several hundred
+                 pixels across sitting next to a normal sized Load Profile. Without the left alignment a
+                 capped stretch centres itself instead, leaving the pair separated by a gap. -->
+            <Button Content="Save Settings" Command="{Binding SaveSettingsCommand}" Padding="12,4"
+                    MaxWidth="140" HorizontalAlignment="Left"/>
         </DockPanel>
         <Grid Grid.Row="1">
                                                                                     <Grid x:Name="MethodPage">
