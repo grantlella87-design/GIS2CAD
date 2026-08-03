@@ -838,9 +838,13 @@ public sealed class CadExportWriter
     }
 
     /// <summary>
-    /// Copies one named block or line type across from the template. WblockCloneObjects would be the
-    /// general tool, but Insert already does exactly this for a block, and a line type comes across
-    /// with it as a dependency.
+    /// Copies one named block or line type across from the template.
+    ///
+    /// Both go through WblockCloneObjects. Blocks used to go through Database.Insert, which reads as the
+    /// purpose built call for exactly this and answered eSelfReference instead -- that is the error for
+    /// a database being asked to copy from itself, so the overload does not mean what it looks like it
+    /// means here. Line types were already cloned this way and were already working, so the same route
+    /// is now taken for both rather than keeping a second mechanism that only fails.
     ///
     /// Returns null when it worked, and the reason when it did not. The reason used to be thrown away,
     /// which is how a block that was present in the template and named correctly on the rule could be
@@ -857,23 +861,24 @@ public sealed class CadExportWriter
         {
             HostApplicationServices.WorkingDatabase = database;
 
-            if (isBlock)
-            {
-                database.Insert(name, name, templateDatabase, true);
-                return null;
-            }
-
             using var templateTransaction = templateDatabase.TransactionManager.StartTransaction();
-            var templateTable = (LinetypeTable)templateTransaction.GetObject(templateDatabase.LinetypeTableId, OpenMode.ForRead);
-            if (!templateTable.Has(name))
+
+            var sourceTableId = isBlock ? templateDatabase.BlockTableId : templateDatabase.LinetypeTableId;
+            var sourceTable = (SymbolTable)templateTransaction.GetObject(sourceTableId, OpenMode.ForRead);
+            if (!sourceTable.Has(name))
             {
                 templateTransaction.Commit();
-                return "the template has no line type by that name";
+                return "the template has no " + (isBlock ? "block" : "line type") + " by that name";
             }
 
-            var ids = new ObjectIdCollection { templateTable[name] };
+            // Ignore rather than Replace: this only runs for a symbol the drawing was found not to
+            // have, so anything already there under this name got there during this same call and is
+            // the thing being brought in. Replacing would redefine whatever the drawing had.
+            var ids = new ObjectIdCollection { sourceTable[name] };
+            var destinationId = isBlock ? database.BlockTableId : database.LinetypeTableId;
             var mapping = new IdMapping();
-            database.WblockCloneObjects(ids, database.LinetypeTableId, mapping, DuplicateRecordCloning.Ignore, false);
+            database.WblockCloneObjects(ids, destinationId, mapping, DuplicateRecordCloning.Ignore, false);
+
             templateTransaction.Commit();
             return null;
         }
