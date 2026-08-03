@@ -166,6 +166,56 @@ public partial class ExporterWindow
     }
 
     /// <summary>
+    /// Takes the work order on Enter, so a number that is known can be typed and committed without
+    /// reaching for the list.
+    ///
+    /// On PreviewKeyDown rather than KeyUp. Enter is a key other things want: it closes a dropdown and
+    /// it is what a default button would take, so being the first to see it is what makes this
+    /// dependable rather than a race. Nothing is handled unless a work order is actually taken, so
+    /// Enter in an empty box still does whatever it did before.
+    /// </summary>
+    private void NgOdsWorkOrderCombo_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) { return; }
+        if (sender is not ComboBox combo) { return; }
+
+        var chosen = ResolveTypedNgOdsWorkOrder(combo);
+        if (chosen == null) { return; }
+
+        combo.IsDropDownOpen = false;
+        ApplyNgOdsWorkOrderSelection(chosen, "Enter");
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// The work order Enter should take, or null when the typing matches nothing.
+    ///
+    /// A row highlighted in the open list wins, because it is what the user is looking at. Otherwise
+    /// the text decides: an exact number or name first, so typing one in full takes that one and not
+    /// something merely beginning the same way, and failing that the top of the filtered list -- which
+    /// is the row shown directly under the caret, so Enter takes what the dropdown is offering.
+    /// </summary>
+    private NgOdsWorkOrderItem? ResolveTypedNgOdsWorkOrder(ComboBox combo)
+    {
+        if (combo.IsDropDownOpen && combo.SelectedItem is NgOdsWorkOrderItem highlighted) { return highlighted; }
+
+        var isNumberBox = ReferenceEquals(combo, WorkOrderSelectionComboBox);
+        var typed = combo.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(typed)) { return null; }
+
+        var exact = _ngOdsWorkOrders.FirstOrDefault(x => string.Equals(
+            isNumberBox ? x.WorkOrderNumber : x.WorkOrderName, typed, StringComparison.OrdinalIgnoreCase));
+        if (exact != null) { return exact; }
+
+        // The same test the list is filtered by, so the first row here is the first row on screen.
+        return isNumberBox
+            ? _ngOdsWorkOrders.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.WorkOrderNumber)
+                && x.WorkOrderNumber.StartsWith(typed, StringComparison.OrdinalIgnoreCase))
+            : _ngOdsWorkOrders.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x.WorkOrderName)
+                && x.WorkOrderName.IndexOf(typed, StringComparison.OrdinalIgnoreCase) >= 0);
+    }
+
+    /// <summary>
     /// Single entry point for loading the work order list. At most one load ever runs: callers that
     /// arrive while one is in flight await that same task instead of starting another.
     ///
@@ -213,18 +263,50 @@ public partial class ExporterWindow
 
     private void BindNgOdsDropdowns(List<NgOdsWorkOrderItem> items, string? wonumText, string? nameText)
     {
-        if (WorkOrderSelectionComboBox != null)
+        BindOneNgOdsDropdown(WorkOrderSelectionComboBox, items, wonumText);
+        BindOneNgOdsDropdown(WorkOrderNameComboBox, items, nameText);
+    }
+
+    /// <summary>
+    /// Puts the filtered rows on one dropdown and opens it, without disturbing what is being typed.
+    ///
+    /// Changing ItemsSource clears the selection, and clearing the selection empties the editable box,
+    /// so the text has to be written back afterwards. Writing it back is what moves the caret to the
+    /// end -- which on its own is enough to make typing into the middle of a number impossible, since
+    /// every keystroke throws the caret to the end before the next one arrives. The caret is therefore
+    /// read before the rebuild and put back after it, and after the dropdown opens, so that nothing
+    /// which follows can move it again.
+    ///
+    /// The text is only written when the rebuild actually changed it. A set that changes nothing still
+    /// resets the caret, so the cheapest fix for most keystrokes is not to write at all.
+    /// </summary>
+    private static void BindOneNgOdsDropdown(ComboBox? combo, List<NgOdsWorkOrderItem> items, string? text)
+    {
+        if (combo == null) { return; }
+
+        var editor = combo.Template?.FindName("PART_EditableTextBox", combo) as TextBox;
+        var caret = editor?.SelectionStart ?? -1;
+        var selectionLength = editor?.SelectionLength ?? 0;
+
+        var desired = text ?? combo.Text ?? string.Empty;
+
+        combo.ItemsSource = items;
+        if (!string.Equals(combo.Text, desired, StringComparison.Ordinal)) { combo.Text = desired; }
+
+        // Only for the box being typed in. The two dropdowns are rebuilt together so that picking in
+        // one narrows the other, and popping open the one nobody is looking at would drop a list over
+        // whatever is beneath it.
+        if (combo.IsKeyboardFocusWithin)
         {
-            var existingText = wonumText ?? WorkOrderSelectionComboBox.Text;
-            WorkOrderSelectionComboBox.ItemsSource = items;
-            WorkOrderSelectionComboBox.Text = existingText ?? string.Empty;
+            var shouldBeOpen = items.Count > 0 && !string.IsNullOrEmpty(desired);
+            if (combo.IsDropDownOpen != shouldBeOpen) { combo.IsDropDownOpen = shouldBeOpen; }
         }
-        if (WorkOrderNameComboBox != null)
-        {
-            var existingText = nameText ?? WorkOrderNameComboBox.Text;
-            WorkOrderNameComboBox.ItemsSource = items;
-            WorkOrderNameComboBox.Text = existingText ?? string.Empty;
-        }
+
+        if (editor == null || caret < 0) { return; }
+
+        var length = editor.Text?.Length ?? 0;
+        editor.SelectionStart = Math.Min(caret, length);
+        editor.SelectionLength = Math.Min(selectionLength, Math.Max(0, length - editor.SelectionStart));
     }
 
     private void NgOdsWorkOrderNumberCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
