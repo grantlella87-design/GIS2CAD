@@ -88,9 +88,9 @@ public static class StripMapIndexService
         var paths = ParsePaths(route, out var spatialReferenceJson);
         if (paths.Count == 0) { return Array.Empty<StripMapSheet>(); }
 
-        // Numbering starts on the longest run and works north to south. The longest run is the main line
-        // of the job, so sheet 1 is where the work mostly is rather than wherever the service happened to
-        // return a stub first, and north first is how a set of drawings is normally read.
+        // Numbering starts on the longest run, and runs left to right across the paper along each one.
+        // The longest run is the main line of the job, so sheet 1 is where the work mostly is rather
+        // than wherever the service happened to return a stub first.
         paths = OrderPathsForNumbering(paths);
 
         var stretch = MapUnitsPerGroundMetre(paths);
@@ -163,11 +163,21 @@ public static class StripMapIndexService
     /// work mostly is rather than wherever the service happened to return a stub first, and a reader
     /// looking for the start of a job looks for the main line.
     ///
-    /// Then each path runs north to south. A path whose end is further north than its start is turned
-    /// around, so numbering begins at the northern end. North wins on any real difference; only when the
-    /// two ends are within a whisker of the same latitude, which is a route running due east or west,
-    /// does west to east decide it instead. That is the usual reading order for a run with no north in
-    /// it, and it keeps a nearly flat route from flipping direction on rounding noise.
+    /// Then each path is turned to run west to east, so its sheets count left to right across the paper.
+    ///
+    /// Left to right on paper is eastward on the ground, and that follows from north being kept up. A
+    /// sheet's bearing is held within a quarter turn of due east so that up the page has north in it,
+    /// which leaves the right of the page pointing east. A path already running eastward therefore
+    /// numbers left to right; one running west counts backwards across every sheet in the set, which is
+    /// the thing this prevents.
+    ///
+    /// A path running true north or south has nothing east of anything, and for those the right of the
+    /// page points north instead, so numbering runs south to north to keep counting rightwards. The
+    /// tolerance keeps a nearly vertical route from swapping ends on rounding noise.
+    ///
+    /// This is what decides which end is sheet 1, and it is decided by the paper rather than by the
+    /// compass: a west-to-east rule and a north-to-south rule disagree on most real routes, and only one
+    /// of them can hold while the numbers still read left to right.
     /// </summary>
     private static List<List<RoutePoint>> OrderPathsForNumbering(List<List<RoutePoint>> paths)
     {
@@ -194,12 +204,16 @@ public static class StripMapIndexService
         var start = path[0];
         var end = path[^1];
 
-        // A whisker in Web Mercator metres. Anything smaller than this is a route running flat enough
-        // east to west that its latitude difference says nothing about which end is the north one.
-        const double NorthTolerance = 1.0;
+        // A whisker in Web Mercator metres. Anything smaller than this is a route running vertically
+        // enough that its longitude difference says nothing about which end is the western one.
+        const double EastTolerance = 1.0;
 
-        if (Math.Abs(end.Y - start.Y) > NorthTolerance) { return end.Y > start.Y; }
-        return end.X < start.X;
+        // Turn a westward path around, so numbering runs with the right of the page rather than against
+        // it.
+        if (Math.Abs(end.X - start.X) > EastTolerance) { return end.X < start.X; }
+
+        // True north or south. The right of the page is north for these, so the southern end is sheet 1.
+        return end.Y < start.Y;
     }
 
     private static List<RoutePoint> Reversed(List<RoutePoint> path)
