@@ -212,11 +212,22 @@
                                 <CheckBox Content="Legend" IsChecked="{Binding ShowMapLegend}" VerticalAlignment="Center"
                                           ToolTip="Show each layer's symbols. A layer drawn by category takes a row per class, so turning this off gives back the compact list."/>
                             </StackPanel>
+                            <!-- Horizontal scrolling off, which is what lets the Remove buttons line up
+                                 on the right. A scroller that can scroll sideways offers its items
+                                 unlimited width, so a row asked to stretch has nothing to stretch to
+                                 and sizes to its content instead; every button would sit at the end of
+                                 its own layer name, at a different place on every row. Off, the rows
+                                 get the pane's real width and long names are trimmed rather than
+                                 scrolled to, with the full name on the tooltip. -->
                             <TreeView ItemsSource="{Binding MapLayers}" BorderThickness="0" Background="Transparent"
-                                      ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                      ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                                 <TreeView.ItemContainerStyle>
                                     <Style TargetType="TreeViewItem">
                                         <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                        <!-- Without this the header is only as wide as what is in it,
+                                             and a right aligned button inside it lands wherever the
+                                             name happens to end. -->
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                     </Style>
                                 </TreeView.ItemContainerStyle>
                                 <TreeView.ItemTemplate>
@@ -225,34 +236,46 @@
                                             <!-- A layer with one symbol keeps its swatch on the same
                                                  line as its checkbox, so the common case stays a one
                                                  line entry. -->
-                                            <StackPanel Orientation="Horizontal">
-                                                <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                                <Image Source="{Binding SingleSwatch}" Width="16" Height="16" Margin="0,0,4,0"
-                                                       VerticalAlignment="Center" Stretch="Uniform">
-                                                    <Image.Style>
-                                                        <Style TargetType="Image">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding SingleSwatch}" Value="{x:Null}">
-                                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding DataContext.ShowMapLegend, RelativeSource={RelativeSource AncestorType=Window}}" Value="False">
-                                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Image.Style>
-                                                </Image>
-                                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
-                                                <!-- Offered on the map's own top level layers only. A
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                                    <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                    <Image Source="{Binding SingleSwatch}" Width="16" Height="16" Margin="0,0,4,0"
+                                                           VerticalAlignment="Center" Stretch="Uniform">
+                                                        <Image.Style>
+                                                            <Style TargetType="Image">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding SingleSwatch}" Value="{x:Null}">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding DataContext.ShowMapLegend, RelativeSource={RelativeSource AncestorType=Window}}" Value="False">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Image.Style>
+                                                    </Image>
+                                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
+                                                </StackPanel>
+                                                <!-- Its own column against the right edge, so the buttons
+                                                     line up down the pane instead of each sitting at the
+                                                     end of its own layer name.
+
+                                                     Offered on the map's own top level layers only. A
                                                      sublayer is part of the service that carries it and
                                                      cannot be detached from it, so it gets a tick box and
                                                      nothing more. -->
-                                                <Button Content="Remove" Padding="6,0" Margin="8,0,0,0" FontSize="10"
-                                                        VerticalAlignment="Center" Click="RemoveMapLayer_Click"
+                                                <Button Grid.Column="1" Content="Remove" Padding="6,0" Margin="8,0,0,0" FontSize="10"
+                                                        VerticalAlignment="Center" HorizontalAlignment="Right"
+                                                        Click="RemoveMapLayer_Click"
                                                         ToolTip="Take this layer off the map."
                                                         Visibility="{Binding CanRemove, Converter={StaticResource BoolToVisibility}}"/>
-                                            </StackPanel>
+                                            </Grid>
 
                                             <!-- A layer drawn by category or by range needs a row per
                                                  class, indented under the layer it belongs to. -->
