@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -47,6 +49,46 @@ public sealed record NgOdsWorkOrderItem(
         NgServTerritory ?? string.Empty
     });
     public override string ToString() => DetailDisplay;
+}
+
+/// <summary>
+/// The work order's service address, for placing a job on the map when GIS has no proposed main to
+/// place it by.
+/// </summary>
+public sealed record NgOdsWorkOrderAddress(
+    string LongitudeX,
+    string LatitudeY,
+    string FormattedAddress,
+    string City,
+    string StateProvince,
+    string PostalCode)
+{
+    /// <summary>
+    /// The coordinates as numbers, or null when the row carried none. Parsed invariantly: these come
+    /// back as text from the query, and a comma decimal separator would turn a longitude into nothing
+    /// and put the job on Null Island.
+    /// </summary>
+    public (double Longitude, double Latitude)? Coordinates
+    {
+        get
+        {
+            if (!double.TryParse(LongitudeX, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude)) { return null; }
+            if (!double.TryParse(LatitudeY, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude)) { return null; }
+
+            // Both zero is the default a row gets when nobody filled it in rather than a place, and it
+            // is in the Gulf of Guinea. Out of range values are equally not somewhere to fly to.
+            if (Math.Abs(longitude) < 1e-9 && Math.Abs(latitude) < 1e-9) { return null; }
+            if (Math.Abs(longitude) > 180 || Math.Abs(latitude) > 90) { return null; }
+
+            return (longitude, latitude);
+        }
+    }
+
+    /// <summary>The address as one line, for geocoding and for saying where the map went.</summary>
+    public string SearchText => string.Join(", ", new[] { FormattedAddress, City, StateProvince, PostalCode }
+        .Where(part => !string.IsNullOrWhiteSpace(part)));
+
+    public bool HasAnything => Coordinates != null || !string.IsNullOrWhiteSpace(SearchText);
 }
 
 public static class NgOdsWorkOrderLookup
@@ -183,35 +225,28 @@ WHERE
     )
 ORDER BY
     wo.[wonum] DESC
+FOR JSON PATH
 OPTION (RECOMPILE)
 "@
     $cmd = $conn.CreateCommand()
     $cmd.CommandTimeout = 0
     $cmd.CommandText = $sql
+
+    # SQL Server writes the JSON, and this only joins it up. What was here before built a
+    # PowerShell object per row -- sixteen property inserts each -- and then walked the whole
+    # collection through ConvertTo-Json, and on a table of this size that work dwarfed the query
+    # it was formatting. The query was never the slow part.
+    #
+    # FOR JSON returns one column split across as many rows as it needs, so the pieces are
+    # concatenated in order. A StringBuilder rather than string addition, which would copy the
+    # whole document again for every chunk.
     $reader = $cmd.ExecuteReader()
-    $items = New-Object System.Collections.Generic.List[object]
+    $json = New-Object System.Text.StringBuilder
     while ($reader.Read()) {
-        $items.Add([pscustomobject]@{
-            NgJurisdiction = [string]$reader['NgJurisdiction']
-            NgOpCo = [string]$reader['NgOpCo']
-            NgOpCoDescription = [string]$reader['NgOpCoDescription']
-            NgFundProj = [string]$reader['NgFundProj']
-            NgFundingProjectDescription = [string]$reader['NgFundingProjectDescription']
-            WorkOrderNumber = [string]$reader['WorkOrderNumber']
-            WorkOrderName = [string]$reader['WorkOrderName']
-            WoClass = [string]$reader['WoClass']
-            WoClassDescription = [string]$reader['WoClassDescription']
-            WorkType = [string]$reader['WorkType']
-            WTypeDesc = [string]$reader['WTypeDesc']
-            Status = [string]$reader['Status']
-            StatusDescription = [string]$reader['StatusDescription']
-            NgPpWoType = [string]$reader['NgPpWoType']
-            NgPpWoTypeDescription = [string]$reader['NgPpWoTypeDescription']
-            NgServTerritory = [string]$reader['NgServTerritory']
-        })
+        [void]$json.Append($reader.GetString(0))
     }
     $reader.Close()
-    $items | ConvertTo-Json -Depth 4 -Compress
+    $json.ToString()
 }
 finally {
     $conn.Close()
@@ -236,4 +271,83 @@ finally {
         var single = JsonSerializer.Deserialize<NgOdsWorkOrderItem>(output, options);
         return single == null ? Array.Empty<NgOdsWorkOrderItem>() : new[] { single };
     }
+
+    /// <summary>
+    /// The service address held against one work order, or null when there is none.
+    ///
+    /// Its own query rather than a join onto the list above. The list is thousands of rows loaded once
+    /// and filtered locally, and an address is wanted for exactly one of them at a time; carrying six
+    /// more columns on every row to answer a question asked about one would be paying for the whole
+    /// table to serve a single lookup.
+    /// </summary>
+    public static async Task<NgOdsWorkOrderAddress?> LoadAddressAsync(
+        string workOrderNumber, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(workOrderNumber)) { return null; }
+
+        var connectionString = ResolveConnectionString();
+
+        // Passed as an environment variable and bound as a parameter inside the script, so a work
+        // order number never becomes part of the SQL text. It arrives from a dropdown today, but a
+        // value that is pasted or typed is one that can carry a quote.
+        var environment = new Dictionary<string, string> { ["NGGISCAD_WONUM"] = workOrderNumber };
+
+        var output = await NgOdsConnection
+            .RunPowerShellAsync(AddressScript, connectionString, "NGGisCadExporter_WorkOrderAddress_", cancellationToken, environment)
+            .ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(output)) { return null; }
+        output = output.Trim();
+        if (output.StartsWith("[", StringComparison.Ordinal)) { output = output.Trim('[', ']').Trim(); }
+        if (string.IsNullOrWhiteSpace(output)) { return null; }
+
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        return JsonSerializer.Deserialize<NgOdsWorkOrderAddress>(output, options);
+    }
+
+    private const string AddressScript = """
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Data
+$connStr = $env:NGGISCAD_ODS_CONN
+if ([string]::IsNullOrWhiteSpace($connStr)) { throw 'NGGISCAD_ODS_CONN was not provided.' }
+$wonum = $env:NGGISCAD_WONUM
+if ([string]::IsNullOrWhiteSpace($wonum)) { throw 'NGGISCAD_WONUM was not provided.' }
+$conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
+$conn.Open()
+try {
+    $sql = @"
+SELECT TOP (1)
+    ISNULL(CAST(wosa.[LONGITUDEX] AS NVARCHAR(100)), '') AS [LongitudeX],
+    ISNULL(CAST(wosa.[LATITUDEY] AS NVARCHAR(100)), '') AS [LatitudeY],
+    ISNULL(CAST(wosa.[FORMATTEDADDRESS] AS NVARCHAR(4000)), '') AS [FormattedAddress],
+    ISNULL(CAST(wosa.[CITY] AS NVARCHAR(4000)), '') AS [City],
+    ISNULL(CAST(wosa.[STATEPROVINCE] AS NVARCHAR(100)), '') AS [StateProvince],
+    ISNULL(CAST(wosa.[POSTALCODE] AS NVARCHAR(100)), '') AS [PostalCode]
+FROM [NG_ODS].[MX].[WOSERVICEADDRESS] wosa
+WHERE
+    wosa.[wonum] = @wonum
+"@
+    $cmd = $conn.CreateCommand()
+    $cmd.CommandTimeout = 0
+    $cmd.CommandText = $sql
+    $null = $cmd.Parameters.AddWithValue('@wonum', $wonum)
+    $reader = $cmd.ExecuteReader()
+    $items = New-Object System.Collections.Generic.List[object]
+    while ($reader.Read()) {
+        $items.Add([pscustomobject]@{
+            LongitudeX = [string]$reader['LongitudeX']
+            LatitudeY = [string]$reader['LatitudeY']
+            FormattedAddress = [string]$reader['FormattedAddress']
+            City = [string]$reader['City']
+            StateProvince = [string]$reader['StateProvince']
+            PostalCode = [string]$reader['PostalCode']
+        })
+    }
+    $reader.Close()
+    $items | ConvertTo-Json -Depth 4 -Compress
+}
+finally {
+    $conn.Close()
+}
+""";
 }

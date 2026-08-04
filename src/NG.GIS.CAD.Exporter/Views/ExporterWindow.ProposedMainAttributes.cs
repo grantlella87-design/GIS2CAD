@@ -191,6 +191,9 @@ public partial class ExporterWindow
             // Whatever it was last time, so a drag survives the table being closed and opened again.
             ProposedMainAttributeRow.Height = _proposedMainAttributeRowHeight ?? new GridLength(1, GridUnitType.Star);
             ProposedMainAttributeRow.MinHeight = 120;
+
+            // Nothing dragged yet, so it opens at the height its rows want rather than at a share.
+            if (_proposedMainAttributeRowHeight == null) { ResizeProposedMainAttributeTableToRows(); }
             return;
         }
 
@@ -226,6 +229,60 @@ public partial class ExporterWindow
     }
 
     /// <summary>
+    /// Picks out the segment whose row was selected, so a row in the table and a line on the map can be
+    /// told to be the same thing. Selecting nothing clears the highlight rather than leaving the last
+    /// one lit, which would be pointing at a row that is no longer chosen.
+    /// </summary>
+    private void ProposedMainAttributeGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (DataContext is not ExporterViewModel vm) { return; }
+
+        var selected = ProposedMainAttributeGrid?.SelectedItem as ProposedMainSegmentAttributesViewModel;
+        HighlightManualProposedPipelineSegment(selected == null ? -1 : vm.ProposedMainSegmentRows.IndexOf(selected));
+    }
+
+    /// <summary>
+    /// Sizes the table to the rows it has, up to a point.
+    ///
+    /// Opened at a fixed height it was wrong in both directions: two segments left most of it empty
+    /// while the map went short, and a dozen showed four with the rest behind a scrollbar. The height
+    /// is worked out from the rows instead, so the usual case of a few segments needs no dragging.
+    ///
+    /// Capped, because the map is the reason the page exists. Past the cap the grid scrolls, which is
+    /// what the vertical scrollbar is for, and the splitter is still there for anyone who wants to see
+    /// more rows than the cap allows.
+    /// </summary>
+    private void ResizeProposedMainAttributeTableToRows()
+    {
+        if (ProposedMainAttributeRow == null || ProposedMainAttributeSection == null) { return; }
+        if (!ProposedMainAttributeSection.IsExpanded) { return; }
+        if (DataContext is not ExporterViewModel vm) { return; }
+
+        var rows = vm.ProposedMainSegmentRows.Count;
+        if (rows == 0) { return; }
+
+        // Header, the rows themselves, and the status line and tick box that sit with them. Rounded up
+        // rather than measured, because a table that is a few pixels short of its last row is the
+        // thing this is meant to avoid.
+        var height = ProposedMainTableChrome + ProposedMainTableHeaderHeight + (rows * ProposedMainTableRowHeight);
+        var capped = Math.Min(height, ProposedMainTableMaxHeight);
+
+        ProposedMainAttributeRow.Height = new GridLength(capped);
+        _proposedMainAttributeRowHeight = ProposedMainAttributeRow.Height;
+    }
+
+    /// <summary>Room for the status line, the upload tick box, the expander header and the margins.</summary>
+    private const double ProposedMainTableChrome = 96;
+    private const double ProposedMainTableHeaderHeight = 30;
+    private const double ProposedMainTableRowHeight = 26;
+
+    /// <summary>
+    /// As tall as the table is allowed to open on its own. Past this it scrolls: the map is the reason
+    /// the page exists and a table opening over most of it would be the tail wagging the dog.
+    /// </summary>
+    private const double ProposedMainTableMaxHeight = 320;
+
+    /// <summary>
     /// Brings the attribute table in line with what is drawn. Called wherever the segment list changes,
     /// so a row appears with the segment rather than when something else happens to refresh the page.
     /// </summary>
@@ -235,6 +292,8 @@ public partial class ExporterWindow
         {
             vm.SyncProposedMainSegmentRows(_manualProposedPipelineSegmentGeometries.Count);
         }
+
+        ResizeProposedMainAttributeTableToRows();
     }
 
     /// <summary>
