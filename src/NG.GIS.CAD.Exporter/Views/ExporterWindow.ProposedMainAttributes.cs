@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using Esri.ArcGISRuntime.Geometry;
@@ -164,6 +165,45 @@ public partial class ExporterWindow
     /// Called when the drawing is cleared or the export method changes.
     /// </summary>
     private void ForgetProposedMainUpload() => _proposedMainUploaded = false;
+
+    /// <summary>
+    /// The height the table was last given, so closing and opening it again does not throw away a
+    /// height the user dragged to. Null until it has been open once.
+    /// </summary>
+    private GridLength? _proposedMainAttributeRowHeight;
+
+    /// <summary>
+    /// Gives the table's row a share of the pane while it is open and none of it while it is closed.
+    ///
+    /// A share rather than its content's height, because that is what makes the splitter above it mean
+    /// anything: two rows that both want a share can have the boundary between them moved, where a row
+    /// sized to its content cannot be resized at all.
+    ///
+    /// Closed, it goes back to Auto. Left holding a share, a closed table would keep a third of the
+    /// pane to show a header in, which is the opposite of what closing it is for.
+    /// </summary>
+    private void ProposedMainAttributeSection_ExpansionChanged(object sender, RoutedEventArgs e)
+    {
+        if (ProposedMainAttributeRow == null || ProposedMainAttributeSection == null) { return; }
+
+        if (ProposedMainAttributeSection.IsExpanded)
+        {
+            // Whatever it was last time, so a drag survives the table being closed and opened again.
+            ProposedMainAttributeRow.Height = _proposedMainAttributeRowHeight ?? new GridLength(1, GridUnitType.Star);
+            ProposedMainAttributeRow.MinHeight = 120;
+            return;
+        }
+
+        // Remembered before it is given up, and only when it was a real share: an Auto height read
+        // back here would be the closed state remembering itself.
+        if (ProposedMainAttributeRow.Height.GridUnitType != GridUnitType.Auto)
+        {
+            _proposedMainAttributeRowHeight = ProposedMainAttributeRow.Height;
+        }
+
+        ProposedMainAttributeRow.Height = GridLength.Auto;
+        ProposedMainAttributeRow.MinHeight = 0;
+    }
 
     /// <summary>
     /// Whether any subtype, or the field itself, gives this field a list to choose from.
