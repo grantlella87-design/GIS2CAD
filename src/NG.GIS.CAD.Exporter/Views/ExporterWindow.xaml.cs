@@ -57,7 +57,11 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
             // still loads at startup, it is only sequenced.
             await EnsureNgOdsWorkOrdersLoadedAsync(userInitiated: false);
             await InitializeArcGisMapAsync();
-            if (DataContext is ExporterViewModel viewModel) { await viewModel.PreloadLaterPagesAsync(); }
+            if (DataContext is ExporterViewModel viewModel)
+            {
+                viewModel.LeavingExtentPageAsync = TryUploadManualProposedMainAsync;
+                await viewModel.PreloadLaterPagesAsync();
+            }
         };
         // Delete removes the manual segment being edited. On the window rather than the map, because the
         // map view is built later and the key has to reach it wherever focus happens to be.
@@ -192,6 +196,10 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
 
         _manualProposedPipelineSegmentGeometries.Clear();
         _manualProposedPipelineEndpointSnapCount = 0;
+
+        // A cleared drawing is a different main, so the one that may already be in GIS no longer
+        // stands in for it and whatever is drawn next is allowed to go up on its own account.
+        ForgetProposedMainUpload();
         _editingManualProposedPipelineSegmentIndex = -1;
         _pickingManualProposedPipelineSegment = false;
         _manualProposedPipelineSegmentOverlay?.Graphics.Clear();

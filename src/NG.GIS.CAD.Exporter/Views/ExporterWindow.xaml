@@ -167,9 +167,86 @@
                                        TextWrapping="Wrap" Foreground="#555555"/>
                         </Grid>
                         <Grid x:Name="ManualProposedPipelineModePanel" Visibility="Collapsed">
-                            <TextBox x:Name="ProposedPipelineTextBox" IsReadOnly="True" AcceptsReturn="True"
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*" MinHeight="60"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Snapping was fixed at a foot with nothing on screen to say so. Both the
+                                 distance and whether it happens at all are settings now, because a foot
+                                 suits a street and not a plant yard. -->
+                            <StackPanel Grid.Row="0" Margin="0,0,0,6">
+                                <CheckBox IsChecked="{Binding SnapProposedMainSegmentEnds}"
+                                          Content="Snap segment ends together" FontWeight="SemiBold"
+                                          ToolTip="Pulls the ends of separate segments onto the same point when they are drawn close enough, so a corridor drawn in pieces joins up."/>
+                                <StackPanel Orientation="Horizontal" Margin="20,4,0,4"
+                                            IsEnabled="{Binding SnapProposedMainSegmentEnds}">
+                                    <TextBlock Text="Within" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBox Width="60" Text="{Binding ProposedMainSnapToleranceFeet, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="How far apart two ends may be and still be treated as the same point."/>
+                                    <TextBlock Text="ft" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding SnapSummary}" Foreground="#555555" TextWrapping="Wrap" Margin="0,0,0,2"/>
+                            </StackPanel>
+
+                            <TextBox Grid.Row="1" x:Name="ProposedPipelineTextBox" IsReadOnly="True" AcceptsReturn="True"
                                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                      TextWrapping="NoWrap" FontFamily="Consolas"/>
+
+                            <!-- The layer's own fields, so the main that is drawn carries what GIS wants
+                                 rather than being written and then chased up. Required ones are marked
+                                 with an asterisk and the page will not move on while one is empty. -->
+                            <Expander Grid.Row="2" Header="Proposed main attributes" IsExpanded="True" Margin="0,6,0,0"
+                                      Visibility="{Binding HasProposedMainAttributes, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding ProposedMainAttributeStatus}" Foreground="#555555"
+                                               TextWrapping="Wrap" Margin="4,4,4,6"/>
+                                    <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Disabled">
+                                        <ItemsControl ItemsSource="{Binding ProposedMainAttributes}" Margin="4,0,4,4">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,0,0,4">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="170"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="{Binding Display}" VerticalAlignment="Center"
+                                                                   TextWrapping="Wrap" Margin="0,0,8,0"
+                                                                   ToolTip="{Binding Name}"/>
+                                                        <!-- A domain gets a list, so a value GIS would refuse
+                                                             cannot be typed in the first place. -->
+                                                        <ComboBox Grid.Column="1" ItemsSource="{Binding CodedValues}"
+                                                                  SelectedItem="{Binding SelectedCodedValue}"
+                                                                  Visibility="{Binding HasCodedValues, Converter={StaticResource BoolToVisibility}}"/>
+                                                        <TextBox Grid.Column="1" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                                                 MaxLength="{Binding MaxLength}">
+                                                            <TextBox.Style>
+                                                                <Style TargetType="TextBox">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding HasCodedValues}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding IsMissing}" Value="True">
+                                                                            <Setter Property="BorderBrush" Value="#C08A00"/>
+                                                                            <Setter Property="BorderThickness" Value="1.5"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBox.Style>
+                                                        </TextBox>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                    <CheckBox IsChecked="{Binding UploadProposedMainToGis}" Margin="4,4,4,4"
+                                              Content="Add these segments to the GIS proposed main layer on the way to page 3"
+                                              ToolTip="The only thing this application writes to GIS. Untick to draw and export without adding anything."/>
+                                </StackPanel>
+                            </Expander>
                         </Grid>
                         <Grid x:Name="VisibleMapModePanel" Visibility="Collapsed">
                             <TextBox x:Name="CapturedExtentTextBox" IsReadOnly="True" TextWrapping="Wrap"
