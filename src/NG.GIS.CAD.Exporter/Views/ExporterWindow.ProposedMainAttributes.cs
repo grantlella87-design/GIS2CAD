@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows.Controls;
+using System.Windows.Data;
 using Esri.ArcGISRuntime.Geometry;
 using Esri.ArcGISRuntime.Symbology;
 using NG.GIS.CAD.Exporter.Services;
@@ -50,7 +52,11 @@ public partial class ExporterWindow
         try
         {
             var fields = await ProposedMainFeatureService.GetEditableFieldsAsync(token);
-            if (DataContext is ExporterViewModel vm) { vm.LoadProposedMainAttributes(fields); }
+            if (DataContext is ExporterViewModel vm)
+            {
+                vm.LoadProposedMainFields(fields);
+                vm.SyncProposedMainSegmentRows(_manualProposedPipelineSegmentGeometries.Count);
+            }
         }
         catch (Exception ex)
         {
@@ -104,14 +110,17 @@ public partial class ExporterWindow
             .ToList();
         if (segments.Count == 0) { return true; }
 
+        // Rows and segments are kept level here as well as when the drawing changes, because this is
+        // the last moment before the two have to agree and a mismatch would send the wrong attributes
+        // with the wrong pipe.
+        vm.SyncProposedMainSegmentRows(segments.Count);
+
         var missing = vm.MissingRequiredProposedMainAttributes;
         if (missing.Count > 0)
         {
-            vm.ProposedMainAttributeStatus = "Fill in " + string.Join(", ", missing)
-                + " before going on. GIS will not accept the main without "
-                + (missing.Count == 1 ? "it." : "them.");
-            vm.Status = "The proposed main is missing " + missing.Count + " required attribute(s): "
-                + string.Join(", ", missing) + ".";
+            vm.ProposedMainAttributeStatus = "Fill in the attribute table before going on: "
+                + string.Join("; ", missing) + ".";
+            vm.Status = "The proposed main attribute table is incomplete: " + string.Join("; ", missing) + ".";
             return false;
         }
 
@@ -155,4 +164,87 @@ public partial class ExporterWindow
     /// Called when the drawing is cleared or the export method changes.
     /// </summary>
     private void ForgetProposedMainUpload() => _proposedMainUploaded = false;
+
+    /// <summary>
+    /// Brings the attribute table in line with what is drawn. Called wherever the segment list changes,
+    /// so a row appears with the segment rather than when something else happens to refresh the page.
+    /// </summary>
+    private void SyncProposedMainAttributeRows()
+    {
+        if (DataContext is ExporterViewModel vm)
+        {
+            vm.SyncProposedMainSegmentRows(_manualProposedPipelineSegmentGeometries.Count);
+        }
+    }
+
+    /// <summary>
+    /// Builds the table's columns from the layer's fields.
+    ///
+    /// In code because the columns are not known until the service has answered: which fields exist is
+    /// GIS's to decide, so they cannot be written into the XAML without being a copy that goes stale.
+    /// Each cell binds through the row's indexer, which is what lets a column exist for a field this
+    /// code has never heard of.
+    /// </summary>
+    private void RebuildProposedMainAttributeColumns()
+    {
+        if (ProposedMainAttributeGrid == null) { return; }
+        if (DataContext is not ExporterViewModel vm) { return; }
+
+        ProposedMainAttributeGrid.Columns.Clear();
+
+        // Which segment, and what it still needs. Both read only: they describe the row rather than
+        // being part of it, and the second is the one that says why the page will not move on.
+        ProposedMainAttributeGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Segment",
+            Binding = new Binding(nameof(ProposedMainSegmentAttributesViewModel.SegmentDisplay)),
+            IsReadOnly = true,
+            Width = 90
+        });
+
+        foreach (var field in vm.ProposedMainFields)
+        {
+            // A field name with brackets or a dot in it would be read as part of the binding path
+            // rather than as a name. None of them should have one, and a column bound to nonsense is
+            // worse than a column that is not there.
+            if (field.Name.IndexOfAny(new[] { '[', ']', '.', '/' }) >= 0) { continue; }
+
+            var path = "[" + field.Name + "]";
+            var header = field.Required ? field.Display + " *" : field.Display;
+
+            if (field.HasCodedValues)
+            {
+                // A domain gets a list, so a value GIS would refuse cannot be typed at all.
+                ProposedMainAttributeGrid.Columns.Add(new DataGridComboBoxColumn
+                {
+                    Header = header,
+                    ItemsSource = field.CodedValues,
+                    SelectedValuePath = nameof(ProposedMainCodedValue.Code),
+                    DisplayMemberPath = nameof(ProposedMainCodedValue.Name),
+                    SelectedValueBinding = new Binding(path) { Mode = BindingMode.TwoWay },
+                    MinWidth = 120
+                });
+                continue;
+            }
+
+            ProposedMainAttributeGrid.Columns.Add(new DataGridTextColumn
+            {
+                Header = header,
+                Binding = new Binding(path)
+                {
+                    Mode = BindingMode.TwoWay,
+                    UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
+                },
+                MinWidth = 120
+            });
+        }
+
+        ProposedMainAttributeGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Status",
+            Binding = new Binding(nameof(ProposedMainSegmentAttributesViewModel.MissingDisplay)),
+            IsReadOnly = true,
+            MinWidth = 160
+        });
+    }
 }

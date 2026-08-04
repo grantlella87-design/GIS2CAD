@@ -205,13 +205,21 @@ public static class ProposedMainFeatureService
     /// the last step of a page rather than something that happens while drawing: a user still moving
     /// points around has not decided anything yet.
     /// </summary>
+    /// <param name="attributesPerGeometry">
+    /// One set of attributes per geometry, in the same order. Per segment rather than shared, because
+    /// each becomes its own feature and two segments of one corridor can differ in size or material.
+    /// </param>
     public static async Task<ProposedMainAddResult> AddFeaturesAsync(
         IReadOnlyList<Geometry> geometries,
-        IReadOnlyDictionary<string, string> attributes,
+        IReadOnlyList<IReadOnlyDictionary<string, string>> attributesPerGeometry,
         string accessToken,
         CancellationToken cancellationToken = default)
     {
         if (geometries == null || geometries.Count == 0) { throw new ArgumentException("There are no segments to add.", nameof(geometries)); }
+        if (attributesPerGeometry == null || attributesPerGeometry.Count != geometries.Count)
+        {
+            throw new ArgumentException("Every segment needs its own attributes.", nameof(attributesPerGeometry));
+        }
         if (string.IsNullOrWhiteSpace(accessToken)) { throw new InvalidOperationException("ArcGIS access token is required to add proposed mains."); }
 
         // Written with a JSON writer rather than by joining strings. Attribute values are typed by a
@@ -223,8 +231,9 @@ public static class ProposedMainFeatureService
         {
             json.WriteStartArray();
 
-            foreach (var geometry in geometries)
+            for (var i = 0; i < geometries.Count; i++)
             {
+                var geometry = geometries[i];
                 if (geometry == null || geometry.IsEmpty) { continue; }
 
                 json.WriteStartObject();
@@ -238,7 +247,7 @@ public static class ProposedMainFeatureService
                 }
 
                 json.WriteStartObject("attributes");
-                foreach (var pair in attributes)
+                foreach (var pair in attributesPerGeometry[i])
                 {
                     if (string.IsNullOrWhiteSpace(pair.Key)) { continue; }
                     json.WriteString(pair.Key, pair.Value ?? string.Empty);
