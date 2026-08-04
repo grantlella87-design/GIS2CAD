@@ -217,11 +217,57 @@ public partial class ExporterWindow
     private void ExporterWindow_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Delete) { return; }
-        if (_editingManualProposedPipelineSegmentIndex < 0) { return; }
         if (Keyboard.FocusedElement is TextBox or ComboBox) { return; }
+
+        // A vertex is a smaller thing than the line it sits on, so Delete takes whichever is selected
+        // and prefers the smaller. Picking a point to fix and losing the whole segment for it is the
+        // kind of mistake that costs the drawing rather than the point.
+        if (TryDeleteSelectedProposedMainVertex())
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (_editingManualProposedPipelineSegmentIndex < 0) { return; }
 
         e.Handled = true;
         DeleteSelectedManualProposedPipelineSegment();
+    }
+
+    /// <summary>
+    /// Removes the vertex the geometry editor has selected, and says whether it did.
+    ///
+    /// False for everything that is not a selected vertex: no editor, nothing being edited, or a
+    /// selection that is the whole geometry rather than a point on it. Delete then falls through to
+    /// the segment, which is what it did before.
+    /// </summary>
+    private bool TryDeleteSelectedProposedMainVertex()
+    {
+        var editor = GetExporterMapView()?.GeometryEditor;
+        if (editor == null || !editor.IsStarted) { return false; }
+
+        // Mid vertices count. One is the point that appears halfway along a segment to be dragged out
+        // into a real vertex, and pressing Delete on one is a way of saying "not that one".
+        if (editor.SelectedElement is not (GeometryEditorVertex or GeometryEditorMidVertex)) { return false; }
+
+        try
+        {
+            editor.DeleteSelectedElement();
+
+            // The edit is not committed here. The segment is still open in the editor, so Apply
+            // Segment is what puts it back into the list, the same as any other change made to it.
+            SetManualProposedPipelineStatus("Vertex deleted. Use Apply Segment to keep the change, or "
+                + "Delete again to remove another.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            SetManualProposedPipelineStatus("That vertex could not be deleted: " + ex.Message);
+
+            // Handled all the same. Falling through to erasing the whole segment because a vertex
+            // refused to go is the worst of both.
+            return true;
+        }
     }
 
     private void StartManualProposedPipelineSegmentDrawing()
@@ -420,6 +466,11 @@ public partial class ExporterWindow
             CommitExtentToViewModelForWorkOrderImport(extent);
         }
     }
+    /// <summary>
+    /// Every change to the drawn segments ends here, which is why the attribute table is brought level
+    /// from this one place: a row belongs to a segment, so it should appear and go with it rather than
+    /// when some other part of the page happens to refresh.
+    /// </summary>
     private void UpdateManualProposedPipelineSegmentSummary()
     {
         var json = BuildManualProposedPipelineSegmentSummaryJson();
@@ -428,6 +479,8 @@ public partial class ExporterWindow
         {
             targetTextBox.Text = json;
         }
+
+        SyncProposedMainAttributeRows();
     }
     private string BuildManualProposedPipelineSegmentSummaryJson()
     {

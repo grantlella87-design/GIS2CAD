@@ -92,6 +92,8 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
             vm.PropertyChanged += ViewModel_PropertyChanged;
             vm.MapDataSourcesChanged -= ViewModel_MapDataSourcesChanged;
             vm.MapDataSourcesChanged += ViewModel_MapDataSourcesChanged;
+            vm.ProposedMainFieldsChanged -= RebuildProposedMainAttributeColumns;
+            vm.ProposedMainFieldsChanged += RebuildProposedMainAttributeColumns;
         }
     }
     private async void ViewModel_MapDataSourcesChanged()

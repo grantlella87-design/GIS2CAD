@@ -5,7 +5,7 @@ namespace NG.GIS.CAD.Exporter.ViewModels;
 
 /// <summary>
 /// Page 2's side of a hand drawn proposed main: how far apart segment ends may be and still be joined,
-/// and the attributes the drawn main will carry into GIS.
+/// and the attribute table the drawn segments carry into GIS.
 /// </summary>
 public sealed partial class ExporterViewModel
 {
@@ -13,6 +13,7 @@ public sealed partial class ExporterViewModel
     private double _proposedMainSnapToleranceFeet = 1.0;
     private string _proposedMainAttributeStatus = string.Empty;
     private bool _uploadProposedMainToGis = true;
+    private IReadOnlyList<ProposedMainField> _proposedMainFields = Array.Empty<ProposedMainField>();
 
     /// <summary>
     /// Whether segment ends close to each other are pulled together. On, because a corridor drawn in
@@ -67,61 +68,88 @@ public sealed partial class ExporterViewModel
         set => SetProperty(ref _uploadProposedMainToGis, value);
     }
 
-    /// <summary>The attribute rows read from the layer, in the order the service lists its fields.</summary>
-    public ObservableCollection<ProposedMainAttributeViewModel> ProposedMainAttributes { get; } = new();
+    /// <summary>
+    /// The layer's fields, in the order the service lists them. The table's columns are built from
+    /// this, so a field added in GIS becomes a column without anything here being changed.
+    /// </summary>
+    public IReadOnlyList<ProposedMainField> ProposedMainFields => _proposedMainFields;
 
-    /// <summary>Whether there is a table to show at all, so an empty one can be hidden rather than shown empty.</summary>
-    public bool HasProposedMainAttributes => ProposedMainAttributes.Count > 0;
+    /// <summary>One row per drawn segment, because each becomes its own feature in GIS.</summary>
+    public ObservableCollection<ProposedMainSegmentAttributesViewModel> ProposedMainSegmentRows { get; } = new();
 
-    /// <summary>What the attribute table is doing: loading, what is missing, or what was written.</summary>
+    /// <summary>Raised when the columns change, so the view can rebuild them.</summary>
+    public event Action? ProposedMainFieldsChanged;
+
+    /// <summary>Whether there is a table worth showing, so an empty one stays out of the way.</summary>
+    public bool HasProposedMainAttributes => _proposedMainFields.Count > 0 && ProposedMainSegmentRows.Count > 0;
+
+    /// <summary>What the attribute table is doing: what was read, what is missing, what was written.</summary>
     public string ProposedMainAttributeStatus
     {
         get => _proposedMainAttributeStatus;
         set => SetProperty(ref _proposedMainAttributeStatus, value);
     }
 
-    /// <summary>The required fields still empty, by their labels, for a message that names them.</summary>
-    public IReadOnlyList<string> MissingRequiredProposedMainAttributes =>
-        ProposedMainAttributes.Where(a => a.IsMissing).Select(a => a.Field.Display).ToList();
-
     /// <summary>
-    /// Fills the table from the layer's own fields, keeping anything already typed against a field of
-    /// the same name so a reload does not throw the user's work away.
+    /// What is still missing, named by segment, so a message points at the row to fix rather than
+    /// saying that something somewhere is incomplete.
     /// </summary>
-    public void LoadProposedMainAttributes(IReadOnlyList<ProposedMainField> fields)
+    public IReadOnlyList<string> MissingRequiredProposedMainAttributes =>
+        ProposedMainSegmentRows
+            .Where(r => !r.IsComplete)
+            .Select(r => r.SegmentDisplay + ": " + string.Join(", ", r.Missing))
+            .ToList();
+
+    /// <summary>Takes the layer's fields and rebuilds the columns from them.</summary>
+    public void LoadProposedMainFields(IReadOnlyList<ProposedMainField> fields)
     {
-        var typed = ProposedMainAttributes.ToDictionary(a => a.Name, a => a.Value, StringComparer.OrdinalIgnoreCase);
-
-        ProposedMainAttributes.Clear();
-        foreach (var field in fields)
-        {
-            var row = new ProposedMainAttributeViewModel(field);
-            if (typed.TryGetValue(field.Name, out var previous)) { row.Value = previous; }
-            row.ValueChanged += _ => RaisePropertyChanged(nameof(MissingRequiredProposedMainAttributes));
-            ProposedMainAttributes.Add(row);
-        }
-
-        RaisePropertyChanged(nameof(HasProposedMainAttributes));
-        RaisePropertyChanged(nameof(MissingRequiredProposedMainAttributes));
+        _proposedMainFields = fields;
+        RaisePropertyChanged(nameof(ProposedMainFields));
+        ProposedMainFieldsChanged?.Invoke();
 
         var required = fields.Count(f => f.Required);
         ProposedMainAttributeStatus = fields.Count == 0
             ? "The proposed main layer offered no fields to fill in."
             : "Read " + fields.Count + " field(s) from the proposed main layer, " + required + " of them required.";
+
+        RaiseProposedMainTableChanged();
     }
 
     /// <summary>
-    /// The attributes to send, leaving out the ones nobody filled in. An empty value is not the same as
-    /// a value of empty: sending blanks would overwrite whatever GIS would otherwise default them to.
+    /// Brings the table in line with the segments on the map: one row each, numbered as they are.
+    ///
+    /// Rows that already exist keep what has been typed into them, so drawing another segment does not
+    /// disturb the ones already filled in. A new row starts as a copy of the one before it, because
+    /// consecutive segments of one corridor are usually the same pipe and retyping identical values
+    /// for each is the sort of work nobody checks carefully by the fourth time.
     /// </summary>
-    public IReadOnlyDictionary<string, string> BuildProposedMainAttributeValues()
+    public void SyncProposedMainSegmentRows(int segmentCount)
     {
-        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var attribute in ProposedMainAttributes)
+        if (segmentCount < 0) { segmentCount = 0; }
+
+        while (ProposedMainSegmentRows.Count > segmentCount)
         {
-            if (string.IsNullOrWhiteSpace(attribute.Value)) { continue; }
-            values[attribute.Name] = attribute.Value.Trim();
+            ProposedMainSegmentRows.RemoveAt(ProposedMainSegmentRows.Count - 1);
         }
-        return values;
+
+        while (ProposedMainSegmentRows.Count < segmentCount)
+        {
+            var row = new ProposedMainSegmentAttributesViewModel(ProposedMainSegmentRows.Count + 1, _proposedMainFields);
+            if (ProposedMainSegmentRows.Count > 0) { row.CopyValuesFrom(ProposedMainSegmentRows[^1]); }
+            row.ValuesChanged += _ => RaisePropertyChanged(nameof(MissingRequiredProposedMainAttributes));
+            ProposedMainSegmentRows.Add(row);
+        }
+
+        RaiseProposedMainTableChanged();
     }
+
+    private void RaiseProposedMainTableChanged()
+    {
+        RaisePropertyChanged(nameof(HasProposedMainAttributes));
+        RaisePropertyChanged(nameof(MissingRequiredProposedMainAttributes));
+    }
+
+    /// <summary>The attributes to send for each segment, in the order the segments were drawn.</summary>
+    public IReadOnlyList<IReadOnlyDictionary<string, string>> BuildProposedMainAttributeValues() =>
+        ProposedMainSegmentRows.Select(r => r.ToAttributeValues()).ToList();
 }

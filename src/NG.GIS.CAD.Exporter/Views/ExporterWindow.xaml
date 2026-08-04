@@ -170,7 +170,6 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*" MinHeight="60"/>
-                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <!-- Snapping was fixed at a foot with nothing on screen to say so. Both the
@@ -194,59 +193,6 @@
                                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                      TextWrapping="NoWrap" FontFamily="Consolas"/>
 
-                            <!-- The layer's own fields, so the main that is drawn carries what GIS wants
-                                 rather than being written and then chased up. Required ones are marked
-                                 with an asterisk and the page will not move on while one is empty. -->
-                            <Expander Grid.Row="2" Header="Proposed main attributes" IsExpanded="True" Margin="0,6,0,0"
-                                      Visibility="{Binding HasProposedMainAttributes, Converter={StaticResource BoolToVisibility}}">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding ProposedMainAttributeStatus}" Foreground="#555555"
-                                               TextWrapping="Wrap" Margin="4,4,4,6"/>
-                                    <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto"
-                                                  HorizontalScrollBarVisibility="Disabled">
-                                        <ItemsControl ItemsSource="{Binding ProposedMainAttributes}" Margin="4,0,4,4">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Grid Margin="0,0,0,4">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="170"/>
-                                                            <ColumnDefinition Width="*"/>
-                                                        </Grid.ColumnDefinitions>
-                                                        <TextBlock Grid.Column="0" Text="{Binding Display}" VerticalAlignment="Center"
-                                                                   TextWrapping="Wrap" Margin="0,0,8,0"
-                                                                   ToolTip="{Binding Name}"/>
-                                                        <!-- A domain gets a list, so a value GIS would refuse
-                                                             cannot be typed in the first place. -->
-                                                        <ComboBox Grid.Column="1" ItemsSource="{Binding CodedValues}"
-                                                                  SelectedItem="{Binding SelectedCodedValue}"
-                                                                  Visibility="{Binding HasCodedValues, Converter={StaticResource BoolToVisibility}}"/>
-                                                        <TextBox Grid.Column="1" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
-                                                                 MaxLength="{Binding MaxLength}">
-                                                            <TextBox.Style>
-                                                                <Style TargetType="TextBox">
-                                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding HasCodedValues}" Value="True">
-                                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                                        </DataTrigger>
-                                                                        <DataTrigger Binding="{Binding IsMissing}" Value="True">
-                                                                            <Setter Property="BorderBrush" Value="#C08A00"/>
-                                                                            <Setter Property="BorderThickness" Value="1.5"/>
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </TextBox.Style>
-                                                        </TextBox>
-                                                    </Grid>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-                                    <CheckBox IsChecked="{Binding UploadProposedMainToGis}" Margin="4,4,4,4"
-                                              Content="Add these segments to the GIS proposed main layer on the way to page 3"
-                                              ToolTip="The only thing this application writes to GIS. Untick to draw and export without adding anything."/>
-                                </StackPanel>
-                            </Expander>
                         </Grid>
                         <Grid x:Name="VisibleMapModePanel" Visibility="Collapsed">
                             <TextBox x:Name="CapturedExtentTextBox" IsReadOnly="True" TextWrapping="Wrap"
@@ -507,6 +453,32 @@
                     <Border Grid.Row="1" BorderBrush="#A0A0A0" BorderThickness="1" Background="#F5F5F5">
                         <ContentControl x:Name="ArcGisMapHost"/>
                     </Border>
+
+                    <!-- Under the map rather than in the left pane, because a row per segment and a
+                         column per GIS field is a wide thing and the left pane is a column of narrow
+                         ones. Closed it is just its header, so the map keeps its height until the
+                         table is wanted. -->
+                    <Expander Grid.Row="2" x:Name="ProposedMainAttributeSection" Margin="0,6,0,0"
+                              Header="Proposed main attributes" IsExpanded="True"
+                              Visibility="{Binding HasProposedMainAttributes, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <TextBlock Text="{Binding ProposedMainAttributeStatus}" Foreground="#555555"
+                                       TextWrapping="Wrap" Margin="4,4,4,6"/>
+
+                            <!-- No columns declared here: they are built in code from the layer's own
+                                 fields, because which fields exist is GIS's to decide and a copy
+                                 written into the XAML would be one that goes stale. -->
+                            <DataGrid x:Name="ProposedMainAttributeGrid" MaxHeight="200"
+                                      ItemsSource="{Binding ProposedMainSegmentRows}"
+                                      AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                                      HeadersVisibility="Column" GridLinesVisibility="All"
+                                      SelectionMode="Single" SelectionUnit="Cell" Margin="4,0,4,4"/>
+
+                            <CheckBox IsChecked="{Binding UploadProposedMainToGis}" Margin="4,4,4,4"
+                                      Content="Add these segments to the GIS proposed main layer on the way to page 3"
+                                      ToolTip="The only thing this application writes to GIS. Untick to draw and export without adding anything."/>
+                        </StackPanel>
+                    </Expander>
                 </Grid>
             </Grid>
                         <Grid x:Name="LayerPage" Visibility="Collapsed">
