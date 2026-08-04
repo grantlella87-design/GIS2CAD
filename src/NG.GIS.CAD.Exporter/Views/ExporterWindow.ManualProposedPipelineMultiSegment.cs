@@ -354,7 +354,9 @@ public partial class ExporterWindow
             };
             mapView.GraphicsOverlays.Add(_manualProposedPipelineSegmentOverlay);
         }
-        _manualProposedPipelineSegmentSymbol ??= new SimpleLineSymbol(SimpleLineSymbolStyle.Solid, System.Drawing.Color.Red, 4.0);
+        // Rebuilt each time rather than cached, so the layer's own symbol replaces the fallback as
+        // soon as the service answers instead of on the next restart.
+        _manualProposedPipelineSegmentSymbol = BuildManualProposedPipelineSymbol();
         _manualProposedPipelineSegmentOverlay.Graphics.Clear();
 
         // The buffer first, so the segments draw over it rather than under.

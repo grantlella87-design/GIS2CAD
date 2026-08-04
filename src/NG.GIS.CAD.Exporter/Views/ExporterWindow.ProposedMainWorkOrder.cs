@@ -28,6 +28,11 @@ public partial class ExporterWindow
     {
         if (!Equals(e.NewValue, true)) { return; }
         await Task.Yield();
+
+        // The layer's symbol and its field list, which the hand drawn main needs and the imported one
+        // does not. Fetched on arrival rather than at startup: it is two calls nobody needs until they
+        // are on this page, and page 1 has the network to itself until then.
+        await EnsureProposedMainLayerDetailsAsync();
         await AutoImportWorkOrderProposedMainIfReadyAsync(false);
     }
 
@@ -241,12 +246,31 @@ public partial class ExporterWindow
     /// </summary>
     private IReadOnlyList<Geometry> SnapAmendedProposedMainGeometries(IReadOnlyList<Geometry> geometries)
     {
-        var snapped = SnapGeometriesWithinOneFoot(geometries, out var snapCount);
+        // The distance and whether to snap at all are now the user's, set on page 2. Both were fixed
+        // here at one foot with nothing on screen to say so: a foot suits a street but not a plant
+        // yard where mains run inches apart, nor a sketch drawn zoomed out where ends land further
+        // apart than that and were quietly left unjoined.
+        var snapping = true;
+        var toleranceFeet = 1.0;
+        if (DataContext is ViewModels.ExporterViewModel vm)
+        {
+            snapping = vm.SnapProposedMainSegmentEnds;
+            toleranceFeet = vm.ProposedMainSnapToleranceFeet;
+        }
+
+        if (!snapping)
+        {
+            _lastProposedMainEndpointSnapCount = 0;
+            return geometries;
+        }
+
+        var snapped = SnapGeometryEndpoints(geometries, toleranceFeet, out var snapCount);
         _lastProposedMainEndpointSnapCount = snapCount;
         return snapped;
     }
 
-    private static IReadOnlyList<Geometry> SnapGeometriesWithinOneFoot(IReadOnlyList<Geometry> geometries, out int snapCount)
+    private static IReadOnlyList<Geometry> SnapGeometryEndpoints(
+        IReadOnlyList<Geometry> geometries, double toleranceFeet, out int snapCount)
     {
         snapCount = 0;
         if (geometries == null || geometries.Count == 0) { return Array.Empty<Geometry>(); }
@@ -259,7 +283,11 @@ public partial class ExporterWindow
             if (editable.Paths.Count > 0) { parsed.Add(editable); }
         }
         if (parsed.Count == 0) { return geometries; }
-        var toleranceSquared = 0.3048 * 0.3048;
+        // Web Mercator metres, which is what page 2 works in. The units stretch away from the equator,
+        // so a foot of tolerance here is a little under a foot on the ground; over the distance a snap
+        // covers that is far below anything a hand drawn end is accurate to.
+        var toleranceMetres = Math.Max(0.0, toleranceFeet) * 0.3048;
+        var toleranceSquared = toleranceMetres * toleranceMetres;
 
         // Every move is worked out against the geometry as it arrived and applied afterwards. Writing
         // each one as it was found made the result depend on which path happened to be walked first,

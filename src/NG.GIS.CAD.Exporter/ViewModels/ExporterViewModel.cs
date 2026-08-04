@@ -174,7 +174,28 @@ public sealed partial class ExporterViewModel : ObservableObject
         SpatialReferenceNames.Describe(_profile.DefaultOutputSpatialReferenceWkid);
     public LayerSelectionViewModel? SelectedLayer { get => _selectedLayer; set => SetProperty(ref _selectedLayer, value); }
     public CadTransformRuleViewModel? SelectedTransform { get => _selectedTransform; set => SetProperty(ref _selectedTransform, value); }
-    private Task NextAsync() { if (PageIndex < 4) { PageIndex++; } return Task.CompletedTask; }
+    /// <summary>
+    /// Work the view has to finish before a page is left, and its answer: false keeps the user where
+    /// they are. Set by the view, because what it guards -- the hand drawn main and its attributes --
+    /// lives on the map rather than here.
+    /// </summary>
+    public Func<Task<bool>>? LeavingExtentPageAsync { get; set; }
+
+    private async Task NextAsync()
+    {
+        if (PageIndex >= 4) { return; }
+
+        // Leaving the extent page is where a hand drawn proposed main goes to GIS. It is done on the
+        // way out rather than while drawing, because a user still moving points about has not decided
+        // anything yet, and it can refuse: a main missing a mandatory attribute is not one GIS will
+        // take, so the page that can still fix it is the page to stay on.
+        if (IsExtentPage && LeavingExtentPageAsync != null)
+        {
+            if (!await LeavingExtentPageAsync()) { return; }
+        }
+
+        PageIndex++;
+    }
     private Task BackAsync() { if (PageIndex > 0) { PageIndex--; } return Task.CompletedTask; }
     /// <summary>
     /// Reads the profile file and the map data sources. This is the only part needed before the user
