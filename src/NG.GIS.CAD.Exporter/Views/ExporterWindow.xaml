@@ -439,7 +439,8 @@
                 <Grid Grid.Column="2">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="*" MinHeight="200"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <DockPanel Grid.Row="0" Margin="0,0,0,6">
                         <TextBlock x:Name="ExtentModeTitle" Text="Native ArcGIS Maps SDK MapView" FontWeight="Bold" VerticalAlignment="Center"/>
@@ -461,23 +462,33 @@
                     <Expander Grid.Row="2" x:Name="ProposedMainAttributeSection" Margin="0,6,0,0"
                               Header="Proposed main attributes" IsExpanded="True"
                               Visibility="{Binding HasProposedMainAttributes, Converter={StaticResource BoolToVisibility}}">
-                        <StackPanel>
-                            <TextBlock Text="{Binding ProposedMainAttributeStatus}" Foreground="#555555"
+                        <!-- A Grid with a fixed height for the table, not a StackPanel. A StackPanel
+                             offers its children unlimited height, and a DataGrid asked how tall it
+                             would like to be answers with however many rows it has, which is how the
+                             map ends up with whatever is left rather than the table fitting under it. -->
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="180"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Text="{Binding ProposedMainAttributeStatus}" Foreground="#555555"
                                        TextWrapping="Wrap" Margin="4,4,4,6"/>
 
                             <!-- No columns declared here: they are built in code from the layer's own
                                  fields, because which fields exist is GIS's to decide and a copy
                                  written into the XAML would be one that goes stale. -->
-                            <DataGrid x:Name="ProposedMainAttributeGrid" MaxHeight="200"
+                            <DataGrid Grid.Row="1" x:Name="ProposedMainAttributeGrid"
                                       ItemsSource="{Binding ProposedMainSegmentRows}"
                                       AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                                       HeadersVisibility="Column" GridLinesVisibility="All"
                                       SelectionMode="Single" SelectionUnit="Cell" Margin="4,0,4,4"/>
 
-                            <CheckBox IsChecked="{Binding UploadProposedMainToGis}" Margin="4,4,4,4"
+                            <CheckBox Grid.Row="2" IsChecked="{Binding UploadProposedMainToGis}" Margin="4,4,4,4"
                                       Content="Add these segments to the GIS proposed main layer on the way to page 3"
                                       ToolTip="The only thing this application writes to GIS. Untick to draw and export without adding anything."/>
-                        </StackPanel>
+                        </Grid>
                     </Expander>
                 </Grid>
             </Grid>
