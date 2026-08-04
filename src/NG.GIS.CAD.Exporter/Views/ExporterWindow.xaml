@@ -244,6 +244,14 @@
                                                     </Image.Style>
                                                 </Image>
                                                 <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                                <!-- Offered on the map's own top level layers only. A
+                                                     sublayer is part of the service that carries it and
+                                                     cannot be detached from it, so it gets a tick box and
+                                                     nothing more. -->
+                                                <Button Content="Remove" Padding="6,0" Margin="8,0,0,0" FontSize="10"
+                                                        VerticalAlignment="Center" Click="RemoveMapLayer_Click"
+                                                        ToolTip="Take this layer off the map."
+                                                        Visibility="{Binding CanRemove, Converter={StaticResource BoolToVisibility}}"/>
                                             </StackPanel>
 
                                             <!-- A layer drawn by category or by range needs a row per
@@ -294,20 +302,42 @@
                             <ItemsControl ItemsSource="{Binding MapDataSources}" Margin="0,0,0,6">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Grid Margin="0,0,0,4">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
-                                                <CheckBox Content="{Binding Name}" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalContentAlignment="Center"/>
-                                                <TextBlock Text="{Binding Url}" Foreground="#777777" FontSize="11" TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{Binding Status}" Foreground="#777777" FontSize="11" TextWrapping="Wrap"/>
-                                            </StackPanel>
-                                            <Button Grid.Column="1" Content="Remove" Padding="8,2" VerticalAlignment="Top"
-                                                    Command="{Binding DataContext.RemoveMapDataSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CommandParameter="{Binding}"/>
-                                        </Grid>
+                                        <!-- One tile per source, drawn as a card so the list reads as a
+                                             stack of things that can be picked up and moved rather than
+                                             as a run of checkboxes. The order of the tiles is the draw
+                                             order on the map: the top tile draws on top. -->
+                                        <Border Margin="0,0,0,4" Padding="6,4,4,4" CornerRadius="3"
+                                                Background="#FAFAFA" BorderBrush="#DDDDDD" BorderThickness="1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalContentAlignment="Center"/>
+                                                    <TextBlock Text="{Binding Url}" Foreground="#777777" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Status}" Foreground="#777777" FontSize="11" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                                                    <!-- The arrows stay in place when they have nowhere to
+                                                         go, rather than disappearing, so the tiles below
+                                                         do not shuffle sideways as the list is reordered. -->
+                                                    <Button Content="&#x25B2;" Width="22" Padding="0,1" Margin="0,0,2,0"
+                                                            FontSize="10" ToolTip="Move this source up, so it draws over the ones below it."
+                                                            IsEnabled="{Binding CanMoveUp}"
+                                                            Command="{Binding DataContext.MoveMapDataSourceUpCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <Button Content="&#x25BC;" Width="22" Padding="0,1" Margin="0,0,6,0"
+                                                            FontSize="10" ToolTip="Move this source down, so the ones above it draw over it."
+                                                            IsEnabled="{Binding CanMoveDown}"
+                                                            Command="{Binding DataContext.MoveMapDataSourceDownCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <Button Content="Remove" Padding="8,2"
+                                                            Command="{Binding DataContext.RemoveMapDataSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -447,9 +477,14 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition x:Name="ProposedMainAttributeRow" Height="*" MinHeight="120"/>
                     </Grid.RowDefinitions>
-                    <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                    <!-- LastChildFill off. On by default it hands the whole remaining width to the last
+                         child whatever its Dock says, so the address controls were laid out from the
+                         left edge of that space and ended up pressed against the end of the title. Off,
+                         the right dock is honoured: the title stays left, the controls sit right, and
+                         the space between them is the gap. -->
+                    <DockPanel Grid.Row="0" Margin="0,0,0,6" LastChildFill="False">
                         <TextBlock x:Name="ExtentModeTitle" Text="Native ArcGIS Maps SDK MapView" FontWeight="Bold" VerticalAlignment="Center"/>
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="24,0,0,0">
                             <TextBlock Text="Address:" VerticalAlignment="Center" Margin="0,0,6,0"/>
                             <TextBox x:Name="AddressSearchTextBox" Width="380" Margin="0,0,6,0" KeyDown="AddressSearchTextBox_KeyDown"/>
                             <Button Content="Go 1:960" Click="GoToAddress_Click" Padding="8,2" Margin="0,0,4,0"/>
@@ -475,6 +510,7 @@
                     <Expander Grid.Row="3" x:Name="ProposedMainAttributeSection" Margin="0,6,0,0"
                               Expanded="ProposedMainAttributeSection_ExpansionChanged"
                               Collapsed="ProposedMainAttributeSection_ExpansionChanged"
+                              SizeChanged="ProposedMainAttributeSection_SizeChanged"
                               Header="Proposed main attributes" IsExpanded="True"
                               Visibility="{Binding HasProposedMainAttributes, Converter={StaticResource BoolToVisibility}}">
                         <!-- A Grid rather than a StackPanel. A StackPanel offers its children unlimited
@@ -489,8 +525,17 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Text="{Binding ProposedMainAttributeStatus}" Foreground="#555555"
-                                       TextWrapping="Wrap" Margin="4,4,4,6"/>
+                            <DockPanel Grid.Row="0" x:Name="ProposedMainAttributeHeaderPanel" Margin="4,4,4,6" LastChildFill="True">
+                                <!-- A grid in single selection mode has no way back to nothing selected:
+                                     clicking the chosen row again only starts editing a cell. This is
+                                     that way back, and Escape in the table does the same thing. -->
+                                <Button DockPanel.Dock="Right" Content="Clear selection" Padding="8,2" Margin="8,0,0,0"
+                                        VerticalAlignment="Top" Click="ClearProposedMainAttributeSelection_Click"
+                                        ToolTip="Stop picking out a segment on the map."
+                                        IsEnabled="{Binding HasProposedMainRowSelected}"/>
+                                <TextBlock Text="{Binding ProposedMainAttributeStatus}" Foreground="#555555"
+                                           TextWrapping="Wrap"/>
+                            </DockPanel>
 
                             <!-- No columns declared here: they are built in code from the layer's own
                                  fields, because which fields exist is GIS's to decide and a copy
@@ -503,6 +548,7 @@
                             <DataGrid Grid.Row="1" x:Name="ProposedMainAttributeGrid"
                                       ItemsSource="{Binding ProposedMainSegmentRows}"
                                       SelectionChanged="ProposedMainAttributeGrid_SelectionChanged"
+                                      PreviewKeyDown="ProposedMainAttributeGrid_PreviewKeyDown"
                                       AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                                       HeadersVisibility="Column" GridLinesVisibility="All"
                                       SelectionMode="Single" SelectionUnit="FullRow"
@@ -510,7 +556,7 @@
                                       ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                       Margin="4,0,4,4"/>
 
-                            <CheckBox Grid.Row="2" IsChecked="{Binding UploadProposedMainToGis}" Margin="4,4,4,4"
+                            <CheckBox Grid.Row="2" x:Name="ProposedMainUploadCheckBox" IsChecked="{Binding UploadProposedMainToGis}" Margin="4,4,4,4"
                                       Content="Add these segments to the GIS proposed main layer on the way to page 3"
                                       ToolTip="The only thing this application writes to GIS. Untick to draw and export without adding anything."/>
                         </Grid>

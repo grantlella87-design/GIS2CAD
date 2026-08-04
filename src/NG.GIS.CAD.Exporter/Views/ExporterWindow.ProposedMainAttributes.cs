@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
 using Esri.ArcGISRuntime.Geometry;
 using Esri.ArcGISRuntime.Symbology;
 using NG.GIS.CAD.Exporter.Services;
@@ -238,7 +239,44 @@ public partial class ExporterWindow
         if (DataContext is not ExporterViewModel vm) { return; }
 
         var selected = ProposedMainAttributeGrid?.SelectedItem as ProposedMainSegmentAttributesViewModel;
+        vm.HasProposedMainRowSelected = selected != null;
         HighlightManualProposedPipelineSegment(selected == null ? -1 : vm.ProposedMainSegmentRows.IndexOf(selected));
+    }
+
+    /// <summary>
+    /// Puts the table back to nothing selected, which takes the highlight off the map with it.
+    ///
+    /// A grid in single selection mode has no way back on its own: clicking the chosen row a second
+    /// time starts editing a cell rather than letting go of it, so the last row picked stayed lit for
+    /// the rest of the session. The current cell is cleared as well as the selection, because a grid
+    /// that keeps its current cell puts the row straight back the moment focus returns to it.
+    /// </summary>
+    private void ClearProposedMainAttributeSelection()
+    {
+        if (ProposedMainAttributeGrid == null) { return; }
+
+        ProposedMainAttributeGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        ProposedMainAttributeGrid.UnselectAll();
+        ProposedMainAttributeGrid.CurrentCell = default;
+    }
+
+    private void ClearProposedMainAttributeSelection_Click(object sender, RoutedEventArgs e)
+        => ClearProposedMainAttributeSelection();
+
+    /// <summary>
+    /// Escape in the table lets go of the row, so the keyboard can do what the button does.
+    ///
+    /// Only when the grid itself has the key. Escape inside a cell that is being edited is the grid's
+    /// own "throw this edit away", which is worth more than a second way to deselect: an edit control
+    /// raises this with itself as the source, and those are left alone.
+    /// </summary>
+    private void ProposedMainAttributeGrid_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) { return; }
+        if (e.OriginalSource is not DataGrid and not DataGridCell and not DataGridRow) { return; }
+
+        ClearProposedMainAttributeSelection();
+        e.Handled = true;
     }
 
     /// <summary>
@@ -269,7 +307,48 @@ public partial class ExporterWindow
 
         ProposedMainAttributeRow.Height = new GridLength(capped);
         _proposedMainAttributeRowHeight = ProposedMainAttributeRow.Height;
+        CapProposedMainAttributeGridHeight();
     }
+
+    /// <summary>
+    /// Holds the table to the height it has actually been given, so that rows past that height scroll.
+    ///
+    /// The vertical scrollbar was set to Auto from the start and never appeared, because Auto means
+    /// "when the content does not fit" and as far as the grid was concerned it always did: nothing in
+    /// the chain above it handed down a height it had to live within, so it asked for room for every
+    /// row, was told yes, and the rows past the bottom of the section were simply cut off by the edge
+    /// of the page. A grid with nowhere to overflow to has nothing to scroll.
+    ///
+    /// The cap is measured from the section and its own furniture rather than assumed, so it follows
+    /// the splitter: drag the table taller and the cap grows with it, which is the whole point of the
+    /// splitter being there. Driven top down, from a section whose height comes from the row above it,
+    /// so setting this cannot feed back into the height it was worked out from.
+    /// </summary>
+    private void CapProposedMainAttributeGridHeight()
+    {
+        if (ProposedMainAttributeGrid == null || ProposedMainAttributeSection == null) { return; }
+        if (!ProposedMainAttributeSection.IsExpanded) { return; }
+
+        var available = ProposedMainAttributeSection.ActualHeight
+                        - ProposedMainAttributeExpanderChrome
+                        - (ProposedMainAttributeHeaderPanel?.ActualHeight ?? 0)
+                        - (ProposedMainUploadCheckBox?.ActualHeight ?? 0);
+
+        // Never below one row under the column headers. A cap small enough to hide the headers would
+        // leave a table that cannot be read at all, and the section has a MinHeight that keeps this
+        // from being the normal case.
+        var floor = ProposedMainTableHeaderHeight + ProposedMainTableRowHeight;
+        ProposedMainAttributeGrid.MaxHeight = Math.Max(floor, available);
+    }
+
+    private void ProposedMainAttributeSection_SizeChanged(object sender, SizeChangedEventArgs e)
+        => CapProposedMainAttributeGridHeight();
+
+    /// <summary>
+    /// The expander's own header and the margins between the section and the grid inside it: the part
+    /// of the section's height that is never the table's, on top of the two panels that are measured.
+    /// </summary>
+    private const double ProposedMainAttributeExpanderChrome = 40;
 
     /// <summary>Room for the status line, the upload tick box, the expander header and the margins.</summary>
     private const double ProposedMainTableChrome = 96;

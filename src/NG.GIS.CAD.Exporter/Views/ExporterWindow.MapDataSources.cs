@@ -44,7 +44,40 @@ public partial class ExporterWindow
             await AddMapDataSourceLayerAsync(map, source);
         }
 
+        ReapplyMapDataSourceDrawOrder(map);
         await BuildMapLayerTogglesAsync(map);
+    }
+
+    /// <summary>
+    /// Puts the data source layers on the map in the order the tiles are in, top of the list drawn on
+    /// top, which is how a layer list is read everywhere else.
+    ///
+    /// Every one is lifted off and put back rather than shuffled in place. The map's own layers are in
+    /// the same collection, and moving one data source past another without disturbing those means
+    /// working out indices around layers that are none of this list's business. Taking them all off
+    /// and re-adding them settles both questions at once: they end up in list order, and they end up
+    /// above the web map's layers, which is where something a user added on purpose belongs.
+    /// </summary>
+    private void ReapplyMapDataSourceDrawOrder(Map map)
+    {
+        if (DataContext is not ExporterViewModel vm) { return; }
+        if (_dataSourceLayersByUrl.Count == 0) { return; }
+
+        foreach (var layer in _dataSourceLayersByUrl.Values)
+        {
+            map.OperationalLayers.Remove(layer);
+        }
+
+        // Reversed, because adding appends and the last one added draws on top.
+        for (var i = vm.MapDataSources.Count - 1; i >= 0; i--)
+        {
+            var source = vm.MapDataSources[i];
+            if (string.IsNullOrWhiteSpace(source.Url)) { continue; }
+            if (_dataSourceLayersByUrl.TryGetValue(source.Url, out var layer))
+            {
+                map.OperationalLayers.Add(layer);
+            }
+        }
     }
 
     private async Task AddMapDataSourceLayerAsync(Map map, MapDataSourceViewModel source)

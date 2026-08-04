@@ -43,6 +43,26 @@ public sealed class MapDataSourceViewModel : ObservableObject
     /// <summary>Whether this entry came with the map rather than from the profile.</summary>
     public bool IsFromMap => _baseLayer != null;
 
+    private bool _canMoveUp;
+    private bool _canMoveDown;
+
+    /// <summary>
+    /// Whether this tile has anywhere to go. Only the profile's own sources move: a layer the map
+    /// brought with it has no place in the profile to record an order in, so moving it would last
+    /// until the map loaded again and no longer.
+    /// </summary>
+    public bool CanMoveUp
+    {
+        get => _canMoveUp;
+        set => SetProperty(ref _canMoveUp, value);
+    }
+
+    public bool CanMoveDown
+    {
+        get => _canMoveDown;
+        set => SetProperty(ref _canMoveDown, value);
+    }
+
     /// <summary>Takes a map layer off the map. Nothing to do for a profile source.</summary>
     public void RemoveFromMap() => _baseLayer?.Remove();
 
