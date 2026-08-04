@@ -570,20 +570,35 @@ public sealed partial class ExporterViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Drops the tile for one of the map's own layers, for a layer taken off from the layer tree.
+    ///
+    /// One tile rather than relisting them all, because relisting rebuilds every map owned tile at the
+    /// bottom of the list and would throw away an order the user had just finished dragging into place.
+    /// </summary>
+    public void RemoveBaseMapLayerTile(string name)
+    {
+        _baseMapLayers = _baseMapLayers.Where(l => l.Name != name).ToList();
+
+        for (var i = MapDataSources.Count - 1; i >= 0; i--)
+        {
+            if (MapDataSources[i].IsFromMap && MapDataSources[i].Name == name) { MapDataSources.RemoveAt(i); }
+        }
+    }
+
+    /// <summary>
     /// Drops one data source tile where another one is, and takes the map with it.
     ///
     /// The order is the draw order, top of the list drawn on top, which is how a layer list is read
     /// everywhere else. Without this the sources drew in whatever order they were added in and a
     /// source that covered another could only be dealt with by removing and re-adding it.
     ///
-    /// Only the profile's own sources move, and only onto each other. A layer the map brought with it
-    /// has nowhere in the profile to record a position, so an order given to one would last until the
-    /// map next loaded; dropping onto one is refused rather than half honoured.
+    /// Every tile moves, the layers the map brought with it included. Only the profile's own sources
+    /// have their order written down; a map layer's position lasts the session, which is the same
+    /// bargain its tick box already makes.
     /// </summary>
     public async Task MoveMapDataSourceToAsync(MapDataSourceViewModel moving, MapDataSourceViewModel target)
     {
         if (moving == null || target == null || ReferenceEquals(moving, target)) { return; }
-        if (moving.IsFromMap || target.IsFromMap) { return; }
 
         var from = MapDataSources.IndexOf(moving);
         var to = MapDataSources.IndexOf(target);
@@ -645,16 +660,10 @@ public sealed partial class ExporterViewModel : ObservableObject
         var sourceVm = new MapDataSourceViewModel(source);
         sourceVm.EnabledChanged += OnMapDataSourceEnabledChanged;
 
-        // Placed at the end of the profile's own sources rather than the end of the list. The layers
-        // the map brought with it are listed after those, and a new source appended past them could
-        // never be moved back up: the arrows will not step over a map owned entry, so it would arrive
-        // stuck at the bottom.
-        var insertAt = MapDataSources.Count;
-        for (var i = 0; i < MapDataSources.Count; i++)
-        {
-            if (MapDataSources[i].IsFromMap) { insertAt = i; break; }
-        }
-        MapDataSources.Insert(insertAt, sourceVm);
+        // Straight to the top, because the order is the draw order and a source added to the bottom
+        // would be drawn under everything already on the map. Somebody who has just added a service
+        // wants to see it; if it belongs underneath, it can be dragged there.
+        MapDataSources.Insert(0, sourceVm);
 
         NewMapDataSourceName = string.Empty;
         NewMapDataSourceUrl = string.Empty;

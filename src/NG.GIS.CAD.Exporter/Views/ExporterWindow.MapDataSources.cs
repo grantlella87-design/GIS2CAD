@@ -49,35 +49,54 @@ public partial class ExporterWindow
     }
 
     /// <summary>
-    /// Puts the data source layers on the map in the order the tiles are in, top of the list drawn on
-    /// top, which is how a layer list is read everywhere else.
+    /// Puts every layer on the map in the order its tile is in, top of the list drawn on top, which is
+    /// how a layer list is read everywhere else.
     ///
-    /// Every one is lifted off and put back rather than shuffled in place. The map's own layers are in
-    /// the same collection, and moving one data source past another without disturbing those means
-    /// working out indices around layers that are none of this list's business. Taking them all off
-    /// and re-adding them settles both questions at once: they end up in list order, and they end up
-    /// above the web map's layers, which is where something a user added on purpose belongs.
+    /// The whole collection, not only the layers the data sources added. The tiles list the web map's
+    /// layers too, and ordering one kind while leaving the other where it was is not an order at all:
+    /// a source could be moved above another source and still be drawn under everything the web map
+    /// brought with it.
+    ///
+    /// Anything on the map that no tile speaks for is left at the bottom rather than dropped, so a
+    /// layer added by some other part of the page keeps its place on it.
     /// </summary>
     private void ReapplyMapDataSourceDrawOrder(Map map)
     {
         if (DataContext is not ExporterViewModel vm) { return; }
-        if (_dataSourceLayersByUrl.Count == 0) { return; }
+        if (vm.MapDataSources.Count == 0) { return; }
 
-        foreach (var layer in _dataSourceLayersByUrl.Values)
+        // Top tile first, so this reads in the same direction as the panel does.
+        var byTile = new List<Layer>();
+        foreach (var source in vm.MapDataSources)
         {
-            map.OperationalLayers.Remove(layer);
+            var layer = ResolveLayerForDataSource(source);
+            if (layer != null && !byTile.Contains(layer)) { byTile.Add(layer); }
         }
 
-        // Reversed, because adding appends and the last one added draws on top.
-        for (var i = vm.MapDataSources.Count - 1; i >= 0; i--)
-        {
-            var source = vm.MapDataSources[i];
-            if (string.IsNullOrWhiteSpace(source.Url)) { continue; }
-            if (_dataSourceLayersByUrl.TryGetValue(source.Url, out var layer))
-            {
-                map.OperationalLayers.Add(layer);
-            }
-        }
+        if (byTile.Count == 0) { return; }
+
+        var spokenFor = new HashSet<Layer>(byTile);
+        var ordered = map.OperationalLayers.Where(l => !spokenFor.Contains(l)).ToList();
+
+        // Reversed onto the end, because the last layer in the collection is the one drawn on top.
+        for (var i = byTile.Count - 1; i >= 0; i--) { ordered.Add(byTile[i]); }
+
+        if (ordered.SequenceEqual(map.OperationalLayers)) { return; }
+
+        map.OperationalLayers.Clear();
+        foreach (var layer in ordered) { map.OperationalLayers.Add(layer); }
+    }
+
+    /// <summary>
+    /// The layer one tile stands for: looked up by URL for a profile source, and carried on the tile
+    /// itself for a layer the map brought with it.
+    /// </summary>
+    private Layer? ResolveLayerForDataSource(MapDataSourceViewModel source)
+    {
+        if (source.IsFromMap) { return source.MapLayerRef as Layer; }
+
+        if (string.IsNullOrWhiteSpace(source.Url)) { return null; }
+        return _dataSourceLayersByUrl.TryGetValue(source.Url, out var layer) ? layer : null;
     }
 
     private async Task AddMapDataSourceLayerAsync(Map map, MapDataSourceViewModel source)

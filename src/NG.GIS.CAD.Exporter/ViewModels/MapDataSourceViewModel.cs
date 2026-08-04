@@ -12,8 +12,17 @@ namespace NG.GIS.CAD.Exporter.ViewModels;
 ///
 /// Held as functions rather than as the layer itself, so the view model can list and toggle what the map
 /// is showing without taking a reference to the map or the runtime's layer types.
+///
+/// Layer is the one exception, and it is deliberately untyped. Ordering the tiles has to order the
+/// layers on the map, and that means naming which layer a tile stands for. The view casts it back; the
+/// view model only ever passes it along, so it still owes nothing to the runtime.
 /// </summary>
-public sealed record BaseMapLayerHandle(string Name, Func<bool> GetVisible, Action<bool> SetVisible, Action Remove);
+public sealed record BaseMapLayerHandle(
+    string Name,
+    object Layer,
+    Func<bool> GetVisible,
+    Action<bool> SetVisible,
+    Action Remove);
 
 public sealed class MapDataSourceViewModel : ObservableObject
 {
@@ -44,11 +53,21 @@ public sealed class MapDataSourceViewModel : ObservableObject
     public bool IsFromMap => _baseLayer != null;
 
     /// <summary>
-    /// Whether this tile can be picked up and dropped somewhere else. Only the profile's own sources
-    /// move: a layer the map brought with it has no place in the profile to record an order in, so
-    /// moving it would last until the map loaded again and no longer.
+    /// The map layer this tile stands for, for a tile that came from the map. Null for a profile
+    /// source, whose layer the view already knows by URL.
     /// </summary>
-    public bool CanReorder => !IsFromMap;
+    public object? MapLayerRef => _baseLayer?.Layer;
+
+    /// <summary>
+    /// Every tile moves, including the layers the map brought with it.
+    ///
+    /// They did not at first, on the reasoning that a layer with no profile entry has nowhere to record
+    /// a position. True, but it made the feature useless: the web map supplies most of what is on the
+    /// map, so a profile source or two among them had nothing to move past and the tiles looked stuck.
+    /// The order of the map's own layers lasts the session, which is the same bargain their tick boxes
+    /// already make.
+    /// </summary>
+    public bool CanReorder => true;
 
     /// <summary>Takes a map layer off the map. Nothing to do for a profile source.</summary>
     public void RemoveFromMap() => _baseLayer?.Remove();

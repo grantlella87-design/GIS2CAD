@@ -8,6 +8,28 @@
         <!-- Placeholder text shown inside an empty field. Sits over the TextBox rather than
              retemplating it, so the box keeps its normal focus and hover chrome. Hit testing is off
              so clicks land on the field underneath. -->
+        <!-- The triangle on a map layer group. Drawn here because the retemplated TreeViewItem below
+             cannot borrow the stock one, which belongs to the template it replaces. -->
+        <Style x:Key="MapLayerTreeExpanderToggle" TargetType="ToggleButton">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Width" Value="16"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border Background="Transparent" Width="16" Height="16">
+                            <Path x:Name="Arrow" Data="M 0 0 L 4 4 L 0 8 Z" Fill="#666666"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Arrow" Property="Data" Value="M 0 0 L 8 0 L 4 5 Z"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="FieldPlaceholder" TargetType="TextBlock">
             <Setter Property="Foreground" Value="#9A9A9A"/>
             <Setter Property="Margin" Value="5,0,0,0"/>
@@ -225,10 +247,47 @@
                                 <TreeView.ItemContainerStyle>
                                     <Style TargetType="TreeViewItem">
                                         <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
-                                        <!-- Without this the header is only as wide as what is in it,
-                                             and a right aligned button inside it lands wherever the
-                                             name happens to end. -->
                                         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                        <!-- Retemplated for one reason: the stock TreeViewItem puts its
+                                             header in a column sized to the header's own content, so
+                                             asking the header to stretch changes nothing and a right
+                                             aligned button inside it still lands at the end of the layer
+                                             name. Here the header column is a star, so it takes the
+                                             width of the pane and the buttons line up down the edge of
+                                             it. The rest of the template is the stock arrangement:
+                                             expander at the left, header beside it, children indented
+                                             underneath. -->
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="TreeViewItem">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition MinWidth="16" Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto"/>
+                                                            <RowDefinition Height="Auto"/>
+                                                        </Grid.RowDefinitions>
+                                                        <ToggleButton x:Name="Expander" Grid.Row="0" Grid.Column="0"
+                                                                      ClickMode="Press" VerticalAlignment="Top" Margin="0,3,0,0"
+                                                                      Style="{StaticResource MapLayerTreeExpanderToggle}"
+                                                                      IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"/>
+                                                        <ContentPresenter x:Name="PART_Header" Grid.Row="0" Grid.Column="1"
+                                                                          ContentSource="Header" HorizontalAlignment="Stretch"/>
+                                                        <ItemsPresenter x:Name="ItemsHost" Grid.Row="1" Grid.Column="1"/>
+                                                    </Grid>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsExpanded" Value="False">
+                                                            <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/>
+                                                        </Trigger>
+                                                        <Trigger Property="HasItems" Value="False">
+                                                            <Setter TargetName="Expander" Property="Visibility" Value="Hidden"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
                                     </Style>
                                 </TreeView.ItemContainerStyle>
                                 <TreeView.ItemTemplate>
@@ -323,6 +382,13 @@
                     <StackPanel>
                     <Expander Header="Data sources" Margin="0,2,0,0">
                         <StackPanel Margin="4,6,4,4">
+                            <!-- The tiles scroll inside this rather than with the pane. Scrolling a long
+                                 source list used to carry the whole section with it, taking the Data
+                                 sources header off the top of the pane, so there was no way to close the
+                                 section from the bottom of its own list. The header now stays put, and
+                                 so do the boxes for adding another source underneath. -->
+                            <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
                             <ItemsControl ItemsSource="{Binding MapDataSources}" Margin="0,0,0,6">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
@@ -350,15 +416,24 @@
                                                 </Grid.ColumnDefinitions>
                                                 <!-- The grip. Dragging works from anywhere on the tile that
                                                      is not a control, but a tile that can be moved should
-                                                     look like one before it is tried. Hidden on the map's
-                                                     own layers, which have nowhere in the profile to record
-                                                     a position and so do not move. -->
+                                                     look like one before it is tried. -->
                                                 <TextBlock Grid.Column="0" Text="&#x2807;&#x2807;" FontSize="13" Foreground="#999999"
                                                            VerticalAlignment="Top" Margin="0,1,6,0" Cursor="SizeAll"
                                                            ToolTip="Drag this tile onto another to change the draw order. The top tile draws on top."
                                                            Visibility="{Binding CanReorder, Converter={StaticResource BoolToVisibility}}"/>
                                                 <StackPanel Grid.Column="1">
-                                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalContentAlignment="Center"/>
+                                                    <!-- The name is beside the tick box rather than inside
+                                                         it. As the box's content, pressing the name was
+                                                         pressing the box, and a press on a control is that
+                                                         control's rather than the start of a drag, so the
+                                                         most obvious part of the tile to take hold of was
+                                                         the one part that would not move. -->
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,6,0"
+                                                                  ToolTip="Draw this source on the map."/>
+                                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
+                                                    </StackPanel>
                                                     <TextBlock Text="{Binding Url}" Foreground="#777777" FontSize="11" TextTrimming="CharacterEllipsis"/>
                                                     <TextBlock Text="{Binding Status}" Foreground="#777777" FontSize="11" TextWrapping="Wrap"/>
                                                 </StackPanel>
@@ -370,6 +445,7 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+                            </ScrollViewer>
                             <TextBlock Text="Drag a tile onto another to change the draw order. The top tile draws over the ones below it."
                                        Foreground="#777777" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
                             <TextBlock Text="Add a MapServer, FeatureServer layer, VectorTileServer or KML URL" Foreground="#777777" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
