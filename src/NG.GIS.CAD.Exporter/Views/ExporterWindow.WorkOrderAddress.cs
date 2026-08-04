@@ -1,6 +1,5 @@
 using System;
 using System.Threading.Tasks;
-using Esri.ArcGISRuntime.Geometry;
 using NG.GIS.CAD.Exporter.Services;
 using NG.GIS.CAD.Exporter.ViewModels;
 
@@ -21,9 +20,10 @@ public partial class ExporterWindow
     /// <summary>
     /// Moves the map to the work order's service address.
     ///
-    /// Coordinates are used where the row has them, because they are the address already resolved and
-    /// need nothing further. Only when it has none is the text geocoded, which is a guess at a street
-    /// made by a service rather than a position somebody recorded.
+    /// The one line address the query builds is what the map is placed by and what goes in the Address
+    /// box, so the two always agree. Placing by stored coordinates while showing an address built from
+    /// other columns could send the map somewhere the box did not name, and there would be nothing on
+    /// screen to say which of the two was wrong.
     ///
     /// Quiet when there is nothing to go on. A work order with no address is not an error worth
     /// interrupting the drawing for; the map simply stays where it was, which is where it would have
@@ -54,17 +54,6 @@ public partial class ExporterWindow
                 return;
             }
 
-            var coordinates = address.Coordinates;
-            if (coordinates != null)
-            {
-                var point = new MapPoint(coordinates.Value.Longitude, coordinates.Value.Latitude, SpatialReferences.Wgs84);
-                await _mapView.SetViewpointCenterAsync(point, WorkOrderAddressScale);
-                ShowWorkOrderAddressAboveMap(address.SearchText);
-                SetNgOdsStatus(reason + " The map has been moved to the work order's service address"
-                    + (string.IsNullOrWhiteSpace(address.SearchText) ? "." : ": " + address.SearchText + "."));
-                return;
-            }
-
             await GeocodeToWorkOrderAddressAsync(address, reason, workOrderNumber);
         }
         catch (Exception ex)
@@ -82,8 +71,9 @@ public partial class ExporterWindow
     private const double WorkOrderAddressScale = 960;
 
     /// <summary>
-    /// Finds the address by name when the row carries no coordinates, using the same geocoder the
-    /// address box on this page uses.
+    /// Finds the address on the map, using the same geocoder the address box on this page uses. The
+    /// same route the user's own typed address takes, so a job placed automatically lands where it
+    /// would have landed had they typed the address in themselves.
     /// </summary>
     private async Task GeocodeToWorkOrderAddressAsync(NgOdsWorkOrderAddress address, string reason, string workOrderNumber)
     {

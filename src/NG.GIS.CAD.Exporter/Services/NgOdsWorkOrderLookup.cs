@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -56,39 +54,22 @@ public sealed record NgOdsWorkOrderItem(
 /// place it by.
 /// </summary>
 public sealed record NgOdsWorkOrderAddress(
-    string LongitudeX,
-    string LatitudeY,
-    string FormattedAddress,
+    string FullAddress,
+    string Address,
     string City,
-    string StateProvince,
+    string State,
     string PostalCode)
 {
     /// <summary>
-    /// The coordinates as numbers, or null when the row carried none. Parsed invariantly: these come
-    /// back as text from the query, and a comma decimal separator would turn a longitude into nothing
-    /// and put the job on Null Island.
+    /// The address as one line, which is what the map is placed by and what goes in the Address box.
+    ///
+    /// Built by the query rather than joined up here. The parts are carried alongside it for anything
+    /// that wants them separately, but the one line is the query's answer and not a second opinion
+    /// assembled from the pieces, which could differ from what the query said.
     /// </summary>
-    public (double Longitude, double Latitude)? Coordinates
-    {
-        get
-        {
-            if (!double.TryParse(LongitudeX, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude)) { return null; }
-            if (!double.TryParse(LatitudeY, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude)) { return null; }
+    public string SearchText => FullAddress;
 
-            // Both zero is the default a row gets when nobody filled it in rather than a place, and it
-            // is in the Gulf of Guinea. Out of range values are equally not somewhere to fly to.
-            if (Math.Abs(longitude) < 1e-9 && Math.Abs(latitude) < 1e-9) { return null; }
-            if (Math.Abs(longitude) > 180 || Math.Abs(latitude) > 90) { return null; }
-
-            return (longitude, latitude);
-        }
-    }
-
-    /// <summary>The address as one line, for geocoding and for saying where the map went.</summary>
-    public string SearchText => string.Join(", ", new[] { FormattedAddress, City, StateProvince, PostalCode }
-        .Where(part => !string.IsNullOrWhiteSpace(part)));
-
-    public bool HasAnything => Coordinates != null || !string.IsNullOrWhiteSpace(SearchText);
+    public bool HasAnything => !string.IsNullOrWhiteSpace(FullAddress);
 }
 
 public static class NgOdsWorkOrderLookup
@@ -276,7 +257,7 @@ finally {
     /// The service address held against one work order, or null when there is none.
     ///
     /// Its own query rather than a join onto the list above. The list is thousands of rows loaded once
-    /// and filtered locally, and an address is wanted for exactly one of them at a time; carrying six
+    /// and filtered locally, and an address is wanted for exactly one of them at a time; carrying five
     /// more columns on every row to answer a question asked about one would be paying for the whole
     /// table to serve a single lookup.
     /// </summary>
@@ -317,11 +298,29 @@ $conn.Open()
 try {
     $sql = @"
 SELECT TOP (1)
-    ISNULL(CAST(wosa.[LONGITUDEX] AS NVARCHAR(100)), '') AS [LongitudeX],
-    ISNULL(CAST(wosa.[LATITUDEY] AS NVARCHAR(100)), '') AS [LatitudeY],
-    ISNULL(CAST(wosa.[FORMATTEDADDRESS] AS NVARCHAR(4000)), '') AS [FormattedAddress],
+    LTRIM(RTRIM(
+        CONCAT(
+            ISNULL(CAST(wosa.[FORMATTEDADDRESS] AS NVARCHAR(4000)), ''),
+            CASE
+                WHEN NULLIF(LTRIM(RTRIM(CAST(wosa.[CITY] AS NVARCHAR(4000)))), '') IS NOT NULL
+                    THEN ', ' + LTRIM(RTRIM(CAST(wosa.[CITY] AS NVARCHAR(4000))))
+                ELSE ''
+            END,
+            CASE
+                WHEN NULLIF(LTRIM(RTRIM(CAST(wosa.[STATEPROVINCE] AS NVARCHAR(100)))), '') IS NOT NULL
+                    THEN ', ' + LTRIM(RTRIM(CAST(wosa.[STATEPROVINCE] AS NVARCHAR(100))))
+                ELSE ''
+            END,
+            CASE
+                WHEN NULLIF(LTRIM(RTRIM(CAST(wosa.[POSTALCODE] AS NVARCHAR(100)))), '') IS NOT NULL
+                    THEN ' ' + LTRIM(RTRIM(CAST(wosa.[POSTALCODE] AS NVARCHAR(100))))
+                ELSE ''
+            END
+        )
+    )) AS [FullAddress],
+    ISNULL(CAST(wosa.[FORMATTEDADDRESS] AS NVARCHAR(4000)), '') AS [Address],
     ISNULL(CAST(wosa.[CITY] AS NVARCHAR(4000)), '') AS [City],
-    ISNULL(CAST(wosa.[STATEPROVINCE] AS NVARCHAR(100)), '') AS [StateProvince],
+    ISNULL(CAST(wosa.[STATEPROVINCE] AS NVARCHAR(100)), '') AS [State],
     ISNULL(CAST(wosa.[POSTALCODE] AS NVARCHAR(100)), '') AS [PostalCode]
 FROM [NG_ODS].[MX].[WOSERVICEADDRESS] wosa
 WHERE
@@ -335,11 +334,10 @@ WHERE
     $items = New-Object System.Collections.Generic.List[object]
     while ($reader.Read()) {
         $items.Add([pscustomobject]@{
-            LongitudeX = [string]$reader['LongitudeX']
-            LatitudeY = [string]$reader['LatitudeY']
-            FormattedAddress = [string]$reader['FormattedAddress']
+            FullAddress = [string]$reader['FullAddress']
+            Address = [string]$reader['Address']
             City = [string]$reader['City']
-            StateProvince = [string]$reader['StateProvince']
+            State = [string]$reader['State']
             PostalCode = [string]$reader['PostalCode']
         })
     }
