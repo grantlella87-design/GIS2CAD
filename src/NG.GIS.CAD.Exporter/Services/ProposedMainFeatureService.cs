@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -75,6 +76,66 @@ public sealed record ProposedMainCodedValue(string Code, string Name)
     public override string ToString() => Name;
 }
 
+/// <summary>
+/// One subtype of the layer, and the domains that apply to a feature of that subtype.
+///
+/// A subtype narrows what the rest of the fields are allowed to hold: a distribution main and a
+/// service line are the same table with different rules about material, pressure and diameter. The
+/// field's own domain is the general case; this is the one that actually applies once the kind of
+/// feature is known, and it is usually the shorter and more useful list.
+/// </summary>
+public sealed class ProposedMainSubtype
+{
+    public string Code { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>Coded values by field name, for the fields this subtype constrains.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<ProposedMainCodedValue>> Domains { get; init; }
+        = new Dictionary<string, IReadOnlyList<ProposedMainCodedValue>>(StringComparer.OrdinalIgnoreCase);
+
+    public override string ToString() => Name;
+}
+
+/// <summary>The layer's fields, its subtypes, and which field chooses between them.</summary>
+public sealed class ProposedMainLayerSchema
+{
+    public IReadOnlyList<ProposedMainField> Fields { get; init; } = Array.Empty<ProposedMainField>();
+
+    /// <summary>The field whose value picks the subtype, or empty when the layer has no subtypes.</summary>
+    public string SubtypeFieldName { get; init; } = string.Empty;
+
+    public IReadOnlyList<ProposedMainSubtype> Subtypes { get; init; } = Array.Empty<ProposedMainSubtype>();
+
+    public bool HasSubtypes => Subtypes.Count > 0 && !string.IsNullOrWhiteSpace(SubtypeFieldName);
+
+    /// <summary>The subtype a value selects, or null when it selects none.</summary>
+    public ProposedMainSubtype? FindSubtype(string? code) =>
+        string.IsNullOrWhiteSpace(code)
+            ? null
+            : Subtypes.FirstOrDefault(s => string.Equals(s.Code, code, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// The values a field may hold for a feature of this subtype, best list first.
+    ///
+    /// The subtype's own domain wins where it has one, because it is the narrower and more accurate
+    /// answer. Falling back to the field's general domain matters as much: a field the subtype says
+    /// nothing about still has whatever the field itself allows, and dropping to a free text box there
+    /// would be offering less than is known.
+    /// </summary>
+    public IReadOnlyList<ProposedMainCodedValue> CodedValuesFor(ProposedMainField field, string? subtypeCode)
+    {
+        var subtype = FindSubtype(subtypeCode);
+        if (subtype != null
+            && subtype.Domains.TryGetValue(field.Name, out var narrowed)
+            && narrowed.Count > 0)
+        {
+            return narrowed;
+        }
+
+        return field.CodedValues;
+    }
+}
+
 public static class ProposedMainFeatureService
 {
     private const string LayerUrl = "https://gis.nationalgrid.com/arcgis/rest/services/MA/Material_View_MA/MapServer/54";
@@ -89,7 +150,7 @@ public static class ProposedMainFeatureService
     /// them are mandatory is GIS's to decide and changes without this code being touched. A list kept
     /// here would be wrong the first time somebody added a field, and wrong silently.
     /// </summary>
-    public static async Task<IReadOnlyList<ProposedMainField>> GetEditableFieldsAsync(
+    public static async Task<ProposedMainLayerSchema> GetLayerSchemaAsync(
         string accessToken, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(accessToken)) { throw new InvalidOperationException("ArcGIS access token is required to read the proposed main layer."); }
@@ -108,7 +169,7 @@ public static class ProposedMainFeatureService
 
         if (!doc.RootElement.TryGetProperty("fields", out var fields) || fields.ValueKind != JsonValueKind.Array)
         {
-            return Array.Empty<ProposedMainField>();
+            return new ProposedMainLayerSchema();
         }
 
         var editable = new List<ProposedMainField>();
@@ -118,7 +179,72 @@ public static class ProposedMainFeatureService
             if (parsed != null) { editable.Add(parsed); }
         }
 
-        return editable;
+        return new ProposedMainLayerSchema
+        {
+            Fields = editable,
+            SubtypeFieldName = ReadSubtypeFieldName(doc.RootElement),
+            Subtypes = ReadSubtypes(doc.RootElement)
+        };
+    }
+
+    /// <summary>
+    /// The field that picks the subtype. Services disagree on what to call it, so both spellings are
+    /// read: subtypeField is the newer one and typeIdField the older, and a layer answering with only
+    /// one of them is the ordinary case rather than a broken one.
+    /// </summary>
+    private static string ReadSubtypeFieldName(JsonElement root)
+    {
+        foreach (var name in new[] { "subtypeField", "typeIdField" })
+        {
+            if (root.TryGetProperty(name, out var value)
+                && value.ValueKind == JsonValueKind.String)
+            {
+                var text = value.GetString();
+                if (!string.IsNullOrWhiteSpace(text)) { return text; }
+            }
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// The layer's subtypes and the domains each one imposes.
+    ///
+    /// A subtype's domains are the ones that actually apply to a feature of that kind, which is the
+    /// list worth offering: a field with fifty values across the whole layer often has four for the
+    /// kind of main being drawn.
+    /// </summary>
+    private static IReadOnlyList<ProposedMainSubtype> ReadSubtypes(JsonElement root)
+    {
+        if (!root.TryGetProperty("types", out var types) || types.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<ProposedMainSubtype>();
+        }
+
+        var subtypes = new List<ProposedMainSubtype>();
+        foreach (var type in types.EnumerateArray())
+        {
+            var code = type.TryGetProperty("id", out var id)
+                ? (id.ValueKind == JsonValueKind.String ? id.GetString() : id.ToString())
+                : null;
+            if (string.IsNullOrEmpty(code)) { continue; }
+
+            var name = type.TryGetProperty("name", out var n) ? n.GetString() ?? code : code;
+
+            var domains = new Dictionary<string, IReadOnlyList<ProposedMainCodedValue>>(StringComparer.OrdinalIgnoreCase);
+            if (type.TryGetProperty("domains", out var typeDomains) && typeDomains.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var domain in typeDomains.EnumerateObject())
+                {
+                    var values = ReadCodedValuesFromDomain(domain.Value);
+                    if (values.Count > 0) { domains[domain.Name] = values; }
+                }
+            }
+
+            subtypes.Add(new ProposedMainSubtype { Code = code, Name = name, Domains = domains });
+        }
+
+        return subtypes;
     }
 
     /// <summary>
@@ -168,9 +294,18 @@ public static class ProposedMainFeatureService
         };
     }
 
-    private static IReadOnlyList<ProposedMainCodedValue> ReadCodedValues(JsonElement field)
+    private static IReadOnlyList<ProposedMainCodedValue> ReadCodedValues(JsonElement field) =>
+        field.TryGetProperty("domain", out var domain)
+            ? ReadCodedValuesFromDomain(domain)
+            : Array.Empty<ProposedMainCodedValue>();
+
+    /// <summary>
+    /// The allowed values of one domain, empty for a domain that is not a list. A range domain has
+    /// bounds rather than choices, so there is nothing to put in a dropdown for it.
+    /// </summary>
+    private static IReadOnlyList<ProposedMainCodedValue> ReadCodedValuesFromDomain(JsonElement domain)
     {
-        if (!field.TryGetProperty("domain", out var domain) || domain.ValueKind != JsonValueKind.Object)
+        if (domain.ValueKind != JsonValueKind.Object)
         {
             return Array.Empty<ProposedMainCodedValue>();
         }

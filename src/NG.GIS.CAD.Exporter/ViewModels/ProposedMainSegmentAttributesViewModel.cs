@@ -16,12 +16,13 @@ namespace NG.GIS.CAD.Exporter.ViewModels;
 public sealed class ProposedMainSegmentAttributesViewModel : ObservableObject
 {
     private readonly Dictionary<string, string> _values = new(StringComparer.OrdinalIgnoreCase);
-    private readonly IReadOnlyList<ProposedMainField> _fields;
+    private readonly ProposedMainLayerSchema _schema;
 
-    public ProposedMainSegmentAttributesViewModel(int segmentNumber, IReadOnlyList<ProposedMainField> fields)
+    public ProposedMainSegmentAttributesViewModel(int segmentNumber, ProposedMainLayerSchema schema)
     {
         SegmentNumber = segmentNumber;
-        _fields = fields;
+        _schema = schema;
+        Choices = new ProposedMainChoiceLookup(this);
     }
 
     /// <summary>Which drawn segment this row is for, counting from one as the map labels them.</summary>
@@ -47,6 +48,12 @@ public sealed class ProposedMainSegmentAttributesViewModel : ObservableObject
 
             _values[name] = next;
 
+            // Changing the subtype changes what every other field is allowed to hold, so the lists
+            // are all reread and anything they no longer allow is dropped. Leaving a value behind
+            // that the new subtype forbids would send GIS something it is going to refuse, and the
+            // dropdown would be showing a blank while the row held a value.
+            if (IsSubtypeField(name)) { OnSubtypeChanged(); }
+
             // The indexer as a whole, because a binding to [SOMEFIELD] listens for this rather than
             // for a property by that name.
             RaisePropertyChanged("Item[]");
@@ -56,11 +63,58 @@ public sealed class ProposedMainSegmentAttributesViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// The values each field may hold on this row, which depends on the subtype it is set to. Bound
+    /// per cell, so two rows of different subtypes offer different lists for the same column.
+    /// </summary>
+    public ProposedMainChoiceLookup Choices { get; }
+
+    private bool IsSubtypeField(string name) =>
+        _schema.HasSubtypes && string.Equals(name, _schema.SubtypeFieldName, StringComparison.OrdinalIgnoreCase);
+
+    private void OnSubtypeChanged()
+    {
+        var subtypeCode = this[_schema.SubtypeFieldName];
+
+        foreach (var field in _schema.Fields)
+        {
+            if (IsSubtypeField(field.Name)) { continue; }
+
+            var held = this[field.Name];
+            if (string.IsNullOrWhiteSpace(held)) { continue; }
+
+            var allowed = _schema.CodedValuesFor(field, subtypeCode);
+            if (allowed.Count == 0) { continue; }
+            if (allowed.Any(v => string.Equals(v.Code, held, StringComparison.OrdinalIgnoreCase))) { continue; }
+
+            _values[field.Name] = string.Empty;
+        }
+
+        // The lists themselves, so every dropdown on the row refills from the new subtype.
+        RaisePropertyChanged(nameof(Choices));
+    }
+
+    /// <summary>The values one field may hold on this row, for a cell to bind its list to.</summary>
+    public IReadOnlyList<ProposedMainCodedValue> ChoicesFor(string fieldName)
+    {
+        var field = _schema.Fields.FirstOrDefault(f =>
+            string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase));
+        if (field == null) { return Array.Empty<ProposedMainCodedValue>(); }
+
+        // The subtype field itself offers the subtypes, which is the list that decides all the others.
+        if (IsSubtypeField(fieldName))
+        {
+            return _schema.Subtypes.Select(s => new ProposedMainCodedValue(s.Code, s.Name)).ToList();
+        }
+
+        return _schema.CodedValuesFor(field, this[_schema.SubtypeFieldName]);
+    }
+
     /// <summary>The required fields still empty on this row, by their labels.</summary>
     public IReadOnlyList<string> Missing =>
-        _fields.Where(f => f.Required && string.IsNullOrWhiteSpace(this[f.Name]))
-               .Select(f => f.Display)
-               .ToList();
+        _schema.Fields.Where(f => f.Required && string.IsNullOrWhiteSpace(this[f.Name]))
+                      .Select(f => f.Display)
+                      .ToList();
 
     public bool IsComplete => Missing.Count == 0;
 
@@ -96,4 +150,23 @@ public sealed class ProposedMainSegmentAttributesViewModel : ObservableObject
     }
 
     public event Action<ProposedMainSegmentAttributesViewModel>? ValuesChanged;
+}
+
+/// <summary>
+/// A row's dropdown lists, reached by field name.
+///
+/// Its own object rather than a method on the row, because a cell binds to a path and a path can
+/// index a property but cannot call a method: Choices[MATERIAL] is how a column asks one row what it
+/// is allowed to offer.
+/// </summary>
+public sealed class ProposedMainChoiceLookup
+{
+    private readonly ProposedMainSegmentAttributesViewModel _row;
+
+    public ProposedMainChoiceLookup(ProposedMainSegmentAttributesViewModel row)
+    {
+        _row = row;
+    }
+
+    public IReadOnlyList<ProposedMainCodedValue> this[string fieldName] => _row.ChoicesFor(fieldName);
 }
