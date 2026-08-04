@@ -202,6 +202,10 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
         // A cleared drawing is a different main, so the one that may already be in GIS no longer
         // stands in for it and whatever is drawn next is allowed to go up on its own account.
         ForgetProposedMainUpload();
+
+        // With nothing drawn, the map is free to be put back on the work order's address rather than
+        // left over the corridor that has just been removed.
+        ForgetWorkOrderAddressZoom();
         _editingManualProposedPipelineSegmentIndex = -1;
         _pickingManualProposedPipelineSegment = false;
         _manualProposedPipelineSegmentOverlay?.Graphics.Clear();

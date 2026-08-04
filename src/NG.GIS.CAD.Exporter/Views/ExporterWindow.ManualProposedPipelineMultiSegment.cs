@@ -34,6 +34,34 @@ public partial class ExporterWindow
     /// </summary>
     private int _editingManualProposedPipelineSegmentIndex = -1;
 
+    /// <summary>
+    /// The segment picked in the attribute table, or -1 for none.
+    ///
+    /// Kept apart from the editing index because they mean different things. Editing opens a segment in
+    /// the geometry editor and makes Delete remove it; picking its row in the table is only saying
+    /// "this one", and should not arm either.
+    /// </summary>
+    private int _highlightedManualProposedPipelineSegmentIndex = -1;
+
+    /// <summary>Which segment to draw as picked out: the one being edited, or the row that is selected.</summary>
+    private int HighlightedManualProposedPipelineSegmentIndex =>
+        _editingManualProposedPipelineSegmentIndex >= 0
+            ? _editingManualProposedPipelineSegmentIndex
+            : _highlightedManualProposedPipelineSegmentIndex;
+
+    /// <summary>
+    /// Draws one segment as picked out because its row was selected in the attribute table, so a row
+    /// and a line on the map can be told to be the same thing.
+    /// </summary>
+    private void HighlightManualProposedPipelineSegment(int index)
+    {
+        var clamped = index >= 0 && index < _manualProposedPipelineSegmentGeometries.Count ? index : -1;
+        if (clamped == _highlightedManualProposedPipelineSegmentIndex) { return; }
+
+        _highlightedManualProposedPipelineSegmentIndex = clamped;
+        RefreshManualProposedPipelineSegmentOverlay();
+    }
+
     private void StartManualProposedMainSegment_Click(object sender, RoutedEventArgs e)
     {
         // A new segment, so anything that was being edited is no longer what Apply Segment means.
@@ -415,7 +443,7 @@ public partial class ExporterWindow
 
         for (var i = 0; i < _manualProposedPipelineSegmentGeometries.Count; i++)
         {
-            var symbol = i == _editingManualProposedPipelineSegmentIndex
+            var symbol = i == HighlightedManualProposedPipelineSegmentIndex
                 ? _manualProposedPipelineSelectedSegmentSymbol
                 : _manualProposedPipelineSegmentSymbol;
             _manualProposedPipelineSegmentOverlay.Graphics.Add(
@@ -453,10 +481,14 @@ public partial class ExporterWindow
 
         if (buffer != null && !buffer.IsEmpty && _manualProposedPipelineSegmentOverlay != null)
         {
+            // The buffer takes the main's own colour rather than a fixed red. It is the padding around
+            // that main and belongs to it, and a red halo around a blue line reads as two things.
+            var line = BuildManualProposedPipelineSymbol();
+            var colour = line.Color;
             var fill = new SimpleFillSymbol(
                 SimpleFillSymbolStyle.Solid,
-                System.Drawing.Color.FromArgb(45, 200, 0, 0),
-                new SimpleLineSymbol(SimpleLineSymbolStyle.Solid, System.Drawing.Color.Red, 2));
+                System.Drawing.Color.FromArgb(45, colour.R, colour.G, colour.B),
+                new SimpleLineSymbol(line.Style, colour, 2));
             _manualProposedPipelineSegmentOverlay.Graphics.Add(new Graphic(buffer, fill));
         }
 

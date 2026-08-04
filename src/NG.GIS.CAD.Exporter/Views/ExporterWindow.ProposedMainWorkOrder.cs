@@ -34,6 +34,21 @@ public partial class ExporterWindow
         // are on this page, and page 1 has the network to itself until then.
         await EnsureProposedMainLayerDetailsAsync();
         await AutoImportWorkOrderProposedMainIfReadyAsync(false);
+
+        // Manual mode never runs the import above, so nothing would have moved the map -- and this is
+        // the mode a user is in precisely because GIS had no main for the work order, which makes it
+        // the case that needs the address most. Only with nothing drawn yet: once there are segments,
+        // the map belongs to them.
+        if (_displayMode == ExportDisplayMode.ManualProposedPipeline
+            && _manualProposedPipelineSegmentGeometries.Count == 0)
+        {
+            var workOrderId = GetSelectedNgOdsWorkOrderNumberForProposedMain();
+            if (!string.IsNullOrWhiteSpace(workOrderId))
+            {
+                await ZoomToWorkOrderAddressAsync(workOrderId,
+                    "There is no proposed main drawn for work order " + workOrderId + " yet.");
+            }
+        }
     }
 
     private async Task AutoImportWorkOrderProposedMainIfReadyAsync(bool force)
@@ -88,7 +103,12 @@ public partial class ExporterWindow
             if (result.FeatureCount == 0 || result.Extent == null)
             {
                 WorkOrderGeometryTextBox.Text = "No proposed main geometry found in GIS layer 54 for workorderid " + workOrderId + ".";
-                SetNgOdsStatus("No proposed main geometry found for workorderid " + workOrderId + ".");
+
+                // No route to fly to, so the work order's own address is used instead. This is the case
+                // the manual drawing exists for, and it used to leave the map wherever it happened to
+                // be, so drawing began with finding a street the work order already knows.
+                await ZoomToWorkOrderAddressAsync(workOrderId,
+                    "GIS has no proposed main for work order " + workOrderId + ".");
                 return;
             }
             DrawWorkOrderProposedMainResult(result);

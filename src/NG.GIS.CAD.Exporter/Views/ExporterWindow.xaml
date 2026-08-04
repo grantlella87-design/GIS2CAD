@@ -495,11 +495,20 @@
                             <!-- No columns declared here: they are built in code from the layer's own
                                  fields, because which fields exist is GIS's to decide and a copy
                                  written into the XAML would be one that goes stale. -->
+                            <!-- Whole rows, not cells: selecting a row is what picks the segment out on
+                                 the map, and a cell selection has no row to report. Cells are still
+                                 edited by clicking into them. Both scrollbars are on: the table opens
+                                 at the height its rows want, and past the cap it scrolls rather than
+                                 taking the map's space. -->
                             <DataGrid Grid.Row="1" x:Name="ProposedMainAttributeGrid"
                                       ItemsSource="{Binding ProposedMainSegmentRows}"
+                                      SelectionChanged="ProposedMainAttributeGrid_SelectionChanged"
                                       AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
                                       HeadersVisibility="Column" GridLinesVisibility="All"
-                                      SelectionMode="Single" SelectionUnit="Cell" Margin="4,0,4,4"/>
+                                      SelectionMode="Single" SelectionUnit="FullRow"
+                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                      Margin="4,0,4,4"/>
 
                             <CheckBox Grid.Row="2" IsChecked="{Binding UploadProposedMainToGis}" Margin="4,4,4,4"
                                       Content="Add these segments to the GIS proposed main layer on the way to page 3"
