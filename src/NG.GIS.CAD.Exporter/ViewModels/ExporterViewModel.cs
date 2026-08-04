@@ -65,8 +65,6 @@ public sealed partial class ExporterViewModel : ObservableObject
         ExportCommand = new RelayCommand(_ => ExportToCadAsync());
         AddMapDataSourceCommand = new RelayCommand(_ => AddMapDataSourceAsync());
         RemoveMapDataSourceCommand = new RelayCommand(RemoveMapDataSourceAsync);
-        MoveMapDataSourceUpCommand = new RelayCommand(p => MoveMapDataSource(p, -1));
-        MoveMapDataSourceDownCommand = new RelayCommand(p => MoveMapDataSource(p, 1));
         // LoadWorkOrdersAsync is deliberately not started here. It queries work order IDs from the
         // ArcGIS proposed main layer into WorkOrderOptions, which nothing binds to: the dropdowns on
         // page 1 are filled from NG_ODS instead. Running it at startup spent a network round trip on
@@ -95,8 +93,6 @@ public sealed partial class ExporterViewModel : ObservableObject
     public ICommand ExportCommand { get; }
     public ICommand AddMapDataSourceCommand { get; }
     public ICommand RemoveMapDataSourceCommand { get; }
-    public ICommand MoveMapDataSourceUpCommand { get; }
-    public ICommand MoveMapDataSourceDownCommand { get; }
     /// <summary>Where the SharePoint template browser looks, taken from the loaded profile.</summary>
     public SharePointTemplateSettings SharePointTemplateSettings => _profile.SharePointTemplates ??= new SharePointTemplateSettings();
     public string NewMapDataSourceName { get => _newMapDataSourceName; set => SetProperty(ref _newMapDataSourceName, value); }
@@ -545,8 +541,6 @@ public sealed partial class ExporterViewModel : ObservableObject
         // the map is not going to load again to put them back.
         foreach (var baseLayer in _baseMapLayers) { MapDataSources.Add(new MapDataSourceViewModel(baseLayer)); }
 
-        RefreshMapDataSourceMoveFlags();
-
         // The profile and the map load independently. If the map got there first it has already run
         // with an empty list, so signal it to reconcile now that the sources are known.
         MapDataSourcesChanged?.Invoke();
@@ -573,39 +567,35 @@ public sealed partial class ExporterViewModel : ObservableObject
         }
 
         foreach (var baseLayer in _baseMapLayers) { MapDataSources.Add(new MapDataSourceViewModel(baseLayer)); }
-
-        RefreshMapDataSourceMoveFlags();
     }
 
     /// <summary>
-    /// Moves one data source a place up or down, and takes the map with it.
+    /// Drops one data source tile where another one is, and takes the map with it.
     ///
     /// The order is the draw order, top of the list drawn on top, which is how a layer list is read
     /// everywhere else. Without this the sources drew in whatever order they were added in and a
     /// source that covered another could only be dealt with by removing and re-adding it.
     ///
-    /// Only the profile's own sources move. A layer the map brought with it has nowhere in the profile
-    /// to record a position, so an order given to one would last until the map next loaded.
+    /// Only the profile's own sources move, and only onto each other. A layer the map brought with it
+    /// has nowhere in the profile to record a position, so an order given to one would last until the
+    /// map next loaded; dropping onto one is refused rather than half honoured.
     /// </summary>
-    private async Task MoveMapDataSource(object? parameter, int direction)
+    public async Task MoveMapDataSourceToAsync(MapDataSourceViewModel moving, MapDataSourceViewModel target)
     {
-        if (parameter is not MapDataSourceViewModel sourceVm) { return; }
-        if (sourceVm.IsFromMap) { return; }
+        if (moving == null || target == null || ReferenceEquals(moving, target)) { return; }
+        if (moving.IsFromMap || target.IsFromMap) { return; }
 
-        var from = MapDataSources.IndexOf(sourceVm);
-        var to = from + direction;
-        if (from < 0 || to < 0 || to >= MapDataSources.Count) { return; }
-
-        // Stepping over a map owned entry rather than swapping with it, so the profile's sources keep
-        // their own order and the map's layers stay where the map put them.
-        if (MapDataSources[to].IsFromMap) { return; }
+        var from = MapDataSources.IndexOf(moving);
+        var to = MapDataSources.IndexOf(target);
+        if (from < 0 || to < 0 || from == to) { return; }
 
         MapDataSources.Move(from, to);
         ReorderProfileMapDataSources();
-        RefreshMapDataSourceMoveFlags();
 
         await SaveMapDataSourcesAsync();
         MapDataSourcesChanged?.Invoke();
+        Status = "Moved " + moving.Name + ". The order of the tiles is the draw order: the top one draws "
+                 + "over the ones below it.";
     }
 
     /// <summary>Writes the list's order back to the profile, so it survives a restart.</summary>
@@ -617,22 +607,6 @@ public sealed partial class ExporterViewModel : ObservableObject
         {
             if (source.IsFromMap) { continue; }
             _profile.MapDataSources.Add(source.Source);
-        }
-    }
-
-    /// <summary>
-    /// Works out which arrows on each tile are worth offering. Run after anything that changes the
-    /// list, so the top tile stops offering to move up the moment it becomes the top one.
-    /// </summary>
-    public void RefreshMapDataSourceMoveFlags()
-    {
-        for (var i = 0; i < MapDataSources.Count; i++)
-        {
-            var source = MapDataSources[i];
-            source.CanMoveUp = !source.IsFromMap && i > 0 && !MapDataSources[i - 1].IsFromMap;
-            source.CanMoveDown = !source.IsFromMap
-                                 && i + 1 < MapDataSources.Count
-                                 && !MapDataSources[i + 1].IsFromMap;
         }
     }
 
@@ -681,7 +655,6 @@ public sealed partial class ExporterViewModel : ObservableObject
             if (MapDataSources[i].IsFromMap) { insertAt = i; break; }
         }
         MapDataSources.Insert(insertAt, sourceVm);
-        RefreshMapDataSourceMoveFlags();
 
         NewMapDataSourceName = string.Empty;
         NewMapDataSourceUrl = string.Empty;
@@ -703,7 +676,10 @@ public sealed partial class ExporterViewModel : ObservableObject
             sourceVm.RemoveFromMap();
             MapDataSources.Remove(sourceVm);
             _baseMapLayers = _baseMapLayers.Where(l => l.Name != sourceVm.Name).ToList();
-            RefreshMapDataSourceMoveFlags();
+
+            // The map layer tree is built from what is on the map, so it has to be told. Without this
+            // the layer stayed listed there after its tile had gone, with a tick box that did nothing.
+            MapDataSourcesChanged?.Invoke();
             Status = "Removed " + sourceVm.Name + " from the map. It came with the web map rather than "
                      + "from this profile, so it returns next time the map loads.";
             return;
@@ -712,7 +688,6 @@ public sealed partial class ExporterViewModel : ObservableObject
         sourceVm.EnabledChanged -= OnMapDataSourceEnabledChanged;
         MapDataSources.Remove(sourceVm);
         _profile.MapDataSources?.Remove(sourceVm.Source);
-        RefreshMapDataSourceMoveFlags();
 
         await SaveMapDataSourcesAsync();
         MapDataSourcesChanged?.Invoke();
