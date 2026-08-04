@@ -59,6 +59,7 @@ public partial class ExporterWindow
             {
                 var point = new MapPoint(coordinates.Value.Longitude, coordinates.Value.Latitude, SpatialReferences.Wgs84);
                 await _mapView.SetViewpointCenterAsync(point, WorkOrderAddressScale);
+                ShowWorkOrderAddressAboveMap(address.SearchText);
                 SetNgOdsStatus(reason + " The map has been moved to the work order's service address"
                     + (string.IsNullOrWhiteSpace(address.SearchText) ? "." : ": " + address.SearchText + "."));
                 return;
@@ -104,8 +105,26 @@ public partial class ExporterWindow
         }
 
         await _mapView!.SetViewpointCenterAsync(results[0].DisplayLocation!, WorkOrderAddressScale);
+        ShowWorkOrderAddressAboveMap(address.SearchText);
         SetNgOdsStatus(reason + " The map has been moved to the work order's service address: "
             + address.SearchText + ".");
+    }
+
+    /// <summary>
+    /// Puts the address the map was moved to into the Address box above it.
+    ///
+    /// The map jumping to a street on its own is disconcerting without something saying which street it
+    /// went to. The status line says so as well, but that scrolls past; the box stays, and it is the
+    /// same box the address would have been typed into to get there by hand.
+    ///
+    /// It is also then live: Go re-centres on it, so having been moved somewhere the user can get back
+    /// to it after panning away without having to type it out.
+    /// </summary>
+    private void ShowWorkOrderAddressAboveMap(string? address)
+    {
+        if (AddressSearchTextBox == null || string.IsNullOrWhiteSpace(address)) { return; }
+
+        AddressSearchTextBox.Text = address;
     }
 
     /// <summary>Lets the map be moved again, for a work order whose main has since been looked up afresh.</summary>

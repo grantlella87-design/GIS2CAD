@@ -307,7 +307,48 @@ public partial class ExporterWindow
 
         ProposedMainAttributeRow.Height = new GridLength(capped);
         _proposedMainAttributeRowHeight = ProposedMainAttributeRow.Height;
+        CapProposedMainAttributeGridHeight();
     }
+
+    /// <summary>
+    /// Holds the table to the height it has actually been given, so that rows past that height scroll.
+    ///
+    /// The vertical scrollbar was set to Auto from the start and never appeared, because Auto means
+    /// "when the content does not fit" and as far as the grid was concerned it always did: nothing in
+    /// the chain above it handed down a height it had to live within, so it asked for room for every
+    /// row, was told yes, and the rows past the bottom of the section were simply cut off by the edge
+    /// of the page. A grid with nowhere to overflow to has nothing to scroll.
+    ///
+    /// The cap is measured from the section and its own furniture rather than assumed, so it follows
+    /// the splitter: drag the table taller and the cap grows with it, which is the whole point of the
+    /// splitter being there. Driven top down, from a section whose height comes from the row above it,
+    /// so setting this cannot feed back into the height it was worked out from.
+    /// </summary>
+    private void CapProposedMainAttributeGridHeight()
+    {
+        if (ProposedMainAttributeGrid == null || ProposedMainAttributeSection == null) { return; }
+        if (!ProposedMainAttributeSection.IsExpanded) { return; }
+
+        var available = ProposedMainAttributeSection.ActualHeight
+                        - ProposedMainAttributeExpanderChrome
+                        - (ProposedMainAttributeHeaderPanel?.ActualHeight ?? 0)
+                        - (ProposedMainUploadCheckBox?.ActualHeight ?? 0);
+
+        // Never below one row under the column headers. A cap small enough to hide the headers would
+        // leave a table that cannot be read at all, and the section has a MinHeight that keeps this
+        // from being the normal case.
+        var floor = ProposedMainTableHeaderHeight + ProposedMainTableRowHeight;
+        ProposedMainAttributeGrid.MaxHeight = Math.Max(floor, available);
+    }
+
+    private void ProposedMainAttributeSection_SizeChanged(object sender, SizeChangedEventArgs e)
+        => CapProposedMainAttributeGridHeight();
+
+    /// <summary>
+    /// The expander's own header and the margins between the section and the grid inside it: the part
+    /// of the section's height that is never the table's, on top of the two panels that are measured.
+    /// </summary>
+    private const double ProposedMainAttributeExpanderChrome = 40;
 
     /// <summary>Room for the status line, the upload tick box, the expander header and the margins.</summary>
     private const double ProposedMainTableChrome = 96;

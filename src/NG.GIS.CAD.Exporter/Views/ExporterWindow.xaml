@@ -477,9 +477,14 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition x:Name="ProposedMainAttributeRow" Height="*" MinHeight="120"/>
                     </Grid.RowDefinitions>
-                    <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                    <!-- LastChildFill off. On by default it hands the whole remaining width to the last
+                         child whatever its Dock says, so the address controls were laid out from the
+                         left edge of that space and ended up pressed against the end of the title. Off,
+                         the right dock is honoured: the title stays left, the controls sit right, and
+                         the space between them is the gap. -->
+                    <DockPanel Grid.Row="0" Margin="0,0,0,6" LastChildFill="False">
                         <TextBlock x:Name="ExtentModeTitle" Text="Native ArcGIS Maps SDK MapView" FontWeight="Bold" VerticalAlignment="Center"/>
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="24,0,0,0">
                             <TextBlock Text="Address:" VerticalAlignment="Center" Margin="0,0,6,0"/>
                             <TextBox x:Name="AddressSearchTextBox" Width="380" Margin="0,0,6,0" KeyDown="AddressSearchTextBox_KeyDown"/>
                             <Button Content="Go 1:960" Click="GoToAddress_Click" Padding="8,2" Margin="0,0,4,0"/>
@@ -505,6 +510,7 @@
                     <Expander Grid.Row="3" x:Name="ProposedMainAttributeSection" Margin="0,6,0,0"
                               Expanded="ProposedMainAttributeSection_ExpansionChanged"
                               Collapsed="ProposedMainAttributeSection_ExpansionChanged"
+                              SizeChanged="ProposedMainAttributeSection_SizeChanged"
                               Header="Proposed main attributes" IsExpanded="True"
                               Visibility="{Binding HasProposedMainAttributes, Converter={StaticResource BoolToVisibility}}">
                         <!-- A Grid rather than a StackPanel. A StackPanel offers its children unlimited
@@ -519,7 +525,7 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <DockPanel Grid.Row="0" Margin="4,4,4,6" LastChildFill="True">
+                            <DockPanel Grid.Row="0" x:Name="ProposedMainAttributeHeaderPanel" Margin="4,4,4,6" LastChildFill="True">
                                 <!-- A grid in single selection mode has no way back to nothing selected:
                                      clicking the chosen row again only starts editing a cell. This is
                                      that way back, and Escape in the table does the same thing. -->
@@ -550,7 +556,7 @@
                                       ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                       Margin="4,0,4,4"/>
 
-                            <CheckBox Grid.Row="2" IsChecked="{Binding UploadProposedMainToGis}" Margin="4,4,4,4"
+                            <CheckBox Grid.Row="2" x:Name="ProposedMainUploadCheckBox" IsChecked="{Binding UploadProposedMainToGis}" Margin="4,4,4,4"
                                       Content="Add these segments to the GIS proposed main layer on the way to page 3"
                                       ToolTip="The only thing this application writes to GIS. Untick to draw and export without adding anything."/>
                         </Grid>
