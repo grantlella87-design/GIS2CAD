@@ -437,10 +437,15 @@
                     </ScrollViewer>
                 </Grid>
                 <Grid Grid.Column="2">
+                    <!-- The map and the attribute table both take a share of what is left, so the
+                         splitter between them moves the boundary rather than one of them winning.
+                         Row 3 goes back to Auto while the table is closed, so a closed table is its
+                         header and the map has the rest. -->
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*" MinHeight="200"/>
+                        <RowDefinition x:Name="ExtentMapRow" Height="2*" MinHeight="160"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition x:Name="ProposedMainAttributeRow" Height="*" MinHeight="120"/>
                     </Grid.RowDefinitions>
                     <DockPanel Grid.Row="0" Margin="0,0,0,6">
                         <TextBlock x:Name="ExtentModeTitle" Text="Native ArcGIS Maps SDK MapView" FontWeight="Bold" VerticalAlignment="Center"/>
@@ -459,17 +464,28 @@
                          column per GIS field is a wide thing and the left pane is a column of narrow
                          ones. Closed it is just its header, so the map keeps its height until the
                          table is wanted. -->
-                    <Expander Grid.Row="2" x:Name="ProposedMainAttributeSection" Margin="0,6,0,0"
+                    <!-- Only there when the table is. A drag bar under the map with nothing beneath it
+                         is an invitation to resize something that is not on screen. -->
+                    <GridSplitter Grid.Row="2" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                  ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                                  Background="#E4E4E4" ShowsPreview="True" Cursor="SizeNS"
+                                  ToolTip="Drag to give more room to the map or to the attribute table."
+                                  Visibility="{Binding HasProposedMainAttributes, Converter={StaticResource BoolToVisibility}}"/>
+
+                    <Expander Grid.Row="3" x:Name="ProposedMainAttributeSection" Margin="0,6,0,0"
+                              Expanded="ProposedMainAttributeSection_ExpansionChanged"
+                              Collapsed="ProposedMainAttributeSection_ExpansionChanged"
                               Header="Proposed main attributes" IsExpanded="True"
                               Visibility="{Binding HasProposedMainAttributes, Converter={StaticResource BoolToVisibility}}">
-                        <!-- A Grid with a fixed height for the table, not a StackPanel. A StackPanel
-                             offers its children unlimited height, and a DataGrid asked how tall it
-                             would like to be answers with however many rows it has, which is how the
-                             map ends up with whatever is left rather than the table fitting under it. -->
+                        <!-- A Grid rather than a StackPanel. A StackPanel offers its children unlimited
+                             height, and a DataGrid asked how tall it would like to be answers with
+                             however many rows it has, which is how the map ends up with whatever is
+                             left. The table now fills the row it is given, so the splitter above
+                             decides its height. -->
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="180"/>
+                                <RowDefinition Height="*"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
