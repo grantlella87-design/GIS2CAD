@@ -41,6 +41,21 @@ public sealed class MapLayerToggleViewModel : ObservableObject
     public ObservableCollection<MapLayerToggleViewModel> Children { get; } = new();
 
     /// <summary>
+    /// Takes this layer off the map, or null when it cannot be taken off.
+    ///
+    /// Set by the view for the map's own top level layers, which are the ones there is something to
+    /// remove. A sublayer is part of the service that carries it and cannot be detached from it; its
+    /// tick box turns it off, which is the whole of what can be done to one.
+    ///
+    /// Held as an action rather than as the layer, so this stays free of the runtime's layer types
+    /// for the same reason the visibility toggle is.
+    /// </summary>
+    public Action? Remove { get; set; }
+
+    /// <summary>Whether to offer removal at all, so a sublayer does not show a button that cannot work.</summary>
+    public bool CanRemove => Remove != null;
+
+    /// <summary>
     /// What this layer draws with. One entry for a layer with a single symbol, one per class for a
     /// layer drawn by category or by range, and none for a group, which draws nothing of its own.
     /// </summary>

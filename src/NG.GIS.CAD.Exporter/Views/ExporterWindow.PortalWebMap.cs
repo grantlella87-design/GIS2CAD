@@ -162,7 +162,10 @@ public partial class ExporterWindow
         var usedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var layer in map.OperationalLayers)
         {
-            AddMapLayerToggle(vm, layer, null, null, 0, usedPaths);
+            // Only the top level gets a way off the map. A sublayer belongs to the service that
+            // carries it and cannot be detached from it, so its tick box is the whole of what can be
+            // done to one; offering a button that could not work would be worse than not offering it.
+            AddMapLayerToggle(vm, layer, null, null, 0, usedPaths, removable: layer);
         }
 
         // Pages 3 and 4 list the layers on this map, so they are rebuilt from the new tree.
@@ -203,7 +206,7 @@ public partial class ExporterWindow
         }
     }
 
-    private void AddMapLayerToggle(ExporterViewModel vm, ILayerContent content, MapLayerToggleViewModel? parent, string? parentPath, int depth, HashSet<string> usedPaths, string? parentServiceUrl = null)
+    private void AddMapLayerToggle(ExporterViewModel vm, ILayerContent content, MapLayerToggleViewModel? parent, string? parentPath, int depth, HashSet<string> usedPaths, string? parentServiceUrl = null, Layer? removable = null)
     {
         if (content == null || depth > MaxMapLayerDepth) { return; }
 
@@ -231,6 +234,7 @@ public partial class ExporterWindow
 
             var toggle = new MapLayerToggleViewModel(path, name, content.IsVisible, serviceUrl, isLeaf);
             toggle.VisibilityChanged += OnMapLayerToggled;
+            if (removable != null) { toggle.Remove = () => RemoveMapLayerFromMap(removable); }
             _mapLayerContentByPath[path] = content;
 
             if (parent == null)
@@ -314,5 +318,68 @@ public partial class ExporterWindow
     private void SetExtentMapStatus(string message)
     {
         if (DataContext is ExporterViewModel vm) { vm.Status = message; }
+    }
+
+    /// <summary>
+    /// Takes one layer off the map for this session.
+    ///
+    /// A layer added from a data source is unticked as well as removed. Removing it on its own would
+    /// last until the next reconcile, which reads the tile list, finds the source still enabled and
+    /// puts the layer straight back -- so the button would look broken rather than undone. Unticking
+    /// it leaves the source in the list to be turned on again, which is the recoverable version of
+    /// what was asked for.
+    ///
+    /// A layer the web map brought with it has nothing behind it to untick, so it goes for this
+    /// session and returns when the map next loads. That is the same bargain the data source panel
+    /// already offers for the map's own layers, and it is said rather than implied.
+    /// </summary>
+    private async void RemoveMapLayerFromMap(Layer layer)
+    {
+        if (_mapView?.Map is not Map map) { return; }
+        if (DataContext is not ExporterViewModel vm) { return; }
+
+        var name = string.IsNullOrWhiteSpace(layer.Name) ? "That layer" : layer.Name;
+
+        var url = _dataSourceLayersByUrl
+            .FirstOrDefault(pair => ReferenceEquals(pair.Value, layer)).Key;
+
+        if (!string.IsNullOrEmpty(url))
+        {
+            var source = vm.MapDataSources.FirstOrDefault(s =>
+                string.Equals(s.Url, url, StringComparison.OrdinalIgnoreCase));
+
+            if (source != null)
+            {
+                // Unticking it removes the layer through the ordinary reconcile, so there is no need
+                // to take it off here as well and no chance of the two disagreeing.
+                source.Enabled = false;
+                vm.Status = name + " has been turned off. Its data source is still in the list, so it "
+                    + "can be turned back on there.";
+                return;
+            }
+        }
+
+        map.OperationalLayers.Remove(layer);
+
+        // The data sources panel lists the map's own layers alongside the profile's, so it is relisted
+        // here too. Without this the panel would go on offering a tile for a layer that is no longer
+        // on the map, and its tick box would do nothing.
+        ListBaseLayersAsDataSources(map);
+        await BuildMapLayerTogglesAsync(map);
+        vm.Status = name + " has been taken off the map for this session. It came with the web map "
+            + "rather than from the profile, so it will be back the next time the map loads.";
+    }
+
+    /// <summary>
+    /// The Remove button on a layer in the tree. The node carries what to do rather than the view
+    /// working it out from the tree, because the node is the only thing that knows which layer it was
+    /// built from once the tree has been flattened into paths.
+    /// </summary>
+    private void RemoveMapLayer_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement element && element.DataContext is MapLayerToggleViewModel node)
+        {
+            node.Remove?.Invoke();
+        }
     }
 }

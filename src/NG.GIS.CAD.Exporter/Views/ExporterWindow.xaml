@@ -244,6 +244,14 @@
                                                     </Image.Style>
                                                 </Image>
                                                 <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                                <!-- Offered on the map's own top level layers only. A
+                                                     sublayer is part of the service that carries it and
+                                                     cannot be detached from it, so it gets a tick box and
+                                                     nothing more. -->
+                                                <Button Content="Remove" Padding="6,0" Margin="8,0,0,0" FontSize="10"
+                                                        VerticalAlignment="Center" Click="RemoveMapLayer_Click"
+                                                        ToolTip="Take this layer off the map."
+                                                        Visibility="{Binding CanRemove, Converter={StaticResource BoolToVisibility}}"/>
                                             </StackPanel>
 
                                             <!-- A layer drawn by category or by range needs a row per
@@ -294,20 +302,42 @@
                             <ItemsControl ItemsSource="{Binding MapDataSources}" Margin="0,0,0,6">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Grid Margin="0,0,0,4">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0">
-                                                <CheckBox Content="{Binding Name}" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalContentAlignment="Center"/>
-                                                <TextBlock Text="{Binding Url}" Foreground="#777777" FontSize="11" TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{Binding Status}" Foreground="#777777" FontSize="11" TextWrapping="Wrap"/>
-                                            </StackPanel>
-                                            <Button Grid.Column="1" Content="Remove" Padding="8,2" VerticalAlignment="Top"
-                                                    Command="{Binding DataContext.RemoveMapDataSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CommandParameter="{Binding}"/>
-                                        </Grid>
+                                        <!-- One tile per source, drawn as a card so the list reads as a
+                                             stack of things that can be picked up and moved rather than
+                                             as a run of checkboxes. The order of the tiles is the draw
+                                             order on the map: the top tile draws on top. -->
+                                        <Border Margin="0,0,0,4" Padding="6,4,4,4" CornerRadius="3"
+                                                Background="#FAFAFA" BorderBrush="#DDDDDD" BorderThickness="1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalContentAlignment="Center"/>
+                                                    <TextBlock Text="{Binding Url}" Foreground="#777777" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Status}" Foreground="#777777" FontSize="11" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                                                    <!-- The arrows stay in place when they have nowhere to
+                                                         go, rather than disappearing, so the tiles below
+                                                         do not shuffle sideways as the list is reordered. -->
+                                                    <Button Content="&#x25B2;" Width="22" Padding="0,1" Margin="0,0,2,0"
+                                                            FontSize="10" ToolTip="Move this source up, so it draws over the ones below it."
+                                                            IsEnabled="{Binding CanMoveUp}"
+                                                            Command="{Binding DataContext.MoveMapDataSourceUpCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <Button Content="&#x25BC;" Width="22" Padding="0,1" Margin="0,0,6,0"
+                                                            FontSize="10" ToolTip="Move this source down, so the ones above it draw over it."
+                                                            IsEnabled="{Binding CanMoveDown}"
+                                                            Command="{Binding DataContext.MoveMapDataSourceDownCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <Button Content="Remove" Padding="8,2"
+                                                            Command="{Binding DataContext.RemoveMapDataSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
