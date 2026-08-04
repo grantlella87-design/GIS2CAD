@@ -587,7 +587,7 @@ public sealed partial class ExporterViewModel : ObservableObject
     /// Only the profile's own sources move. A layer the map brought with it has nowhere in the profile
     /// to record a position, so an order given to one would last until the map next loaded.
     /// </summary>
-    private void MoveMapDataSource(object? parameter, int direction)
+    private async Task MoveMapDataSource(object? parameter, int direction)
     {
         if (parameter is not MapDataSourceViewModel sourceVm) { return; }
         if (sourceVm.IsFromMap) { return; }
@@ -604,7 +604,7 @@ public sealed partial class ExporterViewModel : ObservableObject
         ReorderProfileMapDataSources();
         RefreshMapDataSourceMoveFlags();
 
-        _ = SaveMapDataSourcesAsync();
+        await SaveMapDataSourcesAsync();
         MapDataSourcesChanged?.Invoke();
     }
 

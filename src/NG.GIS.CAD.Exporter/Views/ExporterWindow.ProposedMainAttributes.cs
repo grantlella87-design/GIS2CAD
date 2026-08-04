@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
 using Esri.ArcGISRuntime.Geometry;
 using Esri.ArcGISRuntime.Symbology;
 using NG.GIS.CAD.Exporter.Services;
@@ -238,7 +239,44 @@ public partial class ExporterWindow
         if (DataContext is not ExporterViewModel vm) { return; }
 
         var selected = ProposedMainAttributeGrid?.SelectedItem as ProposedMainSegmentAttributesViewModel;
+        vm.HasProposedMainRowSelected = selected != null;
         HighlightManualProposedPipelineSegment(selected == null ? -1 : vm.ProposedMainSegmentRows.IndexOf(selected));
+    }
+
+    /// <summary>
+    /// Puts the table back to nothing selected, which takes the highlight off the map with it.
+    ///
+    /// A grid in single selection mode has no way back on its own: clicking the chosen row a second
+    /// time starts editing a cell rather than letting go of it, so the last row picked stayed lit for
+    /// the rest of the session. The current cell is cleared as well as the selection, because a grid
+    /// that keeps its current cell puts the row straight back the moment focus returns to it.
+    /// </summary>
+    private void ClearProposedMainAttributeSelection()
+    {
+        if (ProposedMainAttributeGrid == null) { return; }
+
+        ProposedMainAttributeGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        ProposedMainAttributeGrid.UnselectAll();
+        ProposedMainAttributeGrid.CurrentCell = default;
+    }
+
+    private void ClearProposedMainAttributeSelection_Click(object sender, RoutedEventArgs e)
+        => ClearProposedMainAttributeSelection();
+
+    /// <summary>
+    /// Escape in the table lets go of the row, so the keyboard can do what the button does.
+    ///
+    /// Only when the grid itself has the key. Escape inside a cell that is being edited is the grid's
+    /// own "throw this edit away", which is worth more than a second way to deselect: an edit control
+    /// raises this with itself as the source, and those are left alone.
+    /// </summary>
+    private void ProposedMainAttributeGrid_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) { return; }
+        if (e.OriginalSource is not DataGrid and not DataGridCell and not DataGridRow) { return; }
+
+        ClearProposedMainAttributeSelection();
+        e.Handled = true;
     }
 
     /// <summary>
