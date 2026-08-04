@@ -1,7 +1,8 @@
 ﻿<Window x:Class="NG.GIS.CAD.Exporter.Views.ExporterWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="National Grid GIS CAD Exporter" Height="760" Width="1180">
+        Title="National Grid GIS CAD Exporter" Height="760" Width="1180"
+        PreviewMouseDown="Window_PreviewMouseDown">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
         <!-- Placeholder text shown inside an empty field. Sits over the TextBox rather than
@@ -212,11 +213,22 @@
                                 <CheckBox Content="Legend" IsChecked="{Binding ShowMapLegend}" VerticalAlignment="Center"
                                           ToolTip="Show each layer's symbols. A layer drawn by category takes a row per class, so turning this off gives back the compact list."/>
                             </StackPanel>
+                            <!-- Horizontal scrolling off, which is what lets the Remove buttons line up
+                                 on the right. A scroller that can scroll sideways offers its items
+                                 unlimited width, so a row asked to stretch has nothing to stretch to
+                                 and sizes to its content instead; every button would sit at the end of
+                                 its own layer name, at a different place on every row. Off, the rows
+                                 get the pane's real width and long names are trimmed rather than
+                                 scrolled to, with the full name on the tooltip. -->
                             <TreeView ItemsSource="{Binding MapLayers}" BorderThickness="0" Background="Transparent"
-                                      ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                      ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                                 <TreeView.ItemContainerStyle>
                                     <Style TargetType="TreeViewItem">
                                         <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                        <!-- Without this the header is only as wide as what is in it,
+                                             and a right aligned button inside it lands wherever the
+                                             name happens to end. -->
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                     </Style>
                                 </TreeView.ItemContainerStyle>
                                 <TreeView.ItemTemplate>
@@ -225,34 +237,46 @@
                                             <!-- A layer with one symbol keeps its swatch on the same
                                                  line as its checkbox, so the common case stays a one
                                                  line entry. -->
-                                            <StackPanel Orientation="Horizontal">
-                                                <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                                <Image Source="{Binding SingleSwatch}" Width="16" Height="16" Margin="0,0,4,0"
-                                                       VerticalAlignment="Center" Stretch="Uniform">
-                                                    <Image.Style>
-                                                        <Style TargetType="Image">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding SingleSwatch}" Value="{x:Null}">
-                                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding DataContext.ShowMapLegend, RelativeSource={RelativeSource AncestorType=Window}}" Value="False">
-                                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Image.Style>
-                                                </Image>
-                                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
-                                                <!-- Offered on the map's own top level layers only. A
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                                    <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                    <Image Source="{Binding SingleSwatch}" Width="16" Height="16" Margin="0,0,4,0"
+                                                           VerticalAlignment="Center" Stretch="Uniform">
+                                                        <Image.Style>
+                                                            <Style TargetType="Image">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding SingleSwatch}" Value="{x:Null}">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding DataContext.ShowMapLegend, RelativeSource={RelativeSource AncestorType=Window}}" Value="False">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Image.Style>
+                                                    </Image>
+                                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
+                                                </StackPanel>
+                                                <!-- Its own column against the right edge, so the buttons
+                                                     line up down the pane instead of each sitting at the
+                                                     end of its own layer name.
+
+                                                     Offered on the map's own top level layers only. A
                                                      sublayer is part of the service that carries it and
                                                      cannot be detached from it, so it gets a tick box and
                                                      nothing more. -->
-                                                <Button Content="Remove" Padding="6,0" Margin="8,0,0,0" FontSize="10"
-                                                        VerticalAlignment="Center" Click="RemoveMapLayer_Click"
+                                                <Button Grid.Column="1" Content="Remove" Padding="6,0" Margin="8,0,0,0" FontSize="10"
+                                                        VerticalAlignment="Center" HorizontalAlignment="Right"
+                                                        Click="RemoveMapLayer_Click"
                                                         ToolTip="Take this layer off the map."
                                                         Visibility="{Binding CanRemove, Converter={StaticResource BoolToVisibility}}"/>
-                                            </StackPanel>
+                                            </Grid>
 
                                             <!-- A layer drawn by category or by range needs a row per
                                                  class, indented under the layer it belongs to. -->
@@ -305,42 +329,49 @@
                                         <!-- One tile per source, drawn as a card so the list reads as a
                                              stack of things that can be picked up and moved rather than
                                              as a run of checkboxes. The order of the tiles is the draw
-                                             order on the map: the top tile draws on top. -->
+                                             order on the map: the top tile draws on top.
+
+                                             The whole tile is both the thing dragged and a place to drop
+                                             one, so a source is moved by dropping it on the tile whose
+                                             place it should take. -->
                                         <Border Margin="0,0,0,4" Padding="6,4,4,4" CornerRadius="3"
-                                                Background="#FAFAFA" BorderBrush="#DDDDDD" BorderThickness="1">
+                                                Background="#FAFAFA" BorderBrush="#DDDDDD" BorderThickness="1"
+                                                AllowDrop="True"
+                                                PreviewMouseLeftButtonDown="MapDataSourceTile_PreviewMouseLeftButtonDown"
+                                                PreviewMouseMove="MapDataSourceTile_PreviewMouseMove"
+                                                DragOver="MapDataSourceTile_DragOver"
+                                                DragLeave="MapDataSourceTile_DragLeave"
+                                                Drop="MapDataSourceTile_Drop">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <StackPanel Grid.Column="0">
+                                                <!-- The grip. Dragging works from anywhere on the tile that
+                                                     is not a control, but a tile that can be moved should
+                                                     look like one before it is tried. Hidden on the map's
+                                                     own layers, which have nowhere in the profile to record
+                                                     a position and so do not move. -->
+                                                <TextBlock Grid.Column="0" Text="&#x2807;&#x2807;" FontSize="13" Foreground="#999999"
+                                                           VerticalAlignment="Top" Margin="0,1,6,0" Cursor="SizeAll"
+                                                           ToolTip="Drag this tile onto another to change the draw order. The top tile draws on top."
+                                                           Visibility="{Binding CanReorder, Converter={StaticResource BoolToVisibility}}"/>
+                                                <StackPanel Grid.Column="1">
                                                     <CheckBox Content="{Binding Name}" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalContentAlignment="Center"/>
                                                     <TextBlock Text="{Binding Url}" Foreground="#777777" FontSize="11" TextTrimming="CharacterEllipsis"/>
                                                     <TextBlock Text="{Binding Status}" Foreground="#777777" FontSize="11" TextWrapping="Wrap"/>
                                                 </StackPanel>
-                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
-                                                    <!-- The arrows stay in place when they have nowhere to
-                                                         go, rather than disappearing, so the tiles below
-                                                         do not shuffle sideways as the list is reordered. -->
-                                                    <Button Content="&#x25B2;" Width="22" Padding="0,1" Margin="0,0,2,0"
-                                                            FontSize="10" ToolTip="Move this source up, so it draws over the ones below it."
-                                                            IsEnabled="{Binding CanMoveUp}"
-                                                            Command="{Binding DataContext.MoveMapDataSourceUpCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}"/>
-                                                    <Button Content="&#x25BC;" Width="22" Padding="0,1" Margin="0,0,6,0"
-                                                            FontSize="10" ToolTip="Move this source down, so the ones above it draw over it."
-                                                            IsEnabled="{Binding CanMoveDown}"
-                                                            Command="{Binding DataContext.MoveMapDataSourceDownCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}"/>
-                                                    <Button Content="Remove" Padding="8,2"
-                                                            Command="{Binding DataContext.RemoveMapDataSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}"/>
-                                                </StackPanel>
+                                                <Button Grid.Column="2" Content="Remove" Padding="8,2" VerticalAlignment="Top"
+                                                        Command="{Binding DataContext.RemoveMapDataSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"/>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+                            <TextBlock Text="Drag a tile onto another to change the draw order. The top tile draws over the ones below it."
+                                       Foreground="#777777" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
                             <TextBlock Text="Add a MapServer, FeatureServer layer, VectorTileServer or KML URL" Foreground="#777777" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"/>
                             <Grid Margin="0,0,0,4">
                                 <TextBox x:Name="NewMapDataSourceNameBox" Text="{Binding NewMapDataSourceName, UpdateSourceTrigger=PropertyChanged}"
@@ -525,14 +556,9 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
+                            <!-- Kept as a panel rather than a bare TextBlock because the table's height
+                                 is measured from it. -->
                             <DockPanel Grid.Row="0" x:Name="ProposedMainAttributeHeaderPanel" Margin="4,4,4,6" LastChildFill="True">
-                                <!-- A grid in single selection mode has no way back to nothing selected:
-                                     clicking the chosen row again only starts editing a cell. This is
-                                     that way back, and Escape in the table does the same thing. -->
-                                <Button DockPanel.Dock="Right" Content="Clear selection" Padding="8,2" Margin="8,0,0,0"
-                                        VerticalAlignment="Top" Click="ClearProposedMainAttributeSelection_Click"
-                                        ToolTip="Stop picking out a segment on the map."
-                                        IsEnabled="{Binding HasProposedMainRowSelected}"/>
                                 <TextBlock Text="{Binding ProposedMainAttributeStatus}" Foreground="#555555"
                                            TextWrapping="Wrap"/>
                             </DockPanel>

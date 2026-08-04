@@ -93,18 +93,6 @@ public sealed partial class ExporterViewModel
         set => SetProperty(ref _proposedMainAttributeStatus, value);
     }
 
-    private bool _hasProposedMainRowSelected;
-
-    /// <summary>
-    /// Whether a row is picked out at the moment. Only there to say whether Clear selection has
-    /// anything to clear, so the button is not offered when nothing is lit.
-    /// </summary>
-    public bool HasProposedMainRowSelected
-    {
-        get => _hasProposedMainRowSelected;
-        set => SetProperty(ref _hasProposedMainRowSelected, value);
-    }
-
     /// <summary>
     /// What is still missing, named by segment, so a message points at the row to fix rather than
     /// saying that something somewhere is incomplete.

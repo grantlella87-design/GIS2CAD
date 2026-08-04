@@ -449,17 +449,11 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
         }
         try
         {
-            await InitializeArcGisMapAsync();
-            if (_locatorTask == null || _mapView == null) { throw new InvalidOperationException("ArcGIS MapView or locator service is not initialized."); }
-            var parameters = new GeocodeParameters { MaxResults = 1, OutputSpatialReference = SpatialReferences.WebMercator };
-            var results = await _locatorTask.GeocodeAsync(address, parameters);
-            var first = results.FirstOrDefault();
-            if (first == null || first.DisplayLocation == null)
+            if (!await CentreMapOnAddressAsync(address))
             {
                 if (DataContext is ExporterViewModel noneVm) { noneVm.Status = "No address result found."; }
                 return;
             }
-            await _mapView.SetViewpointCenterAsync(first.DisplayLocation, 960);
             if (_displayMode == ExportDisplayMode.VisibleMap) { CaptureAndDisplayVisibleExtent(false, false); }
             if (DataContext is ExporterViewModel vm) { vm.Status = "Address loaded at 1:960."; }
         }
@@ -467,6 +461,27 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
         {
             if (DataContext is ExporterViewModel vm) { vm.Status = "Go To Address failed: " + FlattenException(ex); }
         }
+    }
+
+    /// <summary>
+    /// Geocodes one address and centres the map on it. False when the geocoder recognised nothing.
+    ///
+    /// The single place either path does this. The work order zoom used to geocode on its own, without
+    /// the parameters Go asks with, so the same text could pick a different candidate and the map would
+    /// end up somewhere the Address box did not name. One routine means the two cannot disagree.
+    /// </summary>
+    private async Task<bool> CentreMapOnAddressAsync(string address)
+    {
+        await InitializeArcGisMapAsync();
+        if (_locatorTask == null || _mapView == null) { throw new InvalidOperationException("ArcGIS MapView or locator service is not initialized."); }
+
+        var parameters = new GeocodeParameters { MaxResults = 1, OutputSpatialReference = SpatialReferences.WebMercator };
+        var results = await _locatorTask.GeocodeAsync(address, parameters);
+        var first = results.FirstOrDefault();
+        if (first?.DisplayLocation == null) { return false; }
+
+        await _mapView.SetViewpointCenterAsync(first.DisplayLocation, WorkOrderAddressScale);
+        return true;
     }
     private async void ResetMapView_Click(object sender, RoutedEventArgs e)
     {

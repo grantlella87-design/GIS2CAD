@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -89,12 +90,20 @@ public partial class ExporterWindow
     /// Kept apart from the profile. Toggling one changes what the map draws for this session; it does not
     /// write a user data source, because these are not the user's to own and would come back next time
     /// from the web map regardless.
+    ///
+    /// The layers the user's own data sources put on the map are left out. They are on the map by the
+    /// time this runs, so listing everything on it gave each of them a second tile that claimed to have
+    /// come with the web map. Removing the real tile then left the impostor behind, describing a layer
+    /// that was no longer there and offering a tick box that could not put it back.
     /// </summary>
     private void ListBaseLayersAsDataSources(Map map)
     {
         if (DataContext is not ViewModels.ExporterViewModel vm) { return; }
 
+        var fromDataSources = new HashSet<Layer>(_dataSourceLayersByUrl.Values);
+
         vm.SetBaseMapLayers(map.OperationalLayers
+            .Where(layer => !fromDataSources.Contains(layer))
             .Select(layer => new ViewModels.BaseMapLayerHandle(
                 string.IsNullOrWhiteSpace(layer.Name) ? "Unnamed layer" : layer.Name,
                 () => layer.IsVisible,
