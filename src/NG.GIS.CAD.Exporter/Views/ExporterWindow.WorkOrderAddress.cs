@@ -77,7 +77,7 @@ public partial class ExporterWindow
     /// </summary>
     private async Task GeocodeToWorkOrderAddressAsync(NgOdsWorkOrderAddress address, string reason, string workOrderNumber)
     {
-        if (_locatorTask == null || string.IsNullOrWhiteSpace(address.SearchText))
+        if (string.IsNullOrWhiteSpace(address.SearchText))
         {
             SetNgOdsStatus(reason + " The work order's address could not be placed on the map, so it was "
                 + "left where it is.");
@@ -85,8 +85,11 @@ public partial class ExporterWindow
             return;
         }
 
-        var results = await _locatorTask.GeocodeAsync(address.SearchText);
-        if (results == null || results.Count == 0 || results[0].DisplayLocation == null)
+        // The box is filled before the map moves, so what is on screen is the address the move is being
+        // made from, whether or not the geocoder can find it.
+        ShowWorkOrderAddressAboveMap(address.SearchText);
+
+        if (!await CentreMapOnAddressAsync(address.SearchText))
         {
             SetNgOdsStatus(reason + " \"" + address.SearchText + "\" is the address on work order "
                 + workOrderNumber + ", and the geocoder did not recognise it, so the map was left where it is.");
@@ -94,8 +97,6 @@ public partial class ExporterWindow
             return;
         }
 
-        await _mapView!.SetViewpointCenterAsync(results[0].DisplayLocation!, WorkOrderAddressScale);
-        ShowWorkOrderAddressAboveMap(address.SearchText);
         SetNgOdsStatus(reason + " The map has been moved to the work order's service address: "
             + address.SearchText + ".");
     }

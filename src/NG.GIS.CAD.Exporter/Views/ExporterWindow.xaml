@@ -1,7 +1,8 @@
 ﻿<Window x:Class="NG.GIS.CAD.Exporter.Views.ExporterWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="National Grid GIS CAD Exporter" Height="760" Width="1180">
+        Title="National Grid GIS CAD Exporter" Height="760" Width="1180"
+        PreviewMouseDown="Window_PreviewMouseDown">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
         <!-- Placeholder text shown inside an empty field. Sits over the TextBox rather than
@@ -555,14 +556,9 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
+                            <!-- Kept as a panel rather than a bare TextBlock because the table's height
+                                 is measured from it. -->
                             <DockPanel Grid.Row="0" x:Name="ProposedMainAttributeHeaderPanel" Margin="4,4,4,6" LastChildFill="True">
-                                <!-- A grid in single selection mode has no way back to nothing selected:
-                                     clicking the chosen row again only starts editing a cell. This is
-                                     that way back, and Escape in the table does the same thing. -->
-                                <Button DockPanel.Dock="Right" Content="Clear selection" Padding="8,2" Margin="8,0,0,0"
-                                        VerticalAlignment="Top" Click="ClearProposedMainAttributeSelection_Click"
-                                        ToolTip="Stop picking out a segment on the map."
-                                        IsEnabled="{Binding HasProposedMainRowSelected}"/>
                                 <TextBlock Text="{Binding ProposedMainAttributeStatus}" Foreground="#555555"
                                            TextWrapping="Wrap"/>
                             </DockPanel>

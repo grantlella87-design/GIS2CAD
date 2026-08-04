@@ -239,7 +239,6 @@ public partial class ExporterWindow
         if (DataContext is not ExporterViewModel vm) { return; }
 
         var selected = ProposedMainAttributeGrid?.SelectedItem as ProposedMainSegmentAttributesViewModel;
-        vm.HasProposedMainRowSelected = selected != null;
         HighlightManualProposedPipelineSegment(selected == null ? -1 : vm.ProposedMainSegmentRows.IndexOf(selected));
     }
 
@@ -260,11 +259,56 @@ public partial class ExporterWindow
         ProposedMainAttributeGrid.CurrentCell = default;
     }
 
-    private void ClearProposedMainAttributeSelection_Click(object sender, RoutedEventArgs e)
-        => ClearProposedMainAttributeSelection();
+    /// <summary>
+    /// Clicking anywhere that is not a row of the attribute table lets go of the row, so the highlight
+    /// on the map lasts exactly as long as the user is looking at the row that put it there.
+    ///
+    /// Watched from the window because that is the only place that sees every click, wherever it lands.
+    /// The click is not taken: this only clears the selection on the way past, so whatever was clicked
+    /// still gets it.
+    ///
+    /// A scrollbar is not somewhere else. Dragging the table's own scrollbar to find the selected row
+    /// and losing it on the way would be the opposite of what was asked for. A cell's dropdown is in a
+    /// popup of its own, so a click in one never reaches here and editing a selected row is safe.
+    /// </summary>
+    private void Window_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (ProposedMainAttributeGrid == null) { return; }
+        if (ProposedMainAttributeGrid.SelectedItem == null) { return; }
+        if (e.OriginalSource is not DependencyObject clicked) { return; }
+
+        if (IsWithinProposedMainAttributeRow(clicked)) { return; }
+
+        ClearProposedMainAttributeSelection();
+    }
 
     /// <summary>
-    /// Escape in the table lets go of the row, so the keyboard can do what the button does.
+    /// Whether a click landed on a row of the attribute table, walking up from what was actually hit
+    /// because a click lands on the text inside a cell rather than on the row.
+    /// </summary>
+    private bool IsWithinProposedMainAttributeRow(DependencyObject? clicked)
+    {
+        while (clicked != null)
+        {
+            if (clicked is DataGridRow) { return true; }
+            if (clicked is System.Windows.Controls.Primitives.ScrollBar) { return true; }
+
+            // Reached the table without having passed a row: the click was on its header, its empty
+            // space, or its chrome, none of which is a row.
+            if (ReferenceEquals(clicked, ProposedMainAttributeGrid)) { return false; }
+
+            // Fully qualified rather than imported: this file already pulls in the runtime's Geometry
+            // namespace, and System.Windows.Media has a Geometry of its own to collide with it.
+            clicked = clicked is System.Windows.Media.Visual
+                ? System.Windows.Media.VisualTreeHelper.GetParent(clicked)
+                : null;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Escape in the table lets go of the row, so the keyboard can do it too.
     ///
     /// Only when the grid itself has the key. Escape inside a cell that is being edited is the grid's
     /// own "throw this edit away", which is worth more than a second way to deselect: an edit control
