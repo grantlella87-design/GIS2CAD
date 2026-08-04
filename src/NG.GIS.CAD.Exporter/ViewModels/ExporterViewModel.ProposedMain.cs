@@ -13,7 +13,7 @@ public sealed partial class ExporterViewModel
     private double _proposedMainSnapToleranceFeet = 1.0;
     private string _proposedMainAttributeStatus = string.Empty;
     private bool _uploadProposedMainToGis = true;
-    private IReadOnlyList<ProposedMainField> _proposedMainFields = Array.Empty<ProposedMainField>();
+    private ProposedMainLayerSchema _proposedMainSchema = new();
 
     /// <summary>
     /// Whether segment ends close to each other are pulled together. On, because a corridor drawn in
@@ -72,7 +72,10 @@ public sealed partial class ExporterViewModel
     /// The layer's fields, in the order the service lists them. The table's columns are built from
     /// this, so a field added in GIS becomes a column without anything here being changed.
     /// </summary>
-    public IReadOnlyList<ProposedMainField> ProposedMainFields => _proposedMainFields;
+    public IReadOnlyList<ProposedMainField> ProposedMainFields => _proposedMainSchema.Fields;
+
+    /// <summary>The layer's fields, subtypes and domains, which the table's columns are built from.</summary>
+    public ProposedMainLayerSchema ProposedMainSchema => _proposedMainSchema;
 
     /// <summary>One row per drawn segment, because each becomes its own feature in GIS.</summary>
     public ObservableCollection<ProposedMainSegmentAttributesViewModel> ProposedMainSegmentRows { get; } = new();
@@ -81,7 +84,7 @@ public sealed partial class ExporterViewModel
     public event Action? ProposedMainFieldsChanged;
 
     /// <summary>Whether there is a table worth showing, so an empty one stays out of the way.</summary>
-    public bool HasProposedMainAttributes => _proposedMainFields.Count > 0 && ProposedMainSegmentRows.Count > 0;
+    public bool HasProposedMainAttributes => _proposedMainSchema.Fields.Count > 0 && ProposedMainSegmentRows.Count > 0;
 
     /// <summary>What the attribute table is doing: what was read, what is missing, what was written.</summary>
     public string ProposedMainAttributeStatus
@@ -100,19 +103,32 @@ public sealed partial class ExporterViewModel
             .Select(r => r.SegmentDisplay + ": " + string.Join(", ", r.Missing))
             .ToList();
 
-    /// <summary>Takes the layer's fields and rebuilds the columns from them.</summary>
-    public void LoadProposedMainFields(IReadOnlyList<ProposedMainField> fields)
+    /// <summary>Takes the layer's schema and rebuilds the columns from it.</summary>
+    public void LoadProposedMainSchema(ProposedMainLayerSchema schema)
     {
-        _proposedMainFields = fields;
+        _proposedMainSchema = schema;
+
+        // Rows built against the previous schema would offer the previous lists, so they go and are
+        // rebuilt from the segments still drawn.
+        var segmentCount = ProposedMainSegmentRows.Count;
+        ProposedMainSegmentRows.Clear();
+
         RaisePropertyChanged(nameof(ProposedMainFields));
+        RaisePropertyChanged(nameof(ProposedMainSchema));
         ProposedMainFieldsChanged?.Invoke();
 
+        var fields = schema.Fields;
         var required = fields.Count(f => f.Required);
+        var subtypes = schema.HasSubtypes
+            ? " " + schema.Subtypes.Count + " subtype(s) narrow what the other fields may hold."
+            : string.Empty;
+
         ProposedMainAttributeStatus = fields.Count == 0
             ? "The proposed main layer offered no fields to fill in."
-            : "Read " + fields.Count + " field(s) from the proposed main layer, " + required + " of them required.";
+            : "Read " + fields.Count + " field(s) from the proposed main layer, " + required
+              + " of them required." + subtypes;
 
-        RaiseProposedMainTableChanged();
+        SyncProposedMainSegmentRows(segmentCount);
     }
 
     /// <summary>
@@ -134,7 +150,7 @@ public sealed partial class ExporterViewModel
 
         while (ProposedMainSegmentRows.Count < segmentCount)
         {
-            var row = new ProposedMainSegmentAttributesViewModel(ProposedMainSegmentRows.Count + 1, _proposedMainFields);
+            var row = new ProposedMainSegmentAttributesViewModel(ProposedMainSegmentRows.Count + 1, _proposedMainSchema);
             if (ProposedMainSegmentRows.Count > 0) { row.CopyValuesFrom(ProposedMainSegmentRows[^1]); }
             row.ValuesChanged += _ => RaisePropertyChanged(nameof(MissingRequiredProposedMainAttributes));
             ProposedMainSegmentRows.Add(row);

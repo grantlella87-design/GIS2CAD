@@ -51,10 +51,10 @@ public partial class ExporterWindow
 
         try
         {
-            var fields = await ProposedMainFeatureService.GetEditableFieldsAsync(token);
+            var schema = await ProposedMainFeatureService.GetLayerSchemaAsync(token);
             if (DataContext is ExporterViewModel vm)
             {
-                vm.LoadProposedMainFields(fields);
+                vm.LoadProposedMainSchema(schema);
                 vm.SyncProposedMainSegmentRows(_manualProposedPipelineSegmentGeometries.Count);
             }
         }
@@ -166,6 +166,26 @@ public partial class ExporterWindow
     private void ForgetProposedMainUpload() => _proposedMainUploaded = false;
 
     /// <summary>
+    /// Whether any subtype, or the field itself, gives this field a list to choose from.
+    ///
+    /// Asked across every subtype rather than only the one currently selected, because the column is
+    /// built once and has to be a dropdown for the row that will need it. A column that started as a
+    /// text box would stay one after the subtype was chosen.
+    /// </summary>
+    private static bool FieldCanOfferChoices(ProposedMainLayerSchema schema, ProposedMainField field)
+    {
+        if (field.HasCodedValues) { return true; }
+
+        if (schema.HasSubtypes
+            && string.Equals(field.Name, schema.SubtypeFieldName, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return schema.Subtypes.Any(s => s.Domains.TryGetValue(field.Name, out var values) && values.Count > 0);
+    }
+
+    /// <summary>
     /// Brings the attribute table in line with what is drawn. Called wherever the segment list changes,
     /// so a row appears with the segment rather than when something else happens to refresh the page.
     /// </summary>
@@ -202,7 +222,9 @@ public partial class ExporterWindow
             Width = 90
         });
 
-        foreach (var field in vm.ProposedMainFields)
+        var schema = vm.ProposedMainSchema;
+
+        foreach (var field in schema.Fields)
         {
             // A field name with brackets or a dot in it would be read as part of the binding path
             // rather than as a name. None of them should have one, and a column bound to nonsense is
@@ -212,18 +234,32 @@ public partial class ExporterWindow
             var path = "[" + field.Name + "]";
             var header = field.Required ? field.Display + " *" : field.Display;
 
-            if (field.HasCodedValues)
+            // A dropdown wherever anything could ever fill it: the field's own domain, a subtype's
+            // narrower one, or the list of subtypes for the field that chooses between them. Asking
+            // the field alone was the mistake -- on a layer with subtypes most fields carry no domain
+            // of their own and are constrained per subtype instead, so almost everything came out as
+            // a free text box and the values GIS would accept were nowhere on screen.
+            if (FieldCanOfferChoices(schema, field))
             {
-                // A domain gets a list, so a value GIS would refuse cannot be typed at all.
-                ProposedMainAttributeGrid.Columns.Add(new DataGridComboBoxColumn
+                var column = new DataGridComboBoxColumn
                 {
                     Header = header,
-                    ItemsSource = field.CodedValues,
                     SelectedValuePath = nameof(ProposedMainCodedValue.Code),
                     DisplayMemberPath = nameof(ProposedMainCodedValue.Name),
                     SelectedValueBinding = new Binding(path) { Mode = BindingMode.TwoWay },
-                    MinWidth = 120
-                });
+                    MinWidth = 140
+                };
+
+                // The list comes from the row rather than the column, because two rows of different
+                // subtypes are allowed different values in the same column. A style setter is how a
+                // per row ItemsSource is reached on this kind of column.
+                var choices = new Binding("Choices[" + field.Name + "]");
+                var style = new Style(typeof(ComboBox));
+                style.Setters.Add(new Setter(ItemsControl.ItemsSourceProperty, choices));
+                column.ElementStyle = style;
+                column.EditingElementStyle = style;
+
+                ProposedMainAttributeGrid.Columns.Add(column);
                 continue;
             }
 
