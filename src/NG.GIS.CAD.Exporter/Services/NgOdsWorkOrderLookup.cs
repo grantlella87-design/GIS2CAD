@@ -225,35 +225,28 @@ WHERE
     )
 ORDER BY
     wo.[wonum] DESC
+FOR JSON PATH
 OPTION (RECOMPILE)
 "@
     $cmd = $conn.CreateCommand()
     $cmd.CommandTimeout = 0
     $cmd.CommandText = $sql
+
+    # SQL Server writes the JSON, and this only joins it up. What was here before built a
+    # PowerShell object per row -- sixteen property inserts each -- and then walked the whole
+    # collection through ConvertTo-Json, and on a table of this size that work dwarfed the query
+    # it was formatting. The query was never the slow part.
+    #
+    # FOR JSON returns one column split across as many rows as it needs, so the pieces are
+    # concatenated in order. A StringBuilder rather than string addition, which would copy the
+    # whole document again for every chunk.
     $reader = $cmd.ExecuteReader()
-    $items = New-Object System.Collections.Generic.List[object]
+    $json = New-Object System.Text.StringBuilder
     while ($reader.Read()) {
-        $items.Add([pscustomobject]@{
-            NgJurisdiction = [string]$reader['NgJurisdiction']
-            NgOpCo = [string]$reader['NgOpCo']
-            NgOpCoDescription = [string]$reader['NgOpCoDescription']
-            NgFundProj = [string]$reader['NgFundProj']
-            NgFundingProjectDescription = [string]$reader['NgFundingProjectDescription']
-            WorkOrderNumber = [string]$reader['WorkOrderNumber']
-            WorkOrderName = [string]$reader['WorkOrderName']
-            WoClass = [string]$reader['WoClass']
-            WoClassDescription = [string]$reader['WoClassDescription']
-            WorkType = [string]$reader['WorkType']
-            WTypeDesc = [string]$reader['WTypeDesc']
-            Status = [string]$reader['Status']
-            StatusDescription = [string]$reader['StatusDescription']
-            NgPpWoType = [string]$reader['NgPpWoType']
-            NgPpWoTypeDescription = [string]$reader['NgPpWoTypeDescription']
-            NgServTerritory = [string]$reader['NgServTerritory']
-        })
+        [void]$json.Append($reader.GetString(0))
     }
     $reader.Close()
-    $items | ConvertTo-Json -Depth 4 -Compress
+    $json.ToString()
 }
 finally {
     $conn.Close()
