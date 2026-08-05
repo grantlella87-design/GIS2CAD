@@ -295,13 +295,33 @@
                                         <StackPanel Margin="0,2,0,2">
                                             <!-- A layer with one symbol keeps its swatch on the same
                                                  line as its checkbox, so the common case stays a one
-                                                 line entry. -->
+                                                 line entry.
+
+                                                 The row is a Border so that a top level layer can be
+                                                 dragged onto another to change the draw order, the same
+                                                 way the data source tiles are. The border itself is
+                                                 invisible until a drop would land on this row. -->
+                                            <Border BorderThickness="1" BorderBrush="Transparent" Padding="1,0,1,0"
+                                                    Background="Transparent" AllowDrop="True"
+                                                    PreviewMouseLeftButtonDown="MapLayerNode_PreviewMouseLeftButtonDown"
+                                                    PreviewMouseMove="MapLayerNode_PreviewMouseMove"
+                                                    DragOver="MapLayerNode_DragOver"
+                                                    DragLeave="MapLayerNode_DragLeave"
+                                                    Drop="MapLayerNode_Drop">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                                <!-- Only on the layers that have a place in the draw
+                                                     order of their own. A sublayer is drawn where the
+                                                     service that carries it is drawn. -->
+                                                <TextBlock Grid.Column="0" Text="&#x2807;&#x2807;" FontSize="12" Foreground="#999999"
+                                                           VerticalAlignment="Center" Margin="0,0,4,0" Cursor="SizeAll"
+                                                           ToolTip="Drag this layer onto another to change the draw order. The top of the list draws on top."
+                                                           Visibility="{Binding CanReorder, Converter={StaticResource BoolToVisibility}}"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal">
                                                     <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                                     <Image Source="{Binding SingleSwatch}" Width="16" Height="16" Margin="0,0,4,0"
                                                            VerticalAlignment="Center" Stretch="Uniform">
@@ -330,12 +350,13 @@
                                                      sublayer is part of the service that carries it and
                                                      cannot be detached from it, so it gets a tick box and
                                                      nothing more. -->
-                                                <Button Grid.Column="1" Content="Remove" Padding="6,0" Margin="8,0,0,0" FontSize="10"
+                                                <Button Grid.Column="2" Content="Remove" Padding="6,0" Margin="8,0,0,0" FontSize="10"
                                                         VerticalAlignment="Center" HorizontalAlignment="Right"
                                                         Click="RemoveMapLayer_Click"
                                                         ToolTip="Take this layer off the map."
                                                         Visibility="{Binding CanRemove, Converter={StaticResource BoolToVisibility}}"/>
                                             </Grid>
+                                            </Border>
 
                                             <!-- A layer drawn by category or by range needs a row per
                                                  class, indented under the layer it belongs to. -->

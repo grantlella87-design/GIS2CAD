@@ -56,6 +56,18 @@ public sealed class MapLayerToggleViewModel : ObservableObject
     public bool CanRemove => Remove != null;
 
     /// <summary>
+    /// The map layer behind this node, for the map's own top level layers. Untyped for the same reason
+    /// the visibility toggle is a pair of functions: this stays clear of the runtime's layer types, and
+    /// the view casts it back when it needs to.
+    ///
+    /// Null for a sublayer, which is part of the service that carries it and cannot be moved out of it.
+    /// </summary>
+    public object? LayerRef { get; set; }
+
+    /// <summary>Whether this node can be dragged to a new place in the draw order.</summary>
+    public bool CanReorder => LayerRef != null;
+
+    /// <summary>
     /// What this layer draws with. One entry for a layer with a single symbol, one per class for a
     /// layer drawn by category or by range, and none for a group, which draws nothing of its own.
     /// </summary>

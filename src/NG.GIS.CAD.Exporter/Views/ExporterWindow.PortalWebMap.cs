@@ -170,11 +170,19 @@ public partial class ExporterWindow
         _mapLayerContentByPath.Clear();
 
         var usedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var layer in map.OperationalLayers)
+
+        // Counted down, because the last layer in the collection is the one drawn on top and a layer
+        // list is read with the top of the list on top. Counted up, the tree ran the opposite way round
+        // to the data sources panel beside it, and dragging in one would have appeared to move things
+        // the wrong way compared with the other.
+        for (var i = map.OperationalLayers.Count - 1; i >= 0; i--)
         {
-            // Only the top level gets a way off the map. A sublayer belongs to the service that
-            // carries it and cannot be detached from it, so its tick box is the whole of what can be
-            // done to one; offering a button that could not work would be worse than not offering it.
+            var layer = map.OperationalLayers[i];
+
+            // Only the top level gets a way off the map, or a way to be reordered. A sublayer belongs to
+            // the service that carries it and cannot be detached from it or moved out of it, so its tick
+            // box is the whole of what can be done to one; offering a button that could not work would
+            // be worse than not offering it.
             AddMapLayerToggle(vm, layer, null, null, 0, usedPaths, removable: layer);
         }
 
@@ -244,7 +252,15 @@ public partial class ExporterWindow
 
             var toggle = new MapLayerToggleViewModel(path, name, content.IsVisible, serviceUrl, isLeaf);
             toggle.VisibilityChanged += OnMapLayerToggled;
-            if (removable != null) { toggle.Remove = () => RemoveMapLayerFromMap(removable); }
+            if (removable != null)
+            {
+                toggle.Remove = () => RemoveMapLayerFromMap(removable);
+
+                // The same layer, kept so a drop in the tree can be turned into a move of the tile that
+                // stands for it. Reordering goes through the data sources panel rather than touching the
+                // map here, so the two lists cannot end up disagreeing about the order.
+                toggle.LayerRef = removable;
+            }
             _mapLayerContentByPath[path] = content;
 
             if (parent == null)
