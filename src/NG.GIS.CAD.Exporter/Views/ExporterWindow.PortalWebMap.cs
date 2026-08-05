@@ -284,9 +284,15 @@ public partial class ExporterWindow
         // its own URL, which for a group sublayer would otherwise nest and give every layer inside
         // that group an address the service does not answer on.
         var childServiceUrl = content is ArcGISSublayer ? parentServiceUrl : serviceUrl ?? parentServiceUrl;
-        foreach (var child in children)
+
+        // Counted down for the same reason the top level is: SublayerContents runs bottom of the draw
+        // order first, so listing it as it comes puts the layer drawn underneath at the top of the list.
+        // Material_View_MA made that plain, coming out upside down against the same service in the
+        // portal map. Every level is turned round, so the whole tree reads the way the portal does:
+        // top of the list is what is drawn on top.
+        for (var i = children.Count - 1; i >= 0; i--)
         {
-            AddMapLayerToggle(vm, child, node, path, depth + 1, usedPaths, childServiceUrl);
+            AddMapLayerToggle(vm, children[i], node, path, depth + 1, usedPaths, childServiceUrl);
         }
     }
 

@@ -25,7 +25,10 @@ public partial class ExporterWindow
 
     /// <summary>The colour a tile is outlined in while a drop on it would land.</summary>
     private static readonly Brush MapDataSourceDropBrush = new SolidColorBrush(Color.FromRgb(0x1E, 0x6F, 0xB8));
-    private static readonly Brush MapDataSourceTileBrush = new SolidColorBrush(Color.FromRgb(0xDD, 0xDD, 0xDD));
+    /// <summary>The tile's ordinary outline, put back when a drag moves off it. Kept in step with the
+    /// BorderBrush the tile template sets, or a tile a drag had passed over would keep a different
+    /// outline from the ones it had not.</summary>
+    private static readonly Brush MapDataSourceTileBrush = new SolidColorBrush(Color.FromRgb(0xEA, 0xEA, 0xEA));
 
     private const string MapDataSourceDragFormat = "NgGisCadMapDataSourceTile";
 
