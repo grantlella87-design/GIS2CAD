@@ -106,6 +106,7 @@ public partial class ExporterWindow
             .Where(layer => !fromDataSources.Contains(layer))
             .Select(layer => new ViewModels.BaseMapLayerHandle(
                 string.IsNullOrWhiteSpace(layer.Name) ? "Unnamed layer" : layer.Name,
+                layer,
                 () => layer.IsVisible,
                 visible => layer.IsVisible = visible,
                 () => map.OperationalLayers.Remove(layer)))
@@ -347,7 +348,11 @@ public partial class ExporterWindow
         if (_mapView?.Map is not Map map) { return; }
         if (DataContext is not ExporterViewModel vm) { return; }
 
+        // Two names for two jobs. The sentence wants something readable; the tile is found by the name
+        // it was built with, which is the same fallback ListBaseLayersAsDataSources uses. Using the
+        // readable one to find the tile would miss an unnamed layer's tile entirely.
         var name = string.IsNullOrWhiteSpace(layer.Name) ? "That layer" : layer.Name;
+        var tileName = string.IsNullOrWhiteSpace(layer.Name) ? "Unnamed layer" : layer.Name;
 
         var url = _dataSourceLayersByUrl
             .FirstOrDefault(pair => ReferenceEquals(pair.Value, layer)).Key;
@@ -370,10 +375,10 @@ public partial class ExporterWindow
 
         map.OperationalLayers.Remove(layer);
 
-        // The data sources panel lists the map's own layers alongside the profile's, so it is relisted
-        // here too. Without this the panel would go on offering a tile for a layer that is no longer
-        // on the map, and its tick box would do nothing.
-        ListBaseLayersAsDataSources(map);
+        // The data sources panel lists the map's own layers alongside the profile's, so its tile goes
+        // too. Just the one: relisting them all rebuilds every map owned tile at the bottom of the
+        // panel and would throw away an order the user had dragged into place.
+        vm.RemoveBaseMapLayerTile(tileName);
         await BuildMapLayerTogglesAsync(map);
         vm.Status = name + " has been taken off the map for this session. It came with the web map "
             + "rather than from the profile, so it will be back the next time the map loads.";
