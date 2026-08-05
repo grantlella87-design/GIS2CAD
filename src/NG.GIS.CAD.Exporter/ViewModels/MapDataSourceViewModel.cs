@@ -46,7 +46,10 @@ public sealed class MapDataSourceViewModel : ObservableObject
         _baseLayer = baseLayer;
         Source = new MapDataSource { Name = baseLayer.Name, Url = string.Empty, Enabled = baseLayer.GetVisible() };
         _enabled = Source.Enabled;
-        _status = "From the map. Untick to hide it, or Remove to take it off.";
+
+        // No status line. It said what the tick box and the Remove button next to it already say, on
+        // every one of these tiles, which is most of them: a paragraph of instructions repeated down the
+        // panel telling the reader what the two controls beside it are for.
     }
 
     /// <summary>Whether this entry came with the map rather than from the profile.</summary>
