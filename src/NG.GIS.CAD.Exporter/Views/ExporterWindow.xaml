@@ -8,6 +8,38 @@
         <!-- Placeholder text shown inside an empty field. Sits over the TextBox rather than
              retemplating it, so the box keeps its normal focus and hover chrome. Hit testing is off
              so clicks land on the field underneath. -->
+        <!-- The furniture shared by the data sources panel and the map layers tree. Both are lists of
+             layers in draw order that are dragged into place and taken off, so they are given the same
+             grip, the same Remove button and the same second line rather than each growing its own.
+             Held here so the two cannot drift apart the next time one of them is touched. -->
+        <Style x:Key="ListRowGrip" TargetType="TextBlock">
+            <Setter Property="Text" Value="&#x2807;&#x2807;"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="#999999"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="Cursor" Value="SizeAll"/>
+            <Setter Property="ToolTip" Value="Drag this onto another entry to change the draw order. The top of the list draws on top."/>
+        </Style>
+        <Style x:Key="ListRowRemoveButton" TargetType="Button">
+            <Setter Property="Content" Value="Remove"/>
+            <Setter Property="Padding" Value="6,0"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+        </Style>
+        <!-- Collapses when it has nothing to say, so an entry with no URL and no status is a single
+             line rather than one line of text over two of blank. -->
+        <Style x:Key="ListRowSubText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#777777"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Style.Triggers>
+                <Trigger Property="Text" Value="">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
         <!-- The triangle on a map layer group. Drawn here because the retemplated TreeViewItem below
              cannot borrow the stock one, which belongs to the template it replaces. -->
         <Style x:Key="MapLayerTreeExpanderToggle" TargetType="ToggleButton">
@@ -317,9 +349,7 @@
                                                 <!-- Only on the layers that have a place in the draw
                                                      order of their own. A sublayer is drawn where the
                                                      service that carries it is drawn. -->
-                                                <TextBlock Grid.Column="0" Text="&#x2807;&#x2807;" FontSize="12" Foreground="#999999"
-                                                           VerticalAlignment="Center" Margin="0,0,4,0" Cursor="SizeAll"
-                                                           ToolTip="Drag this layer onto another to change the draw order. The top of the list draws on top."
+                                                <TextBlock Grid.Column="0" Style="{StaticResource ListRowGrip}"
                                                            Visibility="{Binding CanReorder, Converter={StaticResource BoolToVisibility}}"/>
                                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                                                     <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,4,0"/>
@@ -350,8 +380,7 @@
                                                      sublayer is part of the service that carries it and
                                                      cannot be detached from it, so it gets a tick box and
                                                      nothing more. -->
-                                                <Button Grid.Column="2" Content="Remove" Padding="6,0" Margin="8,0,0,0" FontSize="10"
-                                                        VerticalAlignment="Center" HorizontalAlignment="Right"
+                                                <Button Grid.Column="2" Style="{StaticResource ListRowRemoveButton}"
                                                         Click="RemoveMapLayer_Click"
                                                         ToolTip="Take this layer off the map."
                                                         Visibility="{Binding CanRemove, Converter={StaticResource BoolToVisibility}}"/>
@@ -421,8 +450,8 @@
                                              The whole tile is both the thing dragged and a place to drop
                                              one, so a source is moved by dropping it on the tile whose
                                              place it should take. -->
-                                        <Border Margin="0,0,0,4" Padding="6,4,4,4" CornerRadius="3"
-                                                Background="#FAFAFA" BorderBrush="#DDDDDD" BorderThickness="1"
+                                        <Border Margin="0,0,0,2" Padding="4,2,4,2" CornerRadius="3"
+                                                Background="#FAFAFA" BorderBrush="#EAEAEA" BorderThickness="1"
                                                 AllowDrop="True"
                                                 PreviewMouseLeftButtonDown="MapDataSourceTile_PreviewMouseLeftButtonDown"
                                                 PreviewMouseMove="MapDataSourceTile_PreviewMouseMove"
@@ -437,10 +466,9 @@
                                                 </Grid.ColumnDefinitions>
                                                 <!-- The grip. Dragging works from anywhere on the tile that
                                                      is not a control, but a tile that can be moved should
-                                                     look like one before it is tried. -->
-                                                <TextBlock Grid.Column="0" Text="&#x2807;&#x2807;" FontSize="13" Foreground="#999999"
-                                                           VerticalAlignment="Top" Margin="0,1,6,0" Cursor="SizeAll"
-                                                           ToolTip="Drag this tile onto another to change the draw order. The top tile draws on top."
+                                                     look like one before it is tried. The same grip the
+                                                     map layers tree uses, from the same style. -->
+                                                <TextBlock Grid.Column="0" Style="{StaticResource ListRowGrip}"
                                                            Visibility="{Binding CanReorder, Converter={StaticResource BoolToVisibility}}"/>
                                                 <StackPanel Grid.Column="1">
                                                     <!-- The name is beside the tick box rather than inside
@@ -448,17 +476,25 @@
                                                          pressing the box, and a press on a control is that
                                                          control's rather than the start of a drag, so the
                                                          most obvious part of the tile to take hold of was
-                                                         the one part that would not move. -->
+                                                         the one part that would not move.
+
+                                                         Laid out like a row of the map layers tree: tick
+                                                         box, then name, and the URL and status only when
+                                                         there is one, so a layer that came from the map is
+                                                         the same single line there as it is here. -->
                                                     <StackPanel Orientation="Horizontal">
-                                                        <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,6,0"
+                                                        <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,4,0"
                                                                   ToolTip="Draw this source on the map."/>
                                                         <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
                                                                    TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/>
                                                     </StackPanel>
-                                                    <TextBlock Text="{Binding Url}" Foreground="#777777" FontSize="11" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock Text="{Binding Status}" Foreground="#777777" FontSize="11" TextWrapping="Wrap"/>
+                                                    <TextBlock Text="{Binding Url}" Style="{StaticResource ListRowSubText}"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Status}" Style="{StaticResource ListRowSubText}"
+                                                               TextWrapping="Wrap"/>
                                                 </StackPanel>
-                                                <Button Grid.Column="2" Content="Remove" Padding="8,2" VerticalAlignment="Top"
+                                                <Button Grid.Column="2" Style="{StaticResource ListRowRemoveButton}"
+                                                        ToolTip="Take this source off the map."
                                                         Command="{Binding DataContext.RemoveMapDataSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                         CommandParameter="{Binding}"/>
                                             </Grid>
