@@ -14,6 +14,7 @@ using Esri.ArcGISRuntime.Symbology;
 using Esri.ArcGISRuntime.UI;
 using Esri.ArcGISRuntime.UI.Controls;
 using Esri.ArcGISRuntime.UI.Editing;
+using NG.GIS.CAD.Exporter.ViewModels;
 namespace NG.GIS.CAD.Exporter.Views;
 public partial class ExporterWindow
 {
@@ -90,6 +91,10 @@ public partial class ExporterWindow
         // Any half drawn segment is dropped rather than stored. The user asked to edit an existing one,
         // so keeping what they had started would add a segment they did not ask for.
         TryStopGeometryEditor();
+
+        // The next click is being asked for by this tool, so anything the palette had armed is
+        // disarmed rather than left to compete for it.
+        if (DataContext is ExporterViewModel paletteVm) { paletteVm.SelectedPaletteSymbol = null; }
 
         _pickingManualProposedPipelineSegment = true;
         _editingManualProposedPipelineSegmentIndex = -1;
@@ -314,6 +319,12 @@ public partial class ExporterWindow
             MessageBox.Show("The map view could not be found, so manual proposed pipeline drawing could not start.", "NG GIS CAD Exporter", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+
+        // A symbol left armed in the tool panel is disarmed here rather than left to be refused click
+        // by click. Asking to draw is saying what the map is for now, and the panel should show that
+        // rather than going on looking as though the next click will place something.
+        if (DataContext is ExporterViewModel paletteVm) { paletteVm.SelectedPaletteSymbol = null; }
+
         if (mapView.GeometryEditor == null)
         {
             mapView.GeometryEditor = new GeometryEditor();
