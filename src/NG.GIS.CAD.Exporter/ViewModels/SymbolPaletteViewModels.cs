@@ -45,6 +45,43 @@ public sealed class SymbolPaletteItemViewModel : ObservableObject
 }
 
 /// <summary>
+/// One feature already placed on the map and not yet sent, listed so it can be moved or taken off
+/// again.
+///
+/// A list rather than only the graphics on the map. A symbol dropped in the wrong place is a mistake
+/// somebody notices a minute later, and without a list the only way back was to leave the page and
+/// lose everything placed with it.
+/// </summary>
+public sealed class PlacedFeatureViewModel : ObservableObject
+{
+    private bool _isMoving;
+    private string _position = string.Empty;
+
+    public PlacedFeatureViewModel(SymbolPaletteItemViewModel symbol)
+    {
+        Symbol = symbol;
+    }
+
+    public SymbolPaletteItemViewModel Symbol { get; }
+
+    public string Label => Symbol.Label;
+
+    /// <summary>Where it is, in a form that tells two of the same kind apart in the list.</summary>
+    public string Position
+    {
+        get => _position;
+        set => SetProperty(ref _position, value);
+    }
+
+    /// <summary>Whether the next click on the map moves this one rather than placing something new.</summary>
+    public bool IsMoving
+    {
+        get => _isMoving;
+        set => SetProperty(ref _isMoving, value);
+    }
+}
+
+/// <summary>
 /// One layer's section of the palette. Collapsible, because there will be more layers than this one
 /// and a panel of every symbol of every layer at once would be a wall rather than a tool.
 /// </summary>

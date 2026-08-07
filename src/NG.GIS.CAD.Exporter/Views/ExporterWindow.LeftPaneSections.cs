@@ -96,38 +96,88 @@ public partial class ExporterWindow
     }
 
     /// <summary>
-    /// Caps each open section at its share of what the pane has left, so the four of them always fit.
+    /// Caps each open section so the whole set fits the pane, and so the last of them ends at the
+    /// bottom rather than below it.
+    ///
+    /// Everything is measured rather than assumed. The mode buttons above the sections, the headers of
+    /// the closed ones and the bars between the open ones are all read from what is on screen; the
+    /// arithmetic was estimating them before, and it estimated the mode buttons at nothing, which is
+    /// most of why a section could end up pushed off the bottom in the first place.
+    ///
+    /// Two passes, because an even share is not the right answer when some sections do not want theirs.
+    /// A section content shorter than its share keeps its own height and gives the rest back, and what
+    /// is given back is shared out again among the ones that were capped. That is what stops a short
+    /// section from being handed a third of the pane it cannot fill while a long one is cut off.
     /// </summary>
     private void CapLeftPaneSectionsToPane()
     {
         if (LeftPaneSections == null) { return; }
 
         var sections = new[] { ModeReadoutExpander, MapLayersExpander, DataSourcesExpander, StripMapExpander };
+        var splitters = new[] { ModeReadoutSplitter, MapLayersSplitter, DataSourcesSplitter };
 
-        var open = 0;
-        var closed = 0;
+        var openSections = new List<Expander>();
+        var taken = LeftPaneModeHeaders?.ActualHeight ?? 0;
+
         foreach (var section in sections)
         {
             if (section == null || section.Visibility != Visibility.Visible) { continue; }
-            if (section.IsExpanded) { open++; } else { closed++; }
+
+            if (section.IsExpanded) { openSections.Add(section); }
+            else { taken += MeasuredClosedHeight(section); }
         }
 
-        if (open == 0) { return; }
+        foreach (var splitter in splitters)
+        {
+            if (splitter is { Visibility: Visibility.Visible }) { taken += LeftPaneSplitterHeight; }
+        }
 
-        // What the open sections have between them: the room the rows are given, less the headers of the
-        // closed ones and the bars between the open ones.
-        var available = LeftPaneSections.ActualHeight
-                        - (closed * LeftPaneClosedSectionHeight)
-                        - (Math.Max(0, open - 1) * LeftPaneSplitterHeight);
+        if (openSections.Count == 0) { return; }
 
-        var share = Math.Max(LeftPaneSectionMinShare, available / open);
+        var available = LeftPaneSections.ActualHeight - taken;
+        if (available <= 0) { return; }
+
+        // First pass: an even share, never below the floor, so no section is reduced to a header and a
+        // sliver however many are open.
+        var share = Math.Max(LeftPaneSectionMinShare, available / openSections.Count);
+
+        // Second pass: hand back what the short ones do not want. Their own height stands in for what
+        // they want, which is what they are drawn at now, and this runs again on the next layout pass,
+        // so it settles rather than having to be right first time.
+        var spare = 0.0;
+        var wanting = 0;
+        foreach (var section in openSections)
+        {
+            var height = section.ActualHeight;
+            if (height > 0 && height < share - 1) { spare += share - height; }
+            else { wanting++; }
+        }
+
+        var generous = wanting > 0 ? share + (spare / wanting) : share;
 
         foreach (var section in sections)
         {
             if (section == null) { continue; }
-            section.MaxHeight = section.IsExpanded ? share : double.PositiveInfinity;
+
+            var cap = !section.IsExpanded
+                ? double.PositiveInfinity
+                : section.ActualHeight > 0 && section.ActualHeight < share - 1 ? share : generous;
+
+            // Only when it has actually moved. Writing the same number back would be another layout
+            // pass, which would arrive here again, which is a loop rather than a layout.
+            if (double.IsInfinity(cap) && double.IsInfinity(section.MaxHeight)) { continue; }
+            if (Math.Abs(section.MaxHeight - cap) < 0.5) { continue; }
+
+            section.MaxHeight = cap;
         }
     }
+
+    /// <summary>
+    /// What a closed section takes up. Its own height once it has been drawn, and the estimate only
+    /// until then, because a section that has never been laid out reports nothing.
+    /// </summary>
+    private static double MeasuredClosedHeight(Expander section) =>
+        section.ActualHeight > 1 ? section.ActualHeight : LeftPaneClosedSectionHeight;
 
     private static void ShowSplitterBetween(GridSplitter? splitter, Expander? above, Expander? below)
     {

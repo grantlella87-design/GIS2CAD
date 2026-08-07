@@ -37,12 +37,16 @@ public partial class ExporterWindow
 
     /// <summary>
     /// What has been placed and not yet sent, so the map can draw it and the upload knows what to send.
+    ///
+    /// Keyed by the row in the panel that stands for it, so moving or removing one from the list finds
+    /// the graphic and the record without having to search for them by position and hope.
     /// </summary>
-    private readonly List<PlacedPaletteFeature> _placedPaletteFeatures = new();
+    private readonly Dictionary<PlacedFeatureViewModel, PlacedPaletteFeature> _placedPaletteFeatures = new();
 
     private bool _symbolPalettesLoaded;
 
-    private sealed record PlacedPaletteFeature(MapPoint Location, SymbolPaletteItemViewModel Symbol);
+    /// <summary>The graphic is kept with the rest so a move can redraw it and a removal can take it off.</summary>
+    private sealed record PlacedPaletteFeature(MapPoint Location, SymbolPaletteItemViewModel Symbol, Graphic Graphic);
 
     /// <summary>
     /// Reads each layer's symbols into the panel. Once per session: a renderer does not change while
@@ -178,12 +182,99 @@ public partial class ExporterWindow
         // ends to each other decides what counts as close enough here.
         var snapped = SnapPlacementToProposedPipeline(location, vm.ProposedMainSnapToleranceFeet, out var angle);
 
-        _placedPaletteFeatures.Add(new PlacedPaletteFeature(snapped.Location, symbol));
-        _placedFeatureOverlay?.Graphics.Add(new Graphic(snapped.Location, BuildPlacedSymbol(symbol, angle)));
+        var graphic = new Graphic(snapped.Location, BuildPlacedSymbol(symbol, angle));
+        _placedFeatureOverlay?.Graphics.Add(graphic);
+
+        var row = new PlacedFeatureViewModel(symbol) { Position = DescribePlacement(snapped.Location) };
+        _placedPaletteFeatures[row] = new PlacedPaletteFeature(snapped.Location, symbol, graphic);
+        vm.PlacedFeatures.Add(row);
+        vm.RaisePlacedFeaturesChanged();
 
         vm.Status = symbol.Label + (snapped.Snapped ? " snapped onto the proposed main." : " placed.")
             + " It is added to " + symbol.LayerUrl.Split('/')[^1] + " when you move on to page 3.";
         return true;
+    }
+
+    /// <summary>
+    /// Moves the one being moved to where the map was clicked, snapping and turning it the same way a
+    /// new placement would. Returns whether the click was used.
+    /// </summary>
+    private bool TryMovePlacedFeatureTo(MapPoint? location)
+    {
+        if (location == null || _mapView == null) { return false; }
+        if (DataContext is not ExporterViewModel vm) { return false; }
+
+        var row = vm.MovingPlacedFeature;
+        if (row == null) { return false; }
+        if (_mapView.GeometryEditor?.IsStarted == true) { return false; }
+        if (!_placedPaletteFeatures.TryGetValue(row, out var placed)) { return false; }
+
+        var snapped = SnapPlacementToProposedPipeline(location, vm.ProposedMainSnapToleranceFeet, out var angle);
+
+        placed.Graphic.Geometry = snapped.Location;
+        placed.Graphic.Symbol = BuildPlacedSymbol(placed.Symbol, angle);
+        _placedPaletteFeatures[row] = placed with { Location = snapped.Location };
+
+        row.Position = DescribePlacement(snapped.Location);
+        vm.MovingPlacedFeature = null;
+        vm.Status = row.Label + (snapped.Snapped ? " moved and snapped onto the proposed main." : " moved.");
+        return true;
+    }
+
+    /// <summary>Arms or disarms moving one placed feature. Pressing Move again leaves it where it is.</summary>
+    private void MovePlacedFeature_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ExporterViewModel vm) { return; }
+        if (sender is not FrameworkElement element || element.DataContext is not PlacedFeatureViewModel row) { return; }
+
+        vm.MovingPlacedFeature = ReferenceEquals(vm.MovingPlacedFeature, row) ? null : row;
+    }
+
+    /// <summary>
+    /// Takes one placed feature off the map and out of the list, before it has gone anywhere.
+    ///
+    /// Only ever what has not been sent. Once a feature is in GIS it is GIS's, and a button here that
+    /// looked like it could take it back would be lying about what it does.
+    /// </summary>
+    private void RemovePlacedFeature_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ExporterViewModel vm) { return; }
+        if (sender is not FrameworkElement element || element.DataContext is not PlacedFeatureViewModel row) { return; }
+
+        if (_placedPaletteFeatures.TryGetValue(row, out var placed))
+        {
+            _placedFeatureOverlay?.Graphics.Remove(placed.Graphic);
+            _placedPaletteFeatures.Remove(row);
+        }
+
+        if (ReferenceEquals(vm.MovingPlacedFeature, row)) { vm.MovingPlacedFeature = null; }
+
+        vm.PlacedFeatures.Remove(row);
+        vm.RaisePlacedFeaturesChanged();
+        vm.Status = row.Label + " removed. It was never sent to GIS, so there is nothing to undo there.";
+    }
+
+    /// <summary>
+    /// Where a placement is, in a form that tells two of the same kind apart in a list. Longitude and
+    /// latitude to five places, which is about a metre, because a list of valves all called Valve needs
+    /// something to tell them by.
+    /// </summary>
+    private static string DescribePlacement(MapPoint location)
+    {
+        try
+        {
+            if (GeometryEngine.Project(location, SpatialReferences.Wgs84) is MapPoint wgs84)
+            {
+                return wgs84.Y.ToString("0.#####", System.Globalization.CultureInfo.InvariantCulture) + ", "
+                     + wgs84.X.ToString("0.#####", System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+        catch (Exception)
+        {
+            // Not worth reporting. The row still names what it is; only the coordinates are missing.
+        }
+
+        return string.Empty;
     }
 
     /// <summary>
@@ -348,7 +439,8 @@ public partial class ExporterWindow
         var added = 0;
         var failures = new List<string>();
 
-        foreach (var placed in _placedPaletteFeatures)
+        // Over a copy, because a success clears the list it is walking.
+        foreach (var placed in _placedPaletteFeatures.Values.ToList())
         {
             var wgs84 = GeometryEngine.Project(placed.Location, SpatialReferences.Wgs84) as MapPoint;
             if (wgs84 == null) { failures.Add(placed.Symbol.Label + ": its position could not be projected."); continue; }
@@ -377,6 +469,16 @@ public partial class ExporterWindow
         {
             _placedPaletteFeatures.Clear();
             _placedFeatureOverlay?.Graphics.Clear();
+
+            if (DataContext is ExporterViewModel sentVm)
+            {
+                // Emptied because they are GIS's now. A list of things that have already gone, with a
+                // Remove button beside each, would be offering to undo something it cannot.
+                sentVm.MovingPlacedFeature = null;
+                sentVm.PlacedFeatures.Clear();
+                sentVm.RaisePlacedFeaturesChanged();
+            }
+
             return added + (added == 1 ? " placed feature was" : " placed features were") + " added to GIS.";
         }
 

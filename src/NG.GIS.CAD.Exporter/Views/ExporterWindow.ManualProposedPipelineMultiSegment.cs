@@ -234,9 +234,10 @@ public partial class ExporterWindow
     /// </summary>
     private void ExporterMapView_GeoViewTapped(object? sender, GeoViewInputEventArgs e)
     {
-        // The palette gets the click first, because arming a symbol is a deliberate act and the click
-        // that follows it is meant for the thing that was armed.
-        if (TryPlacePaletteSymbolAt(e.Location))
+        // The palette gets the click first, because arming a symbol or a move is a deliberate act and
+        // the click that follows it is meant for the thing that was armed. Moving is asked first of the
+        // two: only one of them can be armed at a time, so this is an order rather than a contest.
+        if (TryMovePlacedFeatureTo(e.Location) || TryPlacePaletteSymbolAt(e.Location))
         {
             e.Handled = true;
             return;
