@@ -32,6 +32,15 @@ public partial class ExporterWindow
         ("Network Junction (P)", "https://gis.nationalgrid.com/arcgis/rest/services/MA/Material_View_MA/MapServer/52")
     };
 
+    /// <summary>
+    /// How much bigger a placed symbol is drawn than the size the service quotes.
+    ///
+    /// The service's size is what the layer draws at when a whole town is on screen, which at the
+    /// scale this page is worked at is a few pixels: too small to see what was placed, and too small
+    /// to aim at. This is a drawing size only; nothing about the feature that goes to GIS changes.
+    /// </summary>
+    private const double PlacedSymbolScale = 5.0;
+
     private GraphicsOverlay? _placedFeatureOverlay;
 
     /// <summary>
@@ -164,6 +173,12 @@ public partial class ExporterWindow
         var symbol = vm.SelectedPaletteSymbol;
         if (symbol == null) { return false; }
 
+        // Drawing wins. While the geometry editor is running every click on the map is a vertex of the
+        // line being drawn, and taking those to place points instead made the palette a trap: arm a
+        // symbol once and no proposed pipeline could be drawn again, with points appearing where the
+        // vertices should have gone.
+        if (_mapView.GeometryEditor?.IsStarted == true) { return false; }
+
         EnsurePlacedFeatureOverlay();
 
         _placedPaletteFeatures.Add(new PlacedPaletteFeature(location, symbol));
@@ -189,12 +204,15 @@ public partial class ExporterWindow
     /// </summary>
     private static Symbol BuildPlacedSymbol(SymbolPaletteItemViewModel item)
     {
+        var size = Math.Max(6, item.Symbol.Size) * PlacedSymbolScale;
+
         if (item.Symbol.ImageData is { Length: > 0 } data)
         {
             try
             {
                 var picture = new PictureMarkerSymbol(new RuntimeImage(data));
-                if (item.Symbol.Size > 0) { picture.Width = item.Symbol.Size; picture.Height = item.Symbol.Size; }
+                picture.Width = size;
+                picture.Height = size;
                 return picture;
             }
             catch (Exception)
@@ -207,7 +225,7 @@ public partial class ExporterWindow
             SimpleMarkerSymbolStyle.Circle,
             System.Drawing.Color.FromArgb(
                 ClampByte(item.Symbol.A), ClampByte(item.Symbol.R), ClampByte(item.Symbol.G), ClampByte(item.Symbol.B)),
-            Math.Max(6, item.Symbol.Size));
+            size);
     }
 
     /// <summary>

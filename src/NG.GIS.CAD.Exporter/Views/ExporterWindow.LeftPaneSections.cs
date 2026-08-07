@@ -45,26 +45,41 @@ public partial class ExporterWindow
     /// </summary>
     private void ApplyLeftPaneSectionHeights()
     {
-        ApplySectionRowHeight(ModeReadoutRow, ModeReadoutExpander, ModeReadoutOpenMinHeight);
-        ApplySectionRowHeight(MapLayersRow, MapLayersExpander, MapLayersOpenMinHeight);
-        ApplySectionRowHeight(DataSourcesRow, DataSourcesExpander, DataSourcesOpenMinHeight);
-        ApplySectionRowHeight(StripMapRow, StripMapExpander, StripMapOpenMinHeight);
+        // The first two take the free space; the last two take what their contents need.
+        //
+        // The mode readout and the map layers hold a text box and a tree, neither of which has a height
+        // of its own worth speaking of -- a tree of a large portal item would be thousands of pixels
+        // tall -- so they are given a share of the pane and scroll inside it.
+        //
+        // Data sources and the strip map index are already capped by scrollers of their own, so a share
+        // would be a share they could not fill: opening data sources took everything left in the pane
+        // and pushed the strip map index to the very bottom, with the gap between them being the part of
+        // the share the source list had no content for. Sized to their contents, each section ends where
+        // its contents end and the next one begins there.
+        ApplySectionRowHeight(ModeReadoutRow, ModeReadoutExpander, ModeReadoutOpenMinHeight, fillsFreeSpace: true);
+        ApplySectionRowHeight(MapLayersRow, MapLayersExpander, MapLayersOpenMinHeight, fillsFreeSpace: true);
+        ApplySectionRowHeight(DataSourcesRow, DataSourcesExpander, DataSourcesOpenMinHeight, fillsFreeSpace: false);
+        ApplySectionRowHeight(StripMapRow, StripMapExpander, StripMapOpenMinHeight, fillsFreeSpace: false);
 
         ShowSplitterBetween(ModeReadoutSplitter, ModeReadoutExpander, MapLayersExpander);
         ShowSplitterBetween(MapLayersSplitter, MapLayersExpander, DataSourcesExpander);
         ShowSplitterBetween(DataSourcesSplitter, DataSourcesExpander, StripMapExpander);
     }
 
-    private void ApplySectionRowHeight(RowDefinition? row, Expander? section, double openMinHeight)
+    private void ApplySectionRowHeight(RowDefinition? row, Expander? section, double openMinHeight, bool fillsFreeSpace)
     {
         if (row == null || section == null) { return; }
 
         if (section.IsExpanded)
         {
+            // A dragged height beats both, because the user has said what they want this one to be.
             row.Height = _leftPaneSectionHeights.TryGetValue(row, out var dragged)
                 ? dragged
-                : new GridLength(1, GridUnitType.Star);
-            row.MinHeight = openMinHeight;
+                : fillsFreeSpace ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+
+            // Only a section that fills gets a floor. One sized to its contents is already exactly as
+            // tall as it needs to be, and a floor could only hold it open past the end of them.
+            row.MinHeight = fillsFreeSpace ? openMinHeight : 0;
             return;
         }
 
