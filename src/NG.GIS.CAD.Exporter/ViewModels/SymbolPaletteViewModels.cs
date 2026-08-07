@@ -1,4 +1,4 @@
-using System.Windows.Media;
+﻿using System.Windows.Media;
 using NG.GIS.CAD.Exporter.Services;
 
 namespace NG.GIS.CAD.Exporter.ViewModels;
@@ -55,6 +55,7 @@ public sealed class SymbolPaletteItemViewModel : ObservableObject
 public sealed class PlacedFeatureViewModel : ObservableObject
 {
     private bool _isMoving;
+    private bool _isFocused;
     private string _position = string.Empty;
 
     public PlacedFeatureViewModel(SymbolPaletteItemViewModel symbol)
@@ -65,6 +66,22 @@ public sealed class PlacedFeatureViewModel : ObservableObject
     public SymbolPaletteItemViewModel Symbol { get; }
 
     public string Label => Symbol.Label;
+
+    /// <summary>
+    /// Whether this one was worked out rather than placed by hand: an elbow the drawing implies at a
+    /// bend in a steel main. They are rebuilt whenever the drawing changes, so they are not offered as
+    /// things to move; moving one would last until the next bend was drawn.
+    /// </summary>
+    public bool IsAutomatic { get; init; }
+
+    public bool CanMove => !IsAutomatic;
+
+    /// <summary>Whether this is the one picked out on the map at the moment.</summary>
+    public bool IsFocused
+    {
+        get => _isFocused;
+        set => SetProperty(ref _isFocused, value);
+    }
 
     /// <summary>Where it is, in a form that tells two of the same kind apart in the list.</summary>
     public string Position

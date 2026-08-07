@@ -719,12 +719,21 @@
                                             <ItemsControl ItemsSource="{Binding PlacedFeatures}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
-                                                        <Border Margin="0,0,0,3" Padding="3,2" CornerRadius="2" BorderThickness="1">
+                                                        <!-- Clicking the row picks the feature out on the
+                                                             map and brings it into view when it is off
+                                                             screen, so the one about to be moved or
+                                                             removed is the one that can be seen. -->
+                                                        <Border Margin="0,0,0,3" Padding="3,2" CornerRadius="2" BorderThickness="1"
+                                                                MouseLeftButtonDown="PlacedFeatureRow_MouseLeftButtonDown">
                                                             <Border.Style>
                                                                 <Style TargetType="Border">
                                                                     <Setter Property="Background" Value="Transparent"/>
                                                                     <Setter Property="BorderBrush" Value="Transparent"/>
                                                                     <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsFocused}" Value="True">
+                                                                            <Setter Property="Background" Value="#F2F6FA"/>
+                                                                            <Setter Property="BorderBrush" Value="#A8C4DC"/>
+                                                                        </DataTrigger>
                                                                         <DataTrigger Binding="{Binding IsMoving}" Value="True">
                                                                             <Setter Property="Background" Value="#EAF3FB"/>
                                                                             <Setter Property="BorderBrush" Value="#1E6FB8"/>
@@ -744,8 +753,14 @@
                                                                                TextTrimming="CharacterEllipsis"/>
                                                                 </StackPanel>
                                                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <!-- Not offered on an elbow. Elbows follow
+                                                                         the bends of the main and are worked
+                                                                         out again whenever it changes, so one
+                                                                         moved by hand would last until the
+                                                                         next edit and no longer. -->
                                                                     <Button Content="Move" Padding="5,0" FontSize="10" Margin="4,0,0,0"
                                                                             Click="MovePlacedFeature_Click"
+                                                                            Visibility="{Binding CanMove, Converter={StaticResource BoolToVisibility}}"
                                                                             ToolTip="Then click the map to put it somewhere else."/>
                                                                     <Button Content="Remove" Padding="5,0" FontSize="10" Margin="4,0,0,0"
                                                                             Click="RemovePlacedFeature_Click"

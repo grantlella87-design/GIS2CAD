@@ -64,6 +64,11 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
             if (DataContext is ExporterViewModel viewModel)
             {
                 viewModel.LeavingExtentPageAsync = LeaveExtentPageAsync;
+
+                // The elbows on a steel main follow from what the attribute table says it is made of,
+                // so a change to any value is a reason to work them out again.
+                viewModel.ProposedMainValuesChanged -= SyncSteelElbowsToProposedMain;
+                viewModel.ProposedMainValuesChanged += SyncSteelElbowsToProposedMain;
                 await viewModel.PreloadLaterPagesAsync();
             }
         };

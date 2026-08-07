@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using NG.GIS.CAD.Exporter.Services;
 
 namespace NG.GIS.CAD.Exporter.ViewModels;
@@ -144,6 +144,33 @@ public sealed class ProposedMainSegmentAttributesViewModel : ObservableObject
         }
 
         return _schema.CodedValuesFor(field, this[_schema.SubtypeFieldName]);
+    }
+
+    /// <summary>
+    /// Whether anything this row holds mentions the given word, by its value or by the name of the
+    /// coded value it stands for.
+    ///
+    /// Both, because a row holds codes rather than names: the material that reads "Steel" in the
+    /// dropdown is stored as whatever number GIS gave it, and a test against the stored value alone
+    /// would never match the word a user was looking at when they chose it.
+    /// </summary>
+    public bool AnyValueMentions(string word)
+    {
+        if (string.IsNullOrWhiteSpace(word)) { return false; }
+
+        foreach (var pair in _values)
+        {
+            if (string.IsNullOrWhiteSpace(pair.Value)) { continue; }
+            if (pair.Value.Contains(word, StringComparison.OrdinalIgnoreCase)) { return true; }
+
+            foreach (var choice in ChoicesFor(pair.Key))
+            {
+                if (!string.Equals(choice.Code, pair.Value, StringComparison.OrdinalIgnoreCase)) { continue; }
+                if (choice.Name.Contains(word, StringComparison.OrdinalIgnoreCase)) { return true; }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>The required fields still empty on this row, by their labels.</summary>

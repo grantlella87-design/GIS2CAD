@@ -434,6 +434,10 @@ public partial class ExporterWindow
         }
 
         ResizeProposedMainAttributeTableToRows();
+
+        // The bends of a steel main imply elbows, and which segments are steel is answered by the rows
+        // that have just been brought in line with the drawing.
+        SyncSteelElbowsToProposedMain();
     }
 
     /// <summary>

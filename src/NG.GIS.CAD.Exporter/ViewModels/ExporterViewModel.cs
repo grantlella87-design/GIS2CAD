@@ -134,7 +134,15 @@ public sealed partial class ExporterViewModel : ObservableObject
     public bool IsDrawPipelineRouteMethod { get => SelectedMethod == ExportMethod.DrawPipelineRoute; set { if (value) { SelectedMethod = ExportMethod.DrawPipelineRoute; } } }
     public bool IsCurrentDrawingViewMethod { get => SelectedMethod == ExportMethod.CurrentDrawingView; set { if (value) { SelectedMethod = ExportMethod.CurrentDrawingView; } } }
     public bool IsManualMethod { get => SelectedMethod == ExportMethod.ManualExtent; set { if (value) { SelectedMethod = ExportMethod.ManualExtent; } } }
-    public string WorkOrderId { get => _workOrderId; set => SetProperty(ref _workOrderId, value); }
+    /// <summary>
+    /// The work order chosen on page 1. Changing it refills the work order field on the proposed main
+    /// rows, so a table filled in against one job does not carry that job's number into the next.
+    /// </summary>
+    public string WorkOrderId
+    {
+        get => _workOrderId;
+        set { if (SetProperty(ref _workOrderId, value)) { FillProposedMainWorkOrderField(); } }
+    }
     public double PaddingFeet
     {
         get => _paddingFeet;
