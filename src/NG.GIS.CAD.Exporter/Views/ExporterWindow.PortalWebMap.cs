@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -24,8 +24,6 @@ public partial class ExporterWindow
     private const string PortalRootUrl = "https://gis.nationalgrid.com/portal";
     private const string PortalSharingRestUrl = PortalRootUrl + "/sharing/rest";
     private const string ExtentWebMapItemId = "c214d72caefb40699b129bc47b1b22a7";
-    private const string MaterialViewLayerName = "Material_View_MA";
-    private const string MaterialViewMapServerUrl = "https://gis.nationalgrid.com/arcgis/rest/services/MA/Material_View_MA/MapServer";
 
     private const int MaxMapLayerDepth = 4;
 
@@ -66,7 +64,7 @@ public partial class ExporterWindow
             _mapView.Map = map;
             _extentWebMapLoaded = true;
 
-            await EnsureMaterialViewLayerAsync(map);
+            TurnOnWebMapLayers(map);
             await ApplyMapDataSourcesAsync();
             ListBaseLayersAsDataSources(map);
 
@@ -82,10 +80,15 @@ public partial class ExporterWindow
     /// Lists the layers that came with the map alongside the ones the user added, so the data sources
     /// panel shows everything on the map rather than only the additions.
     ///
-    /// These arrive from the portal web map and from Material_View_MA, and they are most of what page 2
-    /// actually draws, so a panel that left them out was describing a fraction of the map while looking
-    /// like it described all of it. Nobody is expected to turn them off often, but being able to is the
-    /// difference between a list you can work with and a list you can only read.
+    /// These arrive from the portal web map, and they are most of what page 2 actually draws, so a panel
+    /// that left them out was describing a fraction of the map while looking like it described all of
+    /// it. Nobody is expected to turn them off often, but being able to is the difference between a list
+    /// you can work with and a list you can only read.
+    ///
+    /// Listed from the end of the collection backwards, so the top of the panel is the layer drawn on
+    /// top. That is the way the map layers tree beside it reads, and the way this panel's own order is
+    /// applied back to the map; listed forwards, the two panels described the same order upside down
+    /// from one another.
     ///
     /// Kept apart from the profile. Toggling one changes what the map draws for this session; it does not
     /// write a user data source, because these are not the user's to own and would come back next time
@@ -101,49 +104,35 @@ public partial class ExporterWindow
         if (DataContext is not ViewModels.ExporterViewModel vm) { return; }
 
         var fromDataSources = new HashSet<Layer>(_dataSourceLayersByUrl.Values);
+        var handles = new List<ViewModels.BaseMapLayerHandle>();
 
-        vm.SetBaseMapLayers(map.OperationalLayers
-            .Where(layer => !fromDataSources.Contains(layer))
-            .Select(layer => new ViewModels.BaseMapLayerHandle(
+        for (var i = map.OperationalLayers.Count - 1; i >= 0; i--)
+        {
+            var layer = map.OperationalLayers[i];
+            if (fromDataSources.Contains(layer)) { continue; }
+
+            handles.Add(new ViewModels.BaseMapLayerHandle(
                 string.IsNullOrWhiteSpace(layer.Name) ? "Unnamed layer" : layer.Name,
                 layer,
                 () => layer.IsVisible,
                 visible => layer.IsVisible = visible,
-                () => map.OperationalLayers.Remove(layer)))
-            .ToList());
+                () => map.OperationalLayers.Remove(layer)));
+        }
+
+        vm.SetBaseMapLayers(handles);
     }
 
     /// <summary>
-    /// The web map is the source of truth for page 2's layers. Material_View_MA is only added
-    /// separately when the web map does not already contain it, so the previous behaviour is
-    /// preserved without duplicating a layer the web map already supplies.
+    /// Turns on every layer the web map arrived with, so the panel opens with all of its sources
+    /// ticked rather than with whichever ones the web map happened to be authored with switched off.
+    ///
+    /// Before the tree is built, deliberately. What the profile has saved about a layer is applied
+    /// while the tree is built and still wins; this only decides what a layer the profile has never
+    /// heard of comes in as.
     /// </summary>
-    private async Task EnsureMaterialViewLayerAsync(Map map)
+    private static void TurnOnWebMapLayers(Map map)
     {
-        var alreadyPresent = map.OperationalLayers.Any(l =>
-            (l.Name ?? string.Empty).Contains(MaterialViewLayerName, StringComparison.OrdinalIgnoreCase));
-        if (alreadyPresent) { return; }
-
-        try
-        {
-            var layer = new ArcGISMapImageLayer(new Uri(MaterialViewMapServerUrl)) { Name = MaterialViewLayerName, IsVisible = true };
-            map.OperationalLayers.Add(layer);
-            await layer.LoadAsync();
-
-            if (layer.LoadStatus == Esri.ArcGISRuntime.LoadStatus.Loaded)
-            {
-                foreach (var sublayer in layer.Sublayers) { sublayer.IsVisible = true; }
-            }
-            else if (layer.LoadError != null)
-            {
-                map.OperationalLayers.Remove(layer);
-                SetExtentMapStatus("Material_View_MA could not be added alongside the web map: " + layer.LoadError.Message);
-            }
-        }
-        catch (Exception ex)
-        {
-            SetExtentMapStatus("Material_View_MA could not be added alongside the web map: " + ex.GetType().Name + ": " + ex.Message);
-        }
+        foreach (var layer in map.OperationalLayers) { layer.IsVisible = true; }
     }
 
     /// <summary>

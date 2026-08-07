@@ -422,14 +422,12 @@
                         </DockPanel>
                     </Expander>
 
-                    <!-- Row 3: data sources and the strip map index, in that order, in one scroller.
-                         One scroller rather than one inside each expander: nested scrollers fight over
-                         the wheel, and the point of scrolling here is to get past a long data source
-                         list to the strip map settings underneath it, which only an outer scroller can
-                         do. Capped so the block can grow into free space but cannot take the pane. -->
-                    <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto"
-                                  HorizontalScrollBarVisibility="Disabled" MaxHeight="420">
-                    <StackPanel>
+                    <!-- Row 3: data sources and the strip map index, in that order.
+                         No scroller around the pair. There was one, and with the source list having
+                         since got a scroller of its own it meant two bars side by side on the same
+                         list, the outer one moving the strip map index as well. Each section scrolls
+                         its own contents now, and nothing scrolls both. -->
+                    <StackPanel Grid.Row="3">
                     <Expander Header="Data sources" Margin="0,2,0,0">
                         <StackPanel Margin="4,6,4,4">
                             <!-- The tiles scroll inside this rather than with the pane. Scrolling a long
@@ -558,6 +556,11 @@
                                 </Style.Triggers>
                             </Style>
                         </Expander.Style>
+                            <!-- Its own scroller, capped, so a long settings list stays inside this
+                                 section instead of pushing the pane past its bottom. Nothing here
+                                 scrolls the data sources above it. -->
+                            <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
                             <StackPanel Margin="4,6,4,4">
                                 <TextBlock Text="Lays a run of sheets along the proposed main, each covering what one viewport shows at the plot scale."
                                            TextWrapping="Wrap" Foreground="#555555" Margin="0,0,0,8"/>
@@ -626,9 +629,9 @@
 
                                 <TextBlock Text="{Binding StripMapSummary}" Foreground="#555555" TextWrapping="Wrap"/>
                             </StackPanel>
+                            </ScrollViewer>
                     </Expander>
                     </StackPanel>
-                    </ScrollViewer>
                 </Grid>
                 <Grid Grid.Column="2">
                     <!-- The map and the attribute table both take a share of what is left, so the

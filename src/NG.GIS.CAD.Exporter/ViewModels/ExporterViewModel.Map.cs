@@ -2,12 +2,12 @@
 namespace NG.GIS.CAD.Exporter.ViewModels;
 public sealed partial class ExporterViewModel
 {
-    private bool _showMapLegend = true;
+    private bool _showMapLegend;
 
     /// <summary>
-    /// Whether the layer tree shows each layer's symbols. On by default, because a legend is the
-    /// point of asking for one, but a layer drawn by category takes a row per class and on a large
-    /// portal item that adds up, so it can be turned off to get the compact list back.
+    /// Whether the layer tree shows each layer's symbols. Off to begin with: a layer drawn by category
+    /// takes a row per class, and on a portal item this size that turns the list of layers into a wall
+    /// of swatches before the user has asked for one. Ticking Legend brings them back.
     /// </summary>
     public bool ShowMapLegend
     {
