@@ -52,6 +52,10 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
             UpdatePageVisibility();
             ApplyDisplayModeToExtentPage();
 
+            // Once at the start, so the drag bars between the left pane's sections match the sections
+            // they sit between rather than all showing until the first one is opened or closed.
+            ApplyLeftPaneSectionHeights();
+
             // Startup work runs in page order so page 1 is never waiting behind a later page: the
             // NG_ODS query first, then the page 2 map, then what pages 3 and 4 need. Everything
             // still loads at startup, it is only sequenced.
@@ -59,7 +63,7 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
             await InitializeArcGisMapAsync();
             if (DataContext is ExporterViewModel viewModel)
             {
-                viewModel.LeavingExtentPageAsync = TryUploadManualProposedMainAsync;
+                viewModel.LeavingExtentPageAsync = LeaveExtentPageAsync;
                 await viewModel.PreloadLaterPagesAsync();
             }
         };
@@ -149,6 +153,7 @@ _extentRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds
             var topoLayer = new ArcGISTiledLayer(new Uri("https" + "://" + "services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer"));
             _mapView.Map = new Map(new Basemap(topoLayer));
             await LoadExtentWebMapAsync();
+            await LoadSymbolPalettesAsync();
             var easternMass = new Envelope(-8070663.082512335, 5012341.663847514, -7736704.610132514, 5342463.601958378, SpatialReferences.WebMercator);
             await _mapView.SetViewpointGeometryAsync(easternMass, 50);
             _locatorTask = await LocatorTask.CreateAsync(new Uri("https" + "://" + "geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer"));

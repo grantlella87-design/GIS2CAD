@@ -131,29 +131,30 @@
                     <!-- The mode buttons live in row 0, which nothing resizes or collapses, so they
                          are always reachable however the sections below are arranged.
 
-                         Rows 1 and 2 are sections that open and close on their own. Each is starred
-                         while open, so an open section takes the free space and two open sections
-                         share it, and Auto while closed, so a closed one is its header and nothing
-                         more. The switch is made in code rather than by a style trigger, because a
-                         style setter cannot be relied on for a row height once anything has written
-                         one directly.
+                         Each of the four sections then owns a row, with a drag bar between each pair.
+                         A section is starred while open, so an open section takes the free space and
+                         several open sections share it, and Auto while closed, so a closed one is its
+                         header and nothing more. The switch is made in code rather than by a style
+                         trigger, because a style setter cannot be relied on for a row height once
+                         anything has written one directly.
 
-                         Row 3 holds the data sources and the strip map index together rather than one
-                         each in its own row. Separate rows let them drift apart: each was Auto sized,
-                         so an expanded data source list grew without limit, squeezed the starred rows
-                         to their minimums and pushed the strip map index down against the bottom
-                         edge. As one block they keep their order and move together.
-
-                         The two drag splitters are gone. They set a row height directly, which is the
-                         one thing that stops a section from being able to close again: a height a
-                         splitter has written outranks anything the collapse would set. The sections
-                         give away and take back space by opening and closing now, which is what the
-                         splitters were for. -->
+                         Splitters were taken out once for exactly that reason: a height a splitter
+                         writes outranks anything a collapse would set, so a section that had been
+                         dragged could no longer close. They are back because the heights are wanted,
+                         and the collision is settled rather than avoided. The code that opens and
+                         closes a section writes the row height itself, so a collapse always wins over
+                         a drag; a dragged height is remembered and given back when the section is
+                         opened again. Each bar is hidden unless both of the sections it sits between
+                         are open, because dragging against a closed section can only produce a gap. -->
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition x:Name="ModeReadoutRow" Height="*" MinHeight="60"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition x:Name="MapLayersRow" Height="*" MinHeight="80"/>
-                        <RowDefinition Height="Auto" MinHeight="30"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition x:Name="DataSourcesRow" Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition x:Name="StripMapRow" Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <!-- Row 0: mode headers. Fixed. -->
@@ -256,8 +257,13 @@
                     </Grid>
                     </Expander>
 
-                    <!-- Row 2: map layers, in a section of its own on the same terms. -->
-                    <Expander Grid.Row="2" x:Name="MapLayersExpander" Header="Map layers" IsExpanded="True" Margin="0,2,0,0"
+                    <GridSplitter Grid.Row="2" x:Name="ModeReadoutSplitter" Height="5" HorizontalAlignment="Stretch"
+                                  ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                                  Background="#E4E4E4" ShowsPreview="True" Cursor="SizeNS" Margin="0,2,0,0"
+                                  ToolTip="Drag to give more room to the section above or below."/>
+
+                    <!-- Row 3: map layers, in a section of its own on the same terms. -->
+                    <Expander Grid.Row="3" x:Name="MapLayersExpander" Header="Map layers" IsExpanded="True" Margin="0,2,0,0"
                               VerticalContentAlignment="Stretch"
                               Expanded="LeftPaneSection_ExpansionChanged" Collapsed="LeftPaneSection_ExpansionChanged">
                         <DockPanel>
@@ -422,13 +428,18 @@
                         </DockPanel>
                     </Expander>
 
-                    <!-- Row 3: data sources and the strip map index, in that order.
-                         No scroller around the pair. There was one, and with the source list having
-                         since got a scroller of its own it meant two bars side by side on the same
-                         list, the outer one moving the strip map index as well. Each section scrolls
-                         its own contents now, and nothing scrolls both. -->
-                    <StackPanel Grid.Row="3">
-                    <Expander Header="Data sources" Margin="0,2,0,0">
+                    <GridSplitter Grid.Row="4" x:Name="MapLayersSplitter" Height="5" HorizontalAlignment="Stretch"
+                                  ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                                  Background="#E4E4E4" ShowsPreview="True" Cursor="SizeNS" Margin="0,2,0,0"
+                                  ToolTip="Drag to give more room to the section above or below."/>
+
+                    <!-- Row 5: data sources, in a row of its own so its height can be dragged. It shared
+                         a row with the strip map index before, which kept the two in order but meant
+                         neither could be sized against the other. Each section scrolls its own contents,
+                         so nothing here scrolls both. -->
+                    <Expander Grid.Row="5" x:Name="DataSourcesExpander" Header="Data sources" Margin="0,2,0,0"
+                              VerticalContentAlignment="Stretch"
+                              Expanded="LeftPaneSection_ExpansionChanged" Collapsed="LeftPaneSection_ExpansionChanged">
                         <StackPanel Margin="4,6,4,4">
                             <!-- The tiles scroll inside this rather than with the pane. Scrolling a long
                                  source list used to carry the whole section with it, taking the Data
@@ -538,14 +549,20 @@
                         </StackPanel>
                     </Expander>
 
-                    <!-- Directly below data sources, and now literally so: it is the next child of the
-                         same panel rather than a separate row that the grid was free to place
-                         elsewhere. Collapsed by default, so it takes only its header until opened.
+                    <GridSplitter Grid.Row="6" x:Name="DataSourcesSplitter" Height="5" HorizontalAlignment="Stretch"
+                                  ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                                  Background="#E4E4E4" ShowsPreview="True" Cursor="SizeNS" Margin="0,2,0,0"
+                                  ToolTip="Drag to give more room to the section above or below."/>
+
+                    <!-- The last row, directly below data sources. Collapsed by default, so it takes
+                         only its header until opened.
 
                          Hidden entirely for the visible map viewport method: the index lays a run of
                          sheets along a proposed main, and that method has no proposed main to lay them
-                         along. Collapsing a stacked child leaves no gap behind. -->
-                    <Expander Header="Strip map index" Margin="0,2,0,0">
+                         along. An Auto row with a collapsed child in it leaves no gap behind. -->
+                    <Expander Grid.Row="7" x:Name="StripMapExpander" Header="Strip map index" Margin="0,2,0,0"
+                              VerticalContentAlignment="Stretch"
+                              Expanded="LeftPaneSection_ExpansionChanged" Collapsed="LeftPaneSection_ExpansionChanged">
                         <Expander.Style>
                             <Style TargetType="Expander">
                                 <Setter Property="Visibility" Value="Visible"/>
@@ -631,7 +648,6 @@
                             </StackPanel>
                             </ScrollViewer>
                     </Expander>
-                    </StackPanel>
                 </Grid>
                 <Grid Grid.Column="2">
                     <!-- The map and the attribute table both take a share of what is left, so the
@@ -642,7 +658,12 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition x:Name="ExtentMapRow" Height="2*" MinHeight="160"/>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition x:Name="ProposedMainAttributeRow" Height="*" MinHeight="120"/>
+                        <!-- Starts given back rather than starred. There is nothing in the table until
+                             a segment is drawn, and a starred row with a minimum on it took a share of
+                             the page for a section that was not on screen, so the map opened shorter
+                             than it could be. The row is switched to a share the moment the first row
+                             appears. -->
+                        <RowDefinition x:Name="ProposedMainAttributeRow" Height="Auto" MinHeight="0"/>
                     </Grid.RowDefinitions>
                     <!-- LastChildFill off. On by default it hands the whole remaining width to the last
                          child whatever its Dock says, so the address controls were laid out from the
@@ -658,9 +679,94 @@
                             <Button Content="Reset MA" Click="ResetMapView_Click" Padding="8,2"/>
                         </StackPanel>
                     </DockPanel>
-                    <Border Grid.Row="1" BorderBrush="#A0A0A0" BorderThickness="1" Background="#F5F5F5">
-                        <ContentControl x:Name="ArcGisMapHost"/>
-                    </Border>
+                    <!-- The map and the tool panel share the map's row. The panel is a fixed width
+                         against the right edge of the map rather than a column of the page, so the
+                         attribute table underneath still runs the full width. -->
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" BorderBrush="#A0A0A0" BorderThickness="1" Background="#F5F5F5">
+                            <ContentControl x:Name="ArcGisMapHost"/>
+                        </Border>
+
+                        <!-- One section per layer, each collapsible. There is one layer today and there
+                             will be more, so a panel that showed every symbol of every layer at once
+                             would become a wall rather than a tool. -->
+                        <Border Grid.Column="1" Width="210" Margin="6,0,0,0" BorderBrush="#A0A0A0"
+                                BorderThickness="1" Background="#FCFCFC">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="Place from GIS" FontWeight="Bold" Margin="6,6,6,2"/>
+                                <TextBlock DockPanel.Dock="Top" Text="{Binding PalettePlacementStatus}"
+                                           Foreground="#555555" FontSize="11" TextWrapping="Wrap" Margin="6,0,6,6"/>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                    <ItemsControl ItemsSource="{Binding SymbolPalettes}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Expander Header="{Binding Name}" IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
+                                                          Margin="4,0,4,4">
+                                                    <StackPanel Margin="4,4,0,4">
+                                                        <TextBlock Text="{Binding Status}" Foreground="#A03030" FontSize="11"
+                                                                   TextWrapping="Wrap" Margin="0,0,0,4"
+                                                                   Visibility="{Binding HasStatus, Converter={StaticResource BoolToVisibility}}"/>
+                                                        <ItemsControl ItemsSource="{Binding Symbols}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <!-- A button, so a symbol is picked the way
+                                                                         anything else is picked, and the armed
+                                                                         one is outlined so the map's next click
+                                                                         is never a guess. -->
+                                                                    <Button Click="SymbolPaletteItem_Click" HorizontalContentAlignment="Left"
+                                                                            Padding="4,2" Margin="0,0,0,2" BorderThickness="1"
+                                                                            ToolTip="{Binding Label}">
+                                                                        <Button.Style>
+                                                                            <Style TargetType="Button">
+                                                                                <Setter Property="Background" Value="Transparent"/>
+                                                                                <Setter Property="BorderBrush" Value="Transparent"/>
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                                        <Setter Property="Background" Value="#EAF3FB"/>
+                                                                                        <Setter Property="BorderBrush" Value="#1E6FB8"/>
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </Button.Style>
+                                                                        <StackPanel Orientation="Horizontal">
+                                                                            <Image Source="{Binding Swatch}" Width="18" Height="18"
+                                                                                   Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                                            <!-- Drawn from the symbol's colour when the
+                                                                                 service described it without a picture,
+                                                                                 so every entry has something to look at. -->
+                                                                            <Rectangle Width="12" Height="12" Margin="0,0,6,0" VerticalAlignment="Center"
+                                                                                       Fill="{Binding Fallback}">
+                                                                                <Rectangle.Style>
+                                                                                    <Style TargetType="Rectangle">
+                                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                                        <Style.Triggers>
+                                                                                            <DataTrigger Binding="{Binding Swatch}" Value="{x:Null}">
+                                                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                                                            </DataTrigger>
+                                                                                        </Style.Triggers>
+                                                                                    </Style>
+                                                                                </Rectangle.Style>
+                                                                            </Rectangle>
+                                                                            <TextBlock Text="{Binding Label}" FontSize="11" VerticalAlignment="Center"
+                                                                                       TextTrimming="CharacterEllipsis"/>
+                                                                        </StackPanel>
+                                                                    </Button>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Expander>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
 
                     <!-- Under the map rather than in the left pane, because a row per segment and a
                          column per GIS field is a wide thing and the left pane is a column of narrow
