@@ -337,11 +337,27 @@ public partial class ExporterWindow
     private void ResizeProposedMainAttributeTableToRows()
     {
         if (ProposedMainAttributeRow == null || ProposedMainAttributeSection == null) { return; }
-        if (!ProposedMainAttributeSection.IsExpanded) { return; }
         if (DataContext is not ExporterViewModel vm) { return; }
 
+        // The empty case is settled whether the section is open or closed, because a closed section is
+        // not the same thing as no section at all: the row has to be given back either way.
+        if (vm.ProposedMainSegmentRows.Count > 0 && !ProposedMainAttributeSection.IsExpanded) { return; }
+
         var rows = vm.ProposedMainSegmentRows.Count;
-        if (rows == 0) { return; }
+        if (rows == 0)
+        {
+            // Nothing to show, so the row gives everything back rather than holding a starred share
+            // with a minimum on it. The section and the splitter above it are already hidden in this
+            // state, so the row was reserving 120 pixels of nothing and the map was that much shorter
+            // than it could be for the whole time before the first segment was drawn.
+            ProposedMainAttributeRow.Height = GridLength.Auto;
+            ProposedMainAttributeRow.MinHeight = 0;
+
+            // Forgotten as well, so the first table to appear opens at the height its rows want rather
+            // than at whatever share was last dragged for a different set of segments.
+            _proposedMainAttributeRowHeight = null;
+            return;
+        }
 
         // Header, the rows themselves, and the status line and tick box that sit with them. Rounded up
         // rather than measured, because a table that is a few pixels short of its last row is the
