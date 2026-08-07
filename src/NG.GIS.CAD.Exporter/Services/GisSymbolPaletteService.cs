@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
@@ -33,8 +33,15 @@ public sealed class GisPaletteSymbol
     public int B { get; init; } = 255;
     public int A { get; init; } = 255;
 
-    /// <summary>Point size the service draws this at, so a placed feature is the size GIS would draw.</summary>
-    public double Size { get; init; } = 10;
+    /// <summary>
+    /// The size the service draws this at, in points, exactly as it quotes it.
+    ///
+    /// A picture marker quotes width and height; a simple marker quotes one size for both. Kept as the
+    /// service gave them rather than scaled, so a placed feature is the size the layer would be drawn
+    /// at if it were on the map as a layer.
+    /// </summary>
+    public double Width { get; init; } = 10;
+    public double Height { get; init; } = 10;
 }
 
 /// <summary>One layer's worth of palette: what it is called, where it lives, and what it draws with.</summary>
@@ -192,7 +199,8 @@ public static class GisSymbolPaletteService
                 G = symbols[i].G,
                 B = symbols[i].B,
                 A = symbols[i].A,
-                Size = symbols[i].Size
+                Width = symbols[i].Width,
+                Height = symbols[i].Height
             };
         }
     }
@@ -219,10 +227,22 @@ public static class GisSymbolPaletteService
             if (values.Count >= 4) { a = values[3]; }
         }
 
-        var size = 10.0;
+        // Width and height where the service gives them, which a picture marker does, and the single
+        // size where it gives that instead, which a simple marker does.
+        var width = 10.0;
+        var height = 10.0;
         if (symbol.TryGetProperty("size", out var sizeElement) && sizeElement.TryGetDouble(out var parsedSize) && parsedSize > 0)
         {
-            size = parsedSize;
+            width = parsedSize;
+            height = parsedSize;
+        }
+        if (symbol.TryGetProperty("width", out var widthElement) && widthElement.TryGetDouble(out var parsedWidth) && parsedWidth > 0)
+        {
+            width = parsedWidth;
+        }
+        if (symbol.TryGetProperty("height", out var heightElement) && heightElement.TryGetDouble(out var parsedHeight) && parsedHeight > 0)
+        {
+            height = parsedHeight;
         }
 
         return new GisPaletteSymbol
@@ -234,7 +254,8 @@ public static class GisSymbolPaletteService
             G = g,
             B = b,
             A = a,
-            Size = size
+            Width = width,
+            Height = height
         };
     }
 

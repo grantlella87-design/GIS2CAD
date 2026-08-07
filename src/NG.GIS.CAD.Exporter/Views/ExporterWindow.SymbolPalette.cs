@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using Esri.ArcGISRuntime.Geometry;
+using RuntimeGeometry = Esri.ArcGISRuntime.Geometry.Geometry;
 using Esri.ArcGISRuntime.Symbology;
 using Esri.ArcGISRuntime.UI;
 using NG.GIS.CAD.Exporter.Auth;
@@ -31,15 +32,6 @@ public partial class ExporterWindow
     {
         ("Network Junction (P)", "https://gis.nationalgrid.com/arcgis/rest/services/MA/Material_View_MA/MapServer/52")
     };
-
-    /// <summary>
-    /// How much bigger a placed symbol is drawn than the size the service quotes.
-    ///
-    /// The service's size is what the layer draws at when a whole town is on screen, which at the
-    /// scale this page is worked at is a few pixels: too small to see what was placed, and too small
-    /// to aim at. This is a drawing size only; nothing about the feature that goes to GIS changes.
-    /// </summary>
-    private const double PlacedSymbolScale = 5.0;
 
     private GraphicsOverlay? _placedFeatureOverlay;
 
@@ -181,13 +173,119 @@ public partial class ExporterWindow
 
         EnsurePlacedFeatureOverlay();
 
-        _placedPaletteFeatures.Add(new PlacedPaletteFeature(location, symbol));
-        _placedFeatureOverlay?.Graphics.Add(new Graphic(location, BuildPlacedSymbol(symbol)));
+        // Pulled onto a proposed main when it lands close enough to one, and turned to lie along it.
+        // A valve on a main is on the main, not beside it, and the same tolerance that joins segment
+        // ends to each other decides what counts as close enough here.
+        var snapped = SnapPlacementToProposedPipeline(location, vm.ProposedMainSnapToleranceFeet, out var angle);
 
-        vm.Status = symbol.Label + " placed. It is added to " + symbol.LayerUrl.Split('/')[^1]
-            + " when you move on to page 3.";
+        _placedPaletteFeatures.Add(new PlacedPaletteFeature(snapped.Location, symbol));
+        _placedFeatureOverlay?.Graphics.Add(new Graphic(snapped.Location, BuildPlacedSymbol(symbol, angle)));
+
+        vm.Status = symbol.Label + (snapped.Snapped ? " snapped onto the proposed main." : " placed.")
+            + " It is added to " + symbol.LayerUrl.Split('/')[^1] + " when you move on to page 3.";
         return true;
     }
+
+    /// <summary>
+    /// Moves a placement onto the nearest proposed pipeline segment when it lands within the snap
+    /// tolerance, and works out the direction of the segment where it landed.
+    ///
+    /// The angle is the bearing of the piece of line the point came to rest on, not of the segment as a
+    /// whole: a main that turns a corner should carry a valve set to the run the valve is actually on.
+    ///
+    /// Returns the original point and no angle when nothing is near enough, so a placement away from
+    /// the main is left exactly where it was put.
+    /// </summary>
+    private (MapPoint Location, bool Snapped) SnapPlacementToProposedPipeline(
+        MapPoint location, double toleranceFeet, out double angleDegrees)
+    {
+        angleDegrees = 0;
+
+        if (toleranceFeet <= 0) { return (location, false); }
+        if (_manualProposedPipelineSegmentGeometries.Count == 0) { return (location, false); }
+
+        var toleranceMetres = toleranceFeet * MetresPerFoot;
+
+        MapPoint? best = null;
+        RuntimeGeometry? bestGeometry = null;
+        var bestDistance = double.MaxValue;
+
+        foreach (var geometry in _manualProposedPipelineSegmentGeometries)
+        {
+            if (geometry == null || geometry.IsEmpty) { continue; }
+
+            try
+            {
+                var nearest = GeometryEngine.NearestCoordinate(geometry, location);
+                if (nearest?.Coordinate == null) { continue; }
+                if (nearest.Distance >= bestDistance) { continue; }
+
+                bestDistance = nearest.Distance;
+                best = nearest.Coordinate;
+                bestGeometry = geometry;
+            }
+            catch
+            {
+                // A segment that cannot be measured against is not the one being snapped to. The rest
+                // still can be.
+            }
+        }
+
+        if (best == null || bestGeometry == null || bestDistance > toleranceMetres) { return (location, false); }
+
+        angleDegrees = MeasureProposedPipelineAngleAt(bestGeometry, best);
+        return (best, true);
+    }
+
+    /// <summary>
+    /// The bearing of the piece of a line nearest a point, in degrees clockwise from north, which is
+    /// how a marker's angle is measured.
+    ///
+    /// Worked out from the two vertices the point lies between rather than from the ends of the whole
+    /// line, so a main with a bend gives the direction of the run the point is on rather than the
+    /// average of the two.
+    /// </summary>
+    private static double MeasureProposedPipelineAngleAt(RuntimeGeometry geometry, MapPoint at)
+    {
+        if (geometry is not Multipart multipart) { return 0; }
+
+        MapPoint? from = null;
+        MapPoint? to = null;
+        var bestDistance = double.MaxValue;
+
+        foreach (var part in multipart.Parts)
+        {
+            foreach (var segment in part)
+            {
+                if (segment?.StartPoint == null || segment.EndPoint == null) { continue; }
+
+                // Distance from the point to the middle of this piece is enough to pick the piece: the
+                // point is already known to be on the line, so the nearest middle is the piece it is on.
+                var midX = (segment.StartPoint.X + segment.EndPoint.X) / 2;
+                var midY = (segment.StartPoint.Y + segment.EndPoint.Y) / 2;
+                var dx = midX - at.X;
+                var dy = midY - at.Y;
+                var distance = (dx * dx) + (dy * dy);
+
+                if (distance >= bestDistance) { continue; }
+
+                bestDistance = distance;
+                from = segment.StartPoint;
+                to = segment.EndPoint;
+            }
+        }
+
+        if (from == null || to == null) { return 0; }
+
+        // Clockwise from north, which is what a marker angle means. Atan2 of easting over northing gives
+        // that directly, where the usual atan2 of northing over easting would give anticlockwise from
+        // east and put the symbol ninety degrees out.
+        var angle = Math.Atan2(to.X - from.X, to.Y - from.Y) * 180.0 / Math.PI;
+        return angle < 0 ? angle + 360 : angle;
+    }
+
+    /// <summary>Metres in a foot, for turning the snap tolerance into the units the geometry is in.</summary>
+    private const double MetresPerFoot = 0.3048;
 
     private void EnsurePlacedFeatureOverlay()
     {
@@ -202,17 +300,20 @@ public partial class ExporterWindow
     /// on the map matches what GIS will draw once it is up there, and a plain marker in its colour
     /// where it did not.
     /// </summary>
-    private static Symbol BuildPlacedSymbol(SymbolPaletteItemViewModel item)
+    private static Symbol BuildPlacedSymbol(SymbolPaletteItemViewModel item, double angleDegrees)
     {
-        var size = Math.Max(6, item.Symbol.Size) * PlacedSymbolScale;
-
         if (item.Symbol.ImageData is { Length: > 0 } data)
         {
             try
             {
-                var picture = new PictureMarkerSymbol(new RuntimeImage(data));
-                picture.Width = size;
-                picture.Height = size;
+                // The service's own width and height, unscaled. This is the size the layer draws at, so
+                // a placed feature is the size the same feature would be if the layer were on the map.
+                var picture = new PictureMarkerSymbol(new RuntimeImage(data))
+                {
+                    Width = item.Symbol.Width,
+                    Height = item.Symbol.Height,
+                    Angle = angleDegrees
+                };
                 return picture;
             }
             catch (Exception)
@@ -225,7 +326,10 @@ public partial class ExporterWindow
             SimpleMarkerSymbolStyle.Circle,
             System.Drawing.Color.FromArgb(
                 ClampByte(item.Symbol.A), ClampByte(item.Symbol.R), ClampByte(item.Symbol.G), ClampByte(item.Symbol.B)),
-            size);
+            item.Symbol.Width)
+        {
+            Angle = angleDegrees
+        };
     }
 
     /// <summary>
