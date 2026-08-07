@@ -16,6 +16,14 @@ namespace NG.GIS.CAD.Exporter.ViewModels;
 public sealed class ProposedMainSegmentAttributesViewModel : ObservableObject
 {
     private readonly Dictionary<string, string> _values = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// One list per field, held so the same object comes back on every read. See ChoicesFor: a
+    /// dropdown handed a new list mid-commit throws the value being committed away.
+    /// </summary>
+    private readonly Dictionary<string, IReadOnlyList<ProposedMainCodedValue>> _choices =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private readonly ProposedMainLayerSchema _schema;
 
     public ProposedMainSegmentAttributesViewModel(int segmentNumber, ProposedMainLayerSchema schema)
@@ -90,12 +98,40 @@ public sealed class ProposedMainSegmentAttributesViewModel : ObservableObject
             _values[field.Name] = string.Empty;
         }
 
+        // Every list except the subtype's own is thrown away, so the next read rebuilds it against the
+        // subtype now chosen. The subtype's list is kept: it is the same list of subtypes whatever is
+        // picked from it, and replacing it is what used to lose the pick being made.
+        foreach (var name in _choices.Keys.Where(k => !IsSubtypeField(k)).ToList())
+        {
+            _choices.Remove(name);
+        }
+
         // The lists themselves, so every dropdown on the row refills from the new subtype.
         RaisePropertyChanged(nameof(Choices));
     }
 
-    /// <summary>The values one field may hold on this row, for a cell to bind its list to.</summary>
+    /// <summary>
+    /// The values one field may hold on this row, for a cell to bind its list to.
+    ///
+    /// The same list object comes back every time until the subtype changes, and that is the whole
+    /// point of the cache rather than a saving. Choosing a subtype announces that every list on the row
+    /// has changed, and a dropdown told its list has changed swaps it out; a dropdown that swaps its
+    /// list out in the middle of committing a value drops the value on the way past and writes the
+    /// blank back to the row. Asset Group is the subtype field, so it did that to itself: pick a value,
+    /// and it announced the change that threw the value away. Handing back the identical list means
+    /// there is nothing to swap and nothing to drop.
+    /// </summary>
     public IReadOnlyList<ProposedMainCodedValue> ChoicesFor(string fieldName)
+    {
+        var name = fieldName ?? string.Empty;
+        if (_choices.TryGetValue(name, out var cached)) { return cached; }
+
+        var built = BuildChoicesFor(name);
+        _choices[name] = built;
+        return built;
+    }
+
+    private IReadOnlyList<ProposedMainCodedValue> BuildChoicesFor(string fieldName)
     {
         var field = _schema.Fields.FirstOrDefault(f =>
             string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase));

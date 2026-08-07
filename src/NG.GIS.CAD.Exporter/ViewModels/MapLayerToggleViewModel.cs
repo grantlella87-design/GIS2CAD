@@ -1,4 +1,4 @@
-using System.Windows.Media;
+﻿using System.Windows.Media;
 
 namespace NG.GIS.CAD.Exporter.ViewModels;
 
@@ -10,7 +10,7 @@ namespace NG.GIS.CAD.Exporter.ViewModels;
 public sealed class MapLayerToggleViewModel : ObservableObject
 {
     private bool _isVisible;
-    private bool _isExpanded = true;
+    private bool _isExpanded;
 
     public MapLayerToggleViewModel(string path, string name, bool isVisible, string? serviceUrl, bool isLeaf)
     {
@@ -109,8 +109,9 @@ public sealed class MapLayerToggleViewModel : ObservableObject
     public bool IsEffectivelyVisible => IsVisible && (Parent == null || Parent.IsEffectivelyVisible);
 
     /// <summary>
-    /// Whether the group is expanded in the tree. Groups start expanded so the list reads the same
-    /// way it did before it became collapsible.
+    /// Whether the group is expanded in the tree. Groups start closed: a portal item with this many
+    /// services opens as hundreds of rows otherwise, and the first thing anyone did was collapse them
+    /// all. Expand all is a button away, and what is opened from there is remembered in the profile.
     /// </summary>
     public bool IsExpanded
     {
