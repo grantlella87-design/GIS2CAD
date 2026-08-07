@@ -158,7 +158,7 @@
                     </Grid.RowDefinitions>
 
                     <!-- Row 0: mode headers. Fixed. -->
-                    <Grid Grid.Row="0">
+                    <Grid Grid.Row="0" x:Name="LeftPaneModeHeaders">
                         <StackPanel x:Name="WorkOrderModeHeader">
                             <TextBlock Text="Work Order driven export" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
                             <Button Content="Refresh Work Order Geometry + Buffer" Click="RefreshWorkOrderGeometry_Click" Padding="8" Margin="0,0,0,10"/>
@@ -700,6 +700,66 @@
                                 <TextBlock DockPanel.Dock="Top" Text="Place from GIS" FontWeight="Bold" Margin="6,6,6,2"/>
                                 <TextBlock DockPanel.Dock="Top" Text="{Binding PalettePlacementStatus}"
                                            Foreground="#555555" FontSize="11" TextWrapping="Wrap" Margin="6,0,6,6"/>
+
+                                <!-- What has been placed and not yet sent, docked to the bottom so the
+                                     palette above it keeps the room. Only there when there is something
+                                     in it: an empty list of things to move or remove is a heading with
+                                     nothing under it.
+
+                                     Everything in here is still on this side of GIS. Once the features
+                                     have gone up the list is emptied, because a Remove button beside
+                                     something already sent would be offering to undo what it cannot. -->
+                                <Border DockPanel.Dock="Bottom" BorderBrush="#DDDDDD" BorderThickness="0,1,0,0"
+                                        Padding="6,4,6,6" MaxHeight="200"
+                                        Visibility="{Binding HasPlacedFeatures, Converter={StaticResource BoolToVisibility}}">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Top" Text="Placed, not yet sent" FontWeight="Bold"
+                                                   FontSize="11" Margin="0,0,0,4"/>
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                            <ItemsControl ItemsSource="{Binding PlacedFeatures}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Margin="0,0,0,3" Padding="3,2" CornerRadius="2" BorderThickness="1">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Background" Value="Transparent"/>
+                                                                    <Setter Property="BorderBrush" Value="Transparent"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsMoving}" Value="True">
+                                                                            <Setter Property="Background" Value="#EAF3FB"/>
+                                                                            <Setter Property="BorderBrush" Value="#1E6FB8"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <StackPanel Grid.Column="0">
+                                                                    <TextBlock Text="{Binding Label}" FontSize="11"
+                                                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Label}"/>
+                                                                    <TextBlock Text="{Binding Position}" Style="{StaticResource ListRowSubText}"
+                                                                               TextTrimming="CharacterEllipsis"/>
+                                                                </StackPanel>
+                                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <Button Content="Move" Padding="5,0" FontSize="10" Margin="4,0,0,0"
+                                                                            Click="MovePlacedFeature_Click"
+                                                                            ToolTip="Then click the map to put it somewhere else."/>
+                                                                    <Button Content="Remove" Padding="5,0" FontSize="10" Margin="4,0,0,0"
+                                                                            Click="RemovePlacedFeature_Click"
+                                                                            ToolTip="Take it off the map. It has not been sent to GIS yet."/>
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </DockPanel>
+                                </Border>
+
                                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                     <ItemsControl ItemsSource="{Binding SymbolPalettes}">
                                         <ItemsControl.ItemTemplate>
