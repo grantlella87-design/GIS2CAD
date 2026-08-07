@@ -1,9 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using Esri.ArcGISRuntime.Geometry;
@@ -479,25 +480,7 @@ public partial class ExporterWindow
             // a free text box and the values GIS would accept were nowhere on screen.
             if (FieldCanOfferChoices(schema, field))
             {
-                var column = new DataGridComboBoxColumn
-                {
-                    Header = header,
-                    SelectedValuePath = nameof(ProposedMainCodedValue.Code),
-                    DisplayMemberPath = nameof(ProposedMainCodedValue.Name),
-                    SelectedValueBinding = new Binding(path) { Mode = BindingMode.TwoWay },
-                    MinWidth = 140
-                };
-
-                // The list comes from the row rather than the column, because two rows of different
-                // subtypes are allowed different values in the same column. A style setter is how a
-                // per row ItemsSource is reached on this kind of column.
-                var choices = new Binding("Choices[" + field.Name + "]");
-                var style = new Style(typeof(ComboBox));
-                style.Setters.Add(new Setter(ItemsControl.ItemsSourceProperty, choices));
-                column.ElementStyle = style;
-                column.EditingElementStyle = style;
-
-                ProposedMainAttributeGrid.Columns.Add(column);
+                ProposedMainAttributeGrid.Columns.Add(BuildProposedMainChoiceColumn(field, header));
                 continue;
             }
 
@@ -520,5 +503,58 @@ public partial class ExporterWindow
             IsReadOnly = true,
             MinWidth = 160
         });
+    }
+
+    /// <summary>
+    /// A column of dropdowns, one list per row, built as a template column with a live ComboBox rather
+    /// than as a DataGridComboBoxColumn.
+    ///
+    /// The combo box column could not be made to keep a value. It owns the SelectedValue binding itself
+    /// and applies it to the cell's control, while the list has to arrive separately through a style,
+    /// and the two do not arrive in that order: the control is told what to select before it has been
+    /// told what it can select from, finds the value in a list that is still empty, selects nothing, and
+    /// writes that nothing back through the two way binding. Asset Group showed it worst because it is
+    /// the subtype field and every other list on the row is rebuilt the moment it changes.
+    ///
+    /// A template column has no such handover. Both bindings live on the same control in the same
+    /// template and are applied together, and with the same template for showing and for editing there
+    /// is no separate edit mode to commit out of: the pick is written to the row as it is made.
+    /// </summary>
+    private static DataGridTemplateColumn BuildProposedMainChoiceColumn(ProposedMainField field, string header)
+    {
+        var template = BuildProposedMainChoiceTemplate(field.Name);
+
+        return new DataGridTemplateColumn
+        {
+            Header = header,
+            CellTemplate = template,
+            CellEditingTemplate = template,
+            MinWidth = 140
+        };
+    }
+
+    private static DataTemplate BuildProposedMainChoiceTemplate(string fieldName)
+    {
+        var combo = new FrameworkElementFactory(typeof(ComboBox));
+
+        combo.SetBinding(ItemsControl.ItemsSourceProperty, new Binding("Choices[" + fieldName + "]"));
+        combo.SetValue(Selector.SelectedValuePathProperty, nameof(ProposedMainCodedValue.Code));
+        combo.SetValue(ItemsControl.DisplayMemberPathProperty, nameof(ProposedMainCodedValue.Name));
+
+        // Written as it is picked. Waiting for the cell to lose focus is what gave the value somewhere
+        // to be lost between being chosen and being kept.
+        combo.SetBinding(Selector.SelectedValueProperty, new Binding("[" + fieldName + "]")
+        {
+            Mode = BindingMode.TwoWay,
+            UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
+        });
+
+        combo.SetValue(FrameworkElement.MarginProperty, new Thickness(1));
+        combo.SetValue(Control.BorderThicknessProperty, new Thickness(0));
+        combo.SetValue(Control.BackgroundProperty, System.Windows.Media.Brushes.Transparent);
+
+        var template = new DataTemplate { VisualTree = combo };
+        template.Seal();
+        return template;
     }
 }

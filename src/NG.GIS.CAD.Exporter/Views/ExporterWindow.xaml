@@ -127,7 +127,7 @@
                     <ColumnDefinition Width="10"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <Grid Grid.Column="0">
+                <Grid Grid.Column="0" x:Name="LeftPaneSections" SizeChanged="LeftPaneSections_SizeChanged">
                     <!-- The mode buttons live in row 0, which nothing resizes or collapses, so they
                          are always reachable however the sections below are arranged.
 
@@ -446,7 +446,7 @@
                                  sources header off the top of the pane, so there was no way to close the
                                  section from the bottom of its own list. The header now stays put, and
                                  so do the boxes for adding another source underneath. -->
-                            <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto"
+                            <ScrollViewer VerticalScrollBarVisibility="Auto"
                                           HorizontalScrollBarVisibility="Disabled">
                             <ItemsControl ItemsSource="{Binding MapDataSources}" Margin="0,0,0,6">
                                 <ItemsControl.ItemTemplate>
@@ -576,7 +576,7 @@
                             <!-- Its own scroller, capped, so a long settings list stays inside this
                                  section instead of pushing the pane past its bottom. Nothing here
                                  scrolls the data sources above it. -->
-                            <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto"
+                            <ScrollViewer VerticalScrollBarVisibility="Auto"
                                           HorizontalScrollBarVisibility="Disabled">
                             <StackPanel Margin="4,6,4,4">
                                 <TextBlock Text="Lays a run of sheets along the proposed main, each covering what one viewport shows at the plot scale."
