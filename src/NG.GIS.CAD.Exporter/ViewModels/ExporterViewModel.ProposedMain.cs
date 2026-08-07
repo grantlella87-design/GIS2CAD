@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using NG.GIS.CAD.Exporter.Services;
 
 namespace NG.GIS.CAD.Exporter.ViewModels;
@@ -80,6 +80,13 @@ public sealed partial class ExporterViewModel
     /// <summary>One row per drawn segment, because each becomes its own feature in GIS.</summary>
     public ObservableCollection<ProposedMainSegmentAttributesViewModel> ProposedMainSegmentRows { get; } = new();
 
+    /// <summary>
+    /// Raised when anything in the table changes, so the view can act on what the values now say. The
+    /// elbows on a steel main are the reason it exists: they follow from the material, and the material
+    /// is typed here.
+    /// </summary>
+    public event Action? ProposedMainValuesChanged;
+
     /// <summary>Raised when the columns change, so the view can rebuild them.</summary>
     public event Action? ProposedMainFieldsChanged;
 
@@ -152,11 +159,78 @@ public sealed partial class ExporterViewModel
         {
             var row = new ProposedMainSegmentAttributesViewModel(ProposedMainSegmentRows.Count + 1, _proposedMainSchema);
             if (ProposedMainSegmentRows.Count > 0) { row.CopyValuesFrom(ProposedMainSegmentRows[^1]); }
-            row.ValuesChanged += _ => RaisePropertyChanged(nameof(MissingRequiredProposedMainAttributes));
+            row.ValuesChanged += _ =>
+            {
+                RaisePropertyChanged(nameof(MissingRequiredProposedMainAttributes));
+
+                // What a segment is made of decides whether its bends get elbows, so a change to any
+                // value is a reason for the view to look at the drawing again.
+                ProposedMainValuesChanged?.Invoke();
+            };
             ProposedMainSegmentRows.Add(row);
         }
 
+        FillProposedMainWorkOrderField();
         RaiseProposedMainTableChanged();
+        ProposedMainValuesChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Puts the work order chosen on page 1 into the layer's work order field on every row.
+    ///
+    /// It is already known and it is the same for every segment of the job, so asking for it once per
+    /// row was asking somebody to copy something the application had in its hand. Typed over freely:
+    /// this fills a blank and corrects a row still holding a different work order, and leaves anything
+    /// else alone, so a deliberate exception survives.
+    /// </summary>
+    public void FillProposedMainWorkOrderField()
+    {
+        var workOrder = (WorkOrderId ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(workOrder)) { return; }
+
+        var field = FindProposedMainWorkOrderField();
+        if (field == null) { return; }
+
+        foreach (var row in ProposedMainSegmentRows)
+        {
+            var held = row[field.Name];
+            if (string.IsNullOrWhiteSpace(held) || IsAnotherWorkOrder(held, workOrder))
+            {
+                row[field.Name] = workOrder;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether what a row holds looks like a work order number that is no longer the one being worked
+    /// on, rather than something a user put there on purpose. Digits only, so a note is left alone.
+    /// </summary>
+    private static bool IsAnotherWorkOrder(string held, string workOrder) =>
+        !string.Equals(held, workOrder, StringComparison.OrdinalIgnoreCase)
+        && held.Trim().All(char.IsDigit);
+
+    /// <summary>
+    /// The layer's work order field, found by name rather than written down here, because which field
+    /// it is belongs to GIS. Matched on the name and the alias with the spaces and underscores taken
+    /// out, so WORKORDERID, wo_num and "Work Order ID" all answer to the same test.
+    /// </summary>
+    private ProposedMainField? FindProposedMainWorkOrderField()
+    {
+        foreach (var field in _proposedMainSchema.Fields)
+        {
+            if (LooksLikeWorkOrderField(field.Name) || LooksLikeWorkOrderField(field.Alias)) { return field; }
+        }
+
+        return null;
+    }
+
+    private static bool LooksLikeWorkOrderField(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) { return false; }
+
+        var flattened = new string(name.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+        return flattened is "WORKORDERID" or "WORKORDERNUMBER" or "WORKORDERNUM" or "WORKORDER"
+            or "WONUM" or "WOID" or "WONUMBER";
     }
 
     private void RaiseProposedMainTableChanged()

@@ -227,6 +227,9 @@ public partial class ExporterWindow
         if (DataContext is not ExporterViewModel vm) { return; }
         if (sender is not FrameworkElement element || element.DataContext is not PlacedFeatureViewModel row) { return; }
 
+        // Picked out and brought into view before it is armed, so what the next click is about to move
+        // is on screen rather than somewhere off the edge of it.
+        FocusPlacedFeature(row);
         vm.MovingPlacedFeature = ReferenceEquals(vm.MovingPlacedFeature, row) ? null : row;
     }
 
@@ -240,6 +243,10 @@ public partial class ExporterWindow
     {
         if (DataContext is not ExporterViewModel vm) { return; }
         if (sender is not FrameworkElement element || element.DataContext is not PlacedFeatureViewModel row) { return; }
+
+        // Brought into view first. Something disappearing off the edge of the map is indistinguishable
+        // from nothing happening, and this is the one action that cannot be looked at afterwards.
+        FocusPlacedFeature(row);
 
         if (_placedPaletteFeatures.TryGetValue(row, out var placed))
         {
