@@ -147,6 +147,52 @@ public sealed class ProposedMainSegmentAttributesViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Whether the asset type on this row mentions the given word.
+    ///
+    /// The asset type and not the whole row. On Pipeline Line (P) the word steel appears in the asset
+    /// type's coded values -- Bare Steel, Coated Steel, Reconditioned Steel, Galvanized Steel -- and
+    /// nowhere else that means anything; asking every field instead would take the word out of a
+    /// comment or a status and treat a note as a material.
+    ///
+    /// The field is found by name rather than written down, with the spaces and underscores taken out,
+    /// so ASSETTYPE and "Asset type" both answer to it.
+    /// </summary>
+    public bool AssetTypeMentions(string word)
+    {
+        if (string.IsNullOrWhiteSpace(word)) { return false; }
+
+        foreach (var field in _schema.Fields)
+        {
+            if (!IsAssetTypeField(field.Name) && !IsAssetTypeField(field.Alias)) { continue; }
+            return ValueMentions(field.Name, word);
+        }
+
+        return false;
+    }
+
+    private static bool IsAssetTypeField(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) { return false; }
+        return new string(name.Where(char.IsLetterOrDigit).ToArray()).Equals("ASSETTYPE", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Whether one field's value, or the name of the coded value it stands for, mentions a word.</summary>
+    private bool ValueMentions(string fieldName, string word)
+    {
+        var held = this[fieldName];
+        if (string.IsNullOrWhiteSpace(held)) { return false; }
+        if (held.Contains(word, StringComparison.OrdinalIgnoreCase)) { return true; }
+
+        foreach (var choice in ChoicesFor(fieldName))
+        {
+            if (!string.Equals(choice.Code, held, StringComparison.OrdinalIgnoreCase)) { continue; }
+            return choice.Name.Contains(word, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Whether anything this row holds mentions the given word, by its value or by the name of the
     /// coded value it stands for.
     ///

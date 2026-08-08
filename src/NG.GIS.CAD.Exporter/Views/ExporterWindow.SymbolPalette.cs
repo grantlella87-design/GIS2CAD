@@ -46,7 +46,7 @@ public partial class ExporterWindow
     private bool _symbolPalettesLoaded;
 
     /// <summary>The graphic is kept with the rest so a move can redraw it and a removal can take it off.</summary>
-    private sealed record PlacedPaletteFeature(MapPoint Location, SymbolPaletteItemViewModel Symbol, Graphic Graphic);
+    private sealed record PlacedPaletteFeature(MapPoint Location, SymbolPaletteItemViewModel Symbol, Graphic Graphic, double AngleDegrees);
 
     /// <summary>
     /// Reads each layer's symbols into the panel. Once per session: a renderer does not change while
@@ -76,7 +76,7 @@ public partial class ExporterWindow
                 foreach (var symbol in layer.Symbols)
                 {
                     section.Symbols.Add(new SymbolPaletteItemViewModel(
-                        symbol, layer.LayerUrl, layer.DrawnByFieldName, CreateSwatch(symbol)));
+                        symbol, layer.LayerUrl, layer.DrawnByFieldName, CreateSwatch(symbol), layer.FieldNames));
                 }
 
                 if (section.Symbols.Count == 0)
@@ -186,7 +186,7 @@ public partial class ExporterWindow
         _placedFeatureOverlay?.Graphics.Add(graphic);
 
         var row = new PlacedFeatureViewModel(symbol) { Position = DescribePlacement(snapped.Location) };
-        _placedPaletteFeatures[row] = new PlacedPaletteFeature(snapped.Location, symbol, graphic);
+        _placedPaletteFeatures[row] = new PlacedPaletteFeature(snapped.Location, symbol, graphic, angle);
         vm.PlacedFeatures.Add(row);
         vm.RaisePlacedFeaturesChanged();
 
@@ -213,7 +213,7 @@ public partial class ExporterWindow
 
         placed.Graphic.Geometry = snapped.Location;
         placed.Graphic.Symbol = BuildPlacedSymbol(placed.Symbol, angle);
-        _placedPaletteFeatures[row] = placed with { Location = snapped.Location };
+        _placedPaletteFeatures[row] = placed with { Location = snapped.Location, AngleDegrees = angle };
 
         row.Position = DescribePlacement(snapped.Location);
         vm.MovingPlacedFeature = null;
@@ -266,6 +266,49 @@ public partial class ExporterWindow
     /// latitude to five places, which is about a metre, because a list of valves all called Valve needs
     /// something to tell them by.
     /// </summary>
+    /// <summary>
+    /// What a placed feature carries into GIS.
+    ///
+    /// The class it was picked as, so the service draws it the way the palette did. Then the two things
+    /// the application already knows and the layer has somewhere to put: the way it is turned, which
+    /// matters for a fitting on a main, and the work order the job belongs to.
+    ///
+    /// Each is written only when the layer has that field. Network Junction has both; another layer
+    /// added to this panel later may have neither, and a field a layer does not have is an edit the
+    /// service refuses outright rather than ignores.
+    /// </summary>
+    private Dictionary<string, string> BuildPlacedFeatureAttributes(PlacedPaletteFeature placed)
+    {
+        var attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        if (!string.IsNullOrWhiteSpace(placed.Symbol.DrawnByFieldName)
+            && !string.IsNullOrWhiteSpace(placed.Symbol.Symbol.Value))
+        {
+            attributes[placed.Symbol.DrawnByFieldName] = placed.Symbol.Symbol.Value;
+        }
+
+        var rotation = placed.Symbol.FieldNames.FirstOrDefault(f =>
+            f.Equals("rotation", StringComparison.OrdinalIgnoreCase));
+        if (rotation != null)
+        {
+            // Whole degrees, because the field is one. Rounded rather than truncated, so a fitting at
+            // 44.7 degrees is recorded as 45 rather than 44.
+            var degrees = (int)Math.Round(placed.AngleDegrees, MidpointRounding.AwayFromZero) % 360;
+            attributes[rotation] = (degrees < 0 ? degrees + 360 : degrees)
+                .ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        var workOrderField = placed.Symbol.FieldNames.FirstOrDefault(f =>
+            f.Equals("workorderid", StringComparison.OrdinalIgnoreCase));
+        if (workOrderField != null && DataContext is ExporterViewModel vm)
+        {
+            var workOrder = (vm.WorkOrderId ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(workOrder)) { attributes[workOrderField] = workOrder; }
+        }
+
+        return attributes;
+    }
+
     private static string DescribePlacement(MapPoint location)
     {
         try
@@ -452,11 +495,7 @@ public partial class ExporterWindow
             var wgs84 = GeometryEngine.Project(placed.Location, SpatialReferences.Wgs84) as MapPoint;
             if (wgs84 == null) { failures.Add(placed.Symbol.Label + ": its position could not be projected."); continue; }
 
-            var attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (!string.IsNullOrWhiteSpace(placed.Symbol.DrawnByFieldName) && !string.IsNullOrWhiteSpace(placed.Symbol.Symbol.Value))
-            {
-                attributes[placed.Symbol.DrawnByFieldName] = placed.Symbol.Symbol.Value;
-            }
+            var attributes = BuildPlacedFeatureAttributes(placed);
 
             try
             {
