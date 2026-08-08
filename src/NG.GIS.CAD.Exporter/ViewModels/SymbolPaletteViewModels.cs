@@ -11,13 +11,25 @@ public sealed class SymbolPaletteItemViewModel : ObservableObject
 {
     private bool _isSelected;
 
-    public SymbolPaletteItemViewModel(GisPaletteSymbol symbol, string layerUrl, string drawnByFieldName, ImageSource? swatch)
+    public SymbolPaletteItemViewModel(
+        GisPaletteSymbol symbol,
+        string layerUrl,
+        string drawnByFieldName,
+        ImageSource? swatch,
+        IReadOnlyCollection<string>? fieldNames = null)
     {
         Symbol = symbol;
         LayerUrl = layerUrl;
         DrawnByFieldName = drawnByFieldName;
         Swatch = swatch;
+        FieldNames = new HashSet<string>(fieldNames ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// The fields the layer this came from actually has, so a placed feature is given the ones worth
+    /// filling in and never one the layer does not have, which the service refuses outright.
+    /// </summary>
+    public HashSet<string> FieldNames { get; }
 
     public GisPaletteSymbol Symbol { get; }
 

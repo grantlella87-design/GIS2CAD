@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -57,7 +57,7 @@ public partial class ExporterWindow
         for (var i = 0; i < _manualProposedPipelineSegmentGeometries.Count; i++)
         {
             if (i >= rows.Count) { break; }
-            if (!rows[i].AnyValueMentions(SteelMaterialWord)) { continue; }
+            if (!rows[i].AssetTypeMentions(SteelMaterialWord)) { continue; }
 
             foreach (var bend in FindBends(_manualProposedPipelineSegmentGeometries[i]))
             {
@@ -153,7 +153,7 @@ public partial class ExporterWindow
             Position = DescribePlacement(at)
         };
 
-        _placedPaletteFeatures[row] = new PlacedPaletteFeature(at, symbol, graphic);
+        _placedPaletteFeatures[row] = new PlacedPaletteFeature(at, symbol, graphic, angleDegrees);
         vm.PlacedFeatures.Add(row);
     }
 
