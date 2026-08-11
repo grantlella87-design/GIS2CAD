@@ -59,6 +59,14 @@ public sealed class GisSymbolLayer
     public string DrawnByFieldName { get; init; } = string.Empty;
 
     public IReadOnlyList<GisPaletteSymbol> Symbols { get; init; } = Array.Empty<GisPaletteSymbol>();
+
+    /// <summary>
+    /// Every field the layer has, so a placed feature can be given the ones that are worth filling in
+    /// and none that are not there. Network Junction has a rotation and a work order; another layer
+    /// added to this panel later may have neither, and writing a field a layer does not have is an
+    /// edit the service refuses outright.
+    /// </summary>
+    public IReadOnlyList<string> FieldNames { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>
@@ -101,6 +109,19 @@ public static class GisSymbolPaletteService
             ? nameElement.GetString() ?? layerUrl
             : layerUrl;
 
+        var fieldNames = new List<string>();
+        if (root.TryGetProperty("fields", out var fields) && fields.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var field in fields.EnumerateArray())
+            {
+                if (field.TryGetProperty("name", out var fieldName) && fieldName.ValueKind == JsonValueKind.String)
+                {
+                    var value = fieldName.GetString();
+                    if (!string.IsNullOrWhiteSpace(value)) { fieldNames.Add(value); }
+                }
+            }
+        }
+
         var symbols = new List<GisPaletteSymbol>();
         var drawnBy = string.Empty;
 
@@ -121,7 +142,8 @@ public static class GisSymbolPaletteService
             Name = name,
             LayerUrl = layerUrl.TrimEnd('/'),
             DrawnByFieldName = drawnBy,
-            Symbols = symbols
+            Symbols = symbols,
+            FieldNames = fieldNames
         };
     }
 
