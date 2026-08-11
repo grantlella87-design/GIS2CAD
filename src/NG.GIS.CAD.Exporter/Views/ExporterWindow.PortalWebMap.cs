@@ -274,14 +274,20 @@ public partial class ExporterWindow
         // that group an address the service does not answer on.
         var childServiceUrl = content is ArcGISSublayer ? parentServiceUrl : serviceUrl ?? parentServiceUrl;
 
-        // Counted down for the same reason the top level is: SublayerContents runs bottom of the draw
-        // order first, so listing it as it comes puts the layer drawn underneath at the top of the list.
-        // Material_View_MA made that plain, coming out upside down against the same service in the
-        // portal map. Every level is turned round, so the whole tree reads the way the portal does:
-        // top of the list is what is drawn on top.
-        for (var i = children.Count - 1; i >= 0; i--)
+        // Forwards, unlike the top level, and the difference is not an oversight.
+        //
+        // The operational layers are a draw order collection: the last one in it is the one drawn on
+        // top, so it has to be read backwards to list top first. SublayerContents is not that. It is
+        // the service's own table of contents, already in the order the portal shows, which for
+        // Material_View_MA is Dimensioning, GIS Misc Annotation, In Service, Proposed, Abandoned --
+        // exactly the order of the subLayerIds the service publishes.
+        //
+        // Turning it round as well, which is what happened when the top level was fixed, put every
+        // group's children upside down at every depth: Abandoned first and Dimensioning last, and the
+        // same again inside each of those.
+        foreach (var child in children)
         {
-            AddMapLayerToggle(vm, children[i], node, path, depth + 1, usedPaths, childServiceUrl);
+            AddMapLayerToggle(vm, child, node, path, depth + 1, usedPaths, childServiceUrl);
         }
     }
 
