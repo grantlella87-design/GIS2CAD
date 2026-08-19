@@ -349,9 +349,13 @@ public sealed partial class ExporterViewModel : ObservableObject
             foreach (var name in catalog.Layers) { CadLayers.Add(name); }
             LoadStripMapViewports(catalog.Viewports);
 
-            Status = UseTemplateSymbols
+            var read = UseTemplateSymbols
                 ? $"Read {Blocks.Count} blocks and {LineTypes.Count} line types from {System.IO.Path.GetFileName(TemplatePath)}."
                 : $"Read {Blocks.Count} blocks and {LineTypes.Count} line types from the open drawing.";
+
+            // What was filtered out is said rather than left to be noticed as a block the drafter
+            // remembers being in the template and cannot find in the list.
+            Status = catalog.AnythingSkipped ? read + " " + catalog.SkippedSummary : read;
         }
         catch (Exception ex)
         {
