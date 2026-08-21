@@ -1,4 +1,4 @@
-using Autodesk.AutoCAD.ApplicationServices;
+﻿using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
 using NG.GIS.CAD.Exporter.Models;
@@ -881,6 +881,15 @@ public sealed class CadExportWriter
 
             templateTransaction.Commit();
             return null;
+        }
+        catch (System.Runtime.InteropServices.SEHException ex)
+        {
+            // Caught by name as well as by Exception. A block holding an object no loaded module
+            // implements -- a Civil 3D entity in a template opened in plain AutoCAD -- can fault the
+            // native cloner rather than reporting, and a fault that escapes here takes the export with
+            // it. The list on page 4 leaves those blocks out, but a profile saved before it did can
+            // still name one, so this is the second line rather than the only one.
+            return "the template's copy of it uses objects this AutoCAD does not have (" + ex.Message + ")";
         }
         catch (Exception ex)
         {
